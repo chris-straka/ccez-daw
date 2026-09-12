@@ -25,3 +25,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15"
 libloading = "0.8"
+wgpu = { version = "0.19", optional = true }
+pollster = { version = "0.3", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
+wasmtime = { version = "48.0.2", optional = true }
+
+[features]
+default = []
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+wasm-runtime = ["dep:wasmtime"]

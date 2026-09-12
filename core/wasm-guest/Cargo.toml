@@ -1,0 +1,11 @@
+[package]
+name = "ccez-wasm-delay"
+version = "0.1.0"
+edition = "2021"
+description = "ccez-daw WASM guest: ported delay kernel for wasm32-wasip2 (no DSP of its own; includes core/src/wasmdevices/guest.rs by path)"
+
+[lib]
+crate-type = ["cdylib"]
+# NOTE: panic=abort is passed by scripts/build-wasm-guest.sh via
+# CARGO_PROFILE_*_PANIC (workspace-root profiles would leak onto every
+# package, so they live in the build script, not here).
