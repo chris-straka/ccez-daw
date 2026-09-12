@@ -2,6 +2,8 @@
 //! the frozen v0 table in `ccez-core::ipc`. Track A/B own the real engines;
 //! these stubs return well-typed values so the invoke round-trip works on day one.
 
+mod menu;
+
 use ccez_core::model::{Clip, EngineState, Op, ParamAddress, Project};
 use std::sync::Mutex;
 use tauri::State;
@@ -80,6 +82,10 @@ fn engine_set_tempo(_tempo: f64) {}
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            menu::install(app)?;
+            Ok(())
+        })
         .manage(AppState {
             project: Mutex::new(Project::sample()),
             engine: Mutex::new(EngineState::Stopped),

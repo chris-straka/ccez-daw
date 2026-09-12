@@ -8,6 +8,7 @@
     "typegen": "cargo run --manifest-path core/Cargo.toml --bin typegen --",
     "check": "bun run typegen -- --check && cd ui && bun run check && cd .. && cargo test --manifest-path core/Cargo.toml",
     "test": "cd ui && bun run test && cd ../mcp && bun run test && cd .. && cargo test --manifest-path core/Cargo.toml",
+    "test:e2e": "cd ui && bunx playwright test --config e2e/playwright.config.ts",
     "tauri:dev": "cd ui && bun run tauri:dev"
   }
 }

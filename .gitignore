@@ -7,3 +7,5 @@ src-tauri/target/
 src-tauri/WixTools/
 ui/dist/
 mcp/dist/
+ui/test-results/
+ui/playwright-report/

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "check": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test tests",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
@@ -17,6 +17,7 @@
     "zod": "^4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tauri-apps/cli": "^2",
     "bun-types": "^1.4.2",
     "typescript": "~5.6",

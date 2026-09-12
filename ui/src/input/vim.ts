@@ -10,6 +10,7 @@ import {
   type Binding,
   type KeyContext,
   type VimMode,
+  type WhenFlags,
   createKeymap,
   matchKeys,
 } from "./keybindings";
@@ -37,6 +38,8 @@ export interface VimStore {
   pending: string;
   /** Ids of non-motion actions dispatched, in order (replay log). */
   dispatched: string[];
+  /** Named flags tested by binding `when`-clauses (kept current by the shell). */
+  flags: WhenFlags;
 }
 
 export interface VimEffects {
@@ -55,11 +58,18 @@ export function createVimStore(grid: GridSize = { tracks: 8, steps: 64 }): VimSt
     clipStarts: [],
     pending: "",
     dispatched: [],
+    flags: {},
   };
 }
 
 export function setVimMode(store: VimStore, mode: VimMode): void {
   store.mode = mode;
+  store.pending = "";
+}
+
+/** Switch the focused view (arrangement / piano-roll / mixer); clears pending chord state. */
+export function setVimContext(store: VimStore, context: KeyContext): void {
+  store.context = context;
   store.pending = "";
 }
 
@@ -131,7 +141,7 @@ export function handleKey(
   effects: VimEffects,
 ): KeyOutcome {
   const pending = store.pending + token;
-  const m = matchKeys(bindings, store.mode, store.context, pending);
+  const m = matchKeys(bindings, store.mode, store.context, pending, store.flags);
   if (m.kind === "pending") {
     store.pending = pending;
     return { kind: "pending" };

@@ -91,6 +91,35 @@ export const ACTIONS: ActionDef[] = [
   localAction("vim.motion.lineEnd", "Vim: Line End"),
   localAction("vim.motion.first", "Vim: First Track / Step"),
   localAction("vim.motion.last", "Vim: Last Track / Step"),
+  // --- UI-local (shortcut hardening; additive, still `— (local)`) ---
+  localAction("view.focusArrangement", "View: Focus Arrangement"),
+  localAction("view.focusPianoRoll", "View: Focus Piano Roll"),
+  localAction("view.focusMixer", "View: Focus Mixer"),
+  localAction("section.goto.chorus", "Section: Go To Chorus"),
+  localAction("section.goto.verse", "Section: Go To Verse"),
+  localAction("mixer.muteSelected", "Mixer: Mute Selected Strip"),
+  localAction("mixer.soloSelected", "Mixer: Solo Selected Strip"),
+  // --- UI-local (native menu gaps; additive, still `— (local)`) ---
+  // Dispatched by `src-tauri/src/menu.rs` via the `menu-action` event with
+  // the same ids the palette uses, so menu and palette stay in sync.
+  // Unregistered handlers resolve to descriptors (see `runLocal`); Track K
+  // wires real behavior (dialogs, zoom, fullscreen, edit fallbacks).
+  localAction("app.about", "App: About ccez-daw"),
+  localAction("app.quit", "App: Quit"),
+  localAction("app.preferences", "App: Preferences"),
+  localAction("edit.cut", "Edit: Cut"),
+  localAction("edit.copy", "Edit: Copy"),
+  localAction("edit.paste", "Edit: Paste"),
+  localAction("edit.select_all", "Edit: Select All"),
+  localAction("view.zoom.in", "View: Zoom In"),
+  localAction("view.zoom.out", "View: Zoom Out"),
+  localAction("view.zoom.reset", "View: Reset Zoom"),
+  localAction("view.fullscreen", "View: Toggle Fullscreen"),
+  localAction("help.open_docs", "Help: Documentation"),
+  localAction("help.show_shortcuts", "Help: Keyboard Shortcuts"),
+  localAction("track.delete", "Track: Delete Selected"),
+  localAction("clip.delete", "Clip: Delete"),
+  localAction("clip.duplicate", "Clip: Duplicate"),
 ];
 
 export function findAction(id: string): ActionDef | undefined {
