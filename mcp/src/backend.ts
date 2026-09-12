@@ -17,6 +17,14 @@
 
 export const MCP_ACTOR = "mcp";
 
+/**
+ * GA-5: actor for game-audio export records. Audition/trigger tools are
+ * evaluation-only and write nothing; a green `gameaudio_export` lands one
+ * ordinary op under this actor, so exports stay undoable/addressable like
+ * every other MCP mutation.
+ */
+export const GAMEAUDIO_EXPORT_ACTOR = "gameaudio:export";
+
 export type ClipKind = "Audio" | "Midi";
 export type EngineState = "Stopped" | "Playing";
 
@@ -59,7 +67,14 @@ export interface ProjectView {
 export interface OpView {
   seq: number;
   actor: string;
-  kind: "TrackAdded" | "ClipAdded" | "ClipMoved" | "ParamSet" | "TempoSet" | "UndoMarker";
+  kind:
+    | "TrackAdded"
+    | "ClipAdded"
+    | "ClipMoved"
+    | "ParamSet"
+    | "TempoSet"
+    | "UndoMarker"
+    | "GameAudioExported";
   target: string;
   value_json: string;
 }
@@ -112,15 +127,33 @@ export class InMemoryBackend {
     target: string,
     payload: unknown,
   ): OpView {
+    return this.appendOpAs(MCP_ACTOR, kind, target, payload);
+  }
+
+  private appendOpAs(
+    actor: string,
+    kind: OpView["kind"],
+    target: string,
+    payload: unknown,
+  ): OpView {
     const op: OpView = {
       seq: this.nextSeq++,
-      actor: MCP_ACTOR,
+      actor,
       kind,
       target,
       value_json: JSON.stringify(payload),
     };
     this.ops.push(op);
     return op;
+  }
+
+  /** GA-5: record a validated export package (called only on green reports). */
+  logGameAudioExport(packageName: string, stemCount: number): { seq: number } {
+    const op = this.appendOpAs(GAMEAUDIO_EXPORT_ACTOR, "GameAudioExported", packageName, {
+      packageName,
+      stemCount,
+    });
+    return { seq: op.seq };
   }
 
   getProject(): ProjectView {

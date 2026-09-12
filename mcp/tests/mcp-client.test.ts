@@ -24,7 +24,8 @@ describe("Track L validation: MCP client lists tracks and adds a clip", () => {
   test("six frozen tools are listed", async () => {
     const client = await linkedClient(new InMemoryBackend());
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual([
+    // Frozen six stay first; GA-5 appends four game-audio rows after.
+    expect(tools.map((t) => t.name).slice(0, 6)).toEqual([
       "project_get",
       "project_list_tracks",
       "project_add_clip",

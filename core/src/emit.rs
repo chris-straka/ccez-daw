@@ -79,6 +79,18 @@ pub const ENUMS: &[EnumDef] = &[
         doc: "Browsable library discriminator: one palette indexes all four.",
         variants: &["Sample", "Preset", "Plugin", "Project"],
     },
+    // GA-0 (additive): v1 game-audio discriminators. Appended last so every
+    // previously emitted line renders byte-identically.
+    EnumDef {
+        name: "TransitionKind",
+        doc: "Adaptive-cue state-change behavior: cut, fade, wait-for-bar, or stinger.",
+        variants: &["Cut", "Fade", "BarWait", "Stinger"],
+    },
+    EnumDef {
+        name: "StemKind",
+        doc: "Export-stem source discriminator: music layer render or SFX clip render.",
+        variants: &["MusicLayer", "SfxClip"],
+    },
 ];
 
 pub const STRUCTS: &[StructDef] = &[
@@ -216,6 +228,134 @@ pub const STRUCTS: &[StructDef] = &[
         fields: &[
             f!("id", F_STRING, Z_STRING),
             f!("score", F_NUMBER, Z_NUMBER),
+        ],
+    },
+    // GA-0 (additive): v1 game-audio shapes mirroring `game_audio.rs`.
+    // Appended last so every previously emitted line renders byte-identically.
+    // `schema_version` on documents is always 1 in v1.
+    StructDef {
+        name: "GameStateParam",
+        doc: "One named, ranged game-state parameter (RTPC-style input).",
+        fields: &[
+            f!("id", F_STRING, Z_STRING),
+            f!("label", F_STRING, Z_STRING),
+            f!("min", F_NUMBER, Z_NUMBER),
+            f!("max", F_NUMBER, Z_NUMBER),
+            f!("default", F_NUMBER, Z_NUMBER),
+            f!("unit", F_STRING, Z_STRING),
+        ],
+    },
+    StructDef {
+        name: "GameStateValue",
+        doc: "One live value for a named game-state parameter.",
+        fields: &[
+            f!("param", F_STRING, Z_STRING),
+            f!("value", F_NUMBER, Z_NUMBER),
+        ],
+    },
+    StructDef {
+        name: "GameStateSnapshot",
+        doc: "A named game state plus its continuous parameter values.",
+        fields: &[
+            f!("state", F_STRING, Z_STRING),
+            f!("values", "GameStateValue[]", "z.array(GameStateValueSchema)"),
+        ],
+    },
+    StructDef {
+        name: "CueLayer",
+        doc: "One vertical layer of an adaptive cue: clips sounding together in listed states.",
+        fields: &[
+            f!("id", F_STRING, Z_STRING),
+            f!("name", F_STRING, Z_STRING),
+            f!("clip_ids", "string[]", "z.array(z.string())"),
+            f!("states", "string[]", "z.array(z.string())"),
+            f!("volume", F_NUMBER, Z_NUMBER),
+        ],
+    },
+    StructDef {
+        name: "TransitionRule",
+        doc: "One adaptive-cue transition rule between two game states.",
+        fields: &[
+            f!("id", F_STRING, Z_STRING),
+            f!("from_state", F_STRING, Z_STRING),
+            f!("to_state", F_STRING, Z_STRING),
+            f!("kind", "TransitionKind", "TransitionKindSchema"),
+            f!("fade_beats", F_NUMBER, Z_NUMBER),
+            f!("stinger_cue_id", F_STRING, Z_STRING),
+        ],
+    },
+    StructDef {
+        name: "AdaptiveCue",
+        doc: "One adaptive music cue: vertical layers plus horizontal transition rules.",
+        fields: &[
+            f!("schema_version", F_NUMBER, Z_NUMBER),
+            f!("id", F_STRING, Z_STRING),
+            f!("name", F_STRING, Z_STRING),
+            f!("tempo", F_NUMBER, Z_NUMBER),
+            f!("default_state", F_STRING, Z_STRING),
+            f!("layers", "CueLayer[]", "z.array(CueLayerSchema)"),
+            f!("transitions", "TransitionRule[]", "z.array(TransitionRuleSchema)"),
+        ],
+    },
+    StructDef {
+        name: "RtpcBinding",
+        doc: "One RTPC-style binding: game parameter drives a node:param address.",
+        fields: &[
+            f!("param", F_STRING, Z_STRING),
+            f!("target_node", F_STRING, Z_STRING),
+            f!("target_param", F_STRING, Z_STRING),
+            f!("min", F_NUMBER, Z_NUMBER),
+            f!("max", F_NUMBER, Z_NUMBER),
+        ],
+    },
+    StructDef {
+        name: "SfxEvent",
+        doc: "One playable SFX event: clip pool, humanization, throttling, modulation.",
+        fields: &[
+            f!("id", F_STRING, Z_STRING),
+            f!("name", F_STRING, Z_STRING),
+            f!("clip_ids", "string[]", "z.array(z.string())"),
+            f!("volume", F_NUMBER, Z_NUMBER),
+            f!("volume_random", F_NUMBER, Z_NUMBER),
+            f!("pitch_random", F_NUMBER, Z_NUMBER),
+            f!("cooldown_ms", F_NUMBER, Z_NUMBER),
+            f!("max_polyphony", F_NUMBER, Z_NUMBER),
+            f!("rtpc", "RtpcBinding[]", "z.array(RtpcBindingSchema)"),
+        ],
+    },
+    StructDef {
+        name: "SfxBank",
+        doc: "One named bank of SFX events shipped to the engine as JSON.",
+        fields: &[
+            f!("schema_version", F_NUMBER, Z_NUMBER),
+            f!("id", F_STRING, Z_STRING),
+            f!("name", F_STRING, Z_STRING),
+            f!("events", "SfxEvent[]", "z.array(SfxEventSchema)"),
+        ],
+    },
+    StructDef {
+        name: "ExportStem",
+        doc: "One rendered file inside an engine export package.",
+        fields: &[
+            f!("path", F_STRING, Z_STRING),
+            f!("source_id", F_STRING, Z_STRING),
+            f!("source_layer_id", F_STRING, Z_STRING),
+            f!("kind", "StemKind", "StemKindSchema"),
+            f!("loop_start_beats", F_NUMBER, Z_NUMBER),
+            f!("loop_end_beats", F_NUMBER, Z_NUMBER),
+        ],
+    },
+    StructDef {
+        name: "ExportPackage",
+        doc: "The engine deliverable: rendered stems plus JSON event bank.",
+        fields: &[
+            f!("schema_version", F_NUMBER, Z_NUMBER),
+            f!("name", F_STRING, Z_STRING),
+            f!("cue_ids", "string[]", "z.array(z.string())"),
+            f!("bank_ids", "string[]", "z.array(z.string())"),
+            f!("stems", "ExportStem[]", "z.array(ExportStemSchema)"),
+            f!("event_bank_path", F_STRING, Z_STRING),
+            f!("validator_version", F_STRING, Z_STRING),
         ],
     },
 ];

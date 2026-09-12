@@ -29,6 +29,14 @@ export type OpKind = z.infer<typeof OpKindSchema>;
 export const LibraryKindSchema = z.enum(["Sample", "Preset", "Plugin", "Project"]);
 export type LibraryKind = z.infer<typeof LibraryKindSchema>;
 
+/** Adaptive-cue state-change behavior: cut, fade, wait-for-bar, or stinger. */
+export const TransitionKindSchema = z.enum(["Cut", "Fade", "BarWait", "Stinger"]);
+export type TransitionKind = z.infer<typeof TransitionKindSchema>;
+
+/** Export-stem source discriminator: music layer render or SFX clip render. */
+export const StemKindSchema = z.enum(["MusicLayer", "SfxClip"]);
+export type StemKind = z.infer<typeof StemKindSchema>;
+
 /** Universal address of one automatable/modulatable parameter. */
 export const ParamAddressSchema = z.object({
   node: z.string(),
@@ -150,4 +158,118 @@ export const LibraryHitSchema = z.object({
   score: z.number(),
 });
 export type LibraryHit = z.infer<typeof LibraryHitSchema>;
+
+/** One named, ranged game-state parameter (RTPC-style input). */
+export const GameStateParamSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  min: z.number(),
+  max: z.number(),
+  default: z.number(),
+  unit: z.string(),
+});
+export type GameStateParam = z.infer<typeof GameStateParamSchema>;
+
+/** One live value for a named game-state parameter. */
+export const GameStateValueSchema = z.object({
+  param: z.string(),
+  value: z.number(),
+});
+export type GameStateValue = z.infer<typeof GameStateValueSchema>;
+
+/** A named game state plus its continuous parameter values. */
+export const GameStateSnapshotSchema = z.object({
+  state: z.string(),
+  values: z.array(GameStateValueSchema),
+});
+export type GameStateSnapshot = z.infer<typeof GameStateSnapshotSchema>;
+
+/** One vertical layer of an adaptive cue: clips sounding together in listed states. */
+export const CueLayerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  clip_ids: z.array(z.string()),
+  states: z.array(z.string()),
+  volume: z.number(),
+});
+export type CueLayer = z.infer<typeof CueLayerSchema>;
+
+/** One adaptive-cue transition rule between two game states. */
+export const TransitionRuleSchema = z.object({
+  id: z.string(),
+  from_state: z.string(),
+  to_state: z.string(),
+  kind: TransitionKindSchema,
+  fade_beats: z.number(),
+  stinger_cue_id: z.string(),
+});
+export type TransitionRule = z.infer<typeof TransitionRuleSchema>;
+
+/** One adaptive music cue: vertical layers plus horizontal transition rules. */
+export const AdaptiveCueSchema = z.object({
+  schema_version: z.number(),
+  id: z.string(),
+  name: z.string(),
+  tempo: z.number(),
+  default_state: z.string(),
+  layers: z.array(CueLayerSchema),
+  transitions: z.array(TransitionRuleSchema),
+});
+export type AdaptiveCue = z.infer<typeof AdaptiveCueSchema>;
+
+/** One RTPC-style binding: game parameter drives a node:param address. */
+export const RtpcBindingSchema = z.object({
+  param: z.string(),
+  target_node: z.string(),
+  target_param: z.string(),
+  min: z.number(),
+  max: z.number(),
+});
+export type RtpcBinding = z.infer<typeof RtpcBindingSchema>;
+
+/** One playable SFX event: clip pool, humanization, throttling, modulation. */
+export const SfxEventSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  clip_ids: z.array(z.string()),
+  volume: z.number(),
+  volume_random: z.number(),
+  pitch_random: z.number(),
+  cooldown_ms: z.number(),
+  max_polyphony: z.number(),
+  rtpc: z.array(RtpcBindingSchema),
+});
+export type SfxEvent = z.infer<typeof SfxEventSchema>;
+
+/** One named bank of SFX events shipped to the engine as JSON. */
+export const SfxBankSchema = z.object({
+  schema_version: z.number(),
+  id: z.string(),
+  name: z.string(),
+  events: z.array(SfxEventSchema),
+});
+export type SfxBank = z.infer<typeof SfxBankSchema>;
+
+/** One rendered file inside an engine export package. */
+export const ExportStemSchema = z.object({
+  path: z.string(),
+  source_id: z.string(),
+  source_layer_id: z.string(),
+  kind: StemKindSchema,
+  loop_start_beats: z.number(),
+  loop_end_beats: z.number(),
+});
+export type ExportStem = z.infer<typeof ExportStemSchema>;
+
+/** The engine deliverable: rendered stems plus JSON event bank. */
+export const ExportPackageSchema = z.object({
+  schema_version: z.number(),
+  name: z.string(),
+  cue_ids: z.array(z.string()),
+  bank_ids: z.array(z.string()),
+  stems: z.array(ExportStemSchema),
+  event_bank_path: z.string(),
+  validator_version: z.string(),
+});
+export type ExportPackage = z.infer<typeof ExportPackageSchema>;
 
