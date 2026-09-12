@@ -52,3 +52,15 @@ export {
   type JobProgress,
   type JobStatus,
 } from "./jobs.js";
+export {
+  DEFAULT_SIDECAR_ENDPOINT,
+  MODEL_PINS,
+  cachedWeightPath,
+  ensureModelCached,
+  isModelCached,
+  modelCacheDir,
+  pinFor,
+  resolveProviderFor,
+  type ModelPin,
+  type ModelVerdict,
+} from "./models.js";

@@ -6,7 +6,7 @@ three things every later track needs when touching UI behavior.
 
 ## 1. What it proves (and what it does not)
 
-Four smoke specs in `ui/e2e/*.spec.ts`, run with `bun run test:e2e`
+Four spec files (`ui/e2e/*.spec.ts`, five tests — `shell` carries two), run with `bun run test:e2e`
 (root script; deliberately excluded from default `bun run test` so unit
 runs stay fast):
 

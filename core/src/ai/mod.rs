@@ -28,12 +28,17 @@ pub mod chords;
 pub mod drums;
 pub mod job;
 pub mod melody;
+pub mod models;
 pub mod separation;
 
 pub use chords::{ChordLabel, ChordTranscription, submit_chords, transcribe_chords};
 pub use drums::{DrumOnset, DrumVoice, detect_drums, submit_drums};
 pub use job::{Job, JobControl, JobStatus};
 pub use melody::{PitchFrame, submit_melody, transcribe_melody};
+pub use models::{
+    DEFAULT_SIDECAR_ENDPOINT, PINS, ModelPin, ModelResolution, ModelVerdict, cached_weight_path,
+    model_cache_dir, pin_for, resolve,
+};
 pub use separation::{
     Cleanup, Separation, SeparationDest, SIDECAR_CLEANUP, SIDECAR_GROOVE, SIDECAR_SEPARATION,
     STEM_NAMES, apply_cleanup_to_engine, apply_groove_to_engine, apply_separation_to_engine,

@@ -45,7 +45,7 @@ jobs:
       contents: write
     steps:
       - name: Create empty draft release for the tag
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: "Ccez DAW ${{ github.ref_name }}"
@@ -57,7 +57,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -82,7 +82,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -115,7 +115,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -140,7 +140,7 @@ jobs:
       # if the action's upload step is skipped on a partial failure.
       - name: Attach NSIS bundles to draft release
         if: always()
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -161,7 +161,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -180,7 +180,7 @@ jobs:
           args: --target aarch64-pc-windows-msvc --bundles nsis
       - name: Attach NSIS bundles to draft release
         if: always()
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -206,7 +206,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
@@ -240,7 +240,7 @@ jobs:
       # if the action's upload step is skipped on a partial failure.
       - name: Attach Linux bundles to draft release
         if: always()
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -340,7 +340,7 @@ jobs:
     steps:
       # gh release download shells out to git; without a checkout the
       # manifest download fails even when every asset is present.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Verify all release assets and updater platforms
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -26,7 +26,7 @@
       "endpoints": [
         "https://github.com/OWNER/ccez-daw/releases/latest/download/latest.json"
       ],
-      "pubkey": "TODO: run `bunx tauri signer generate`, store the secret key in CI secrets, paste the public key here"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzMkRCQUY2NDUwODAyQ0IKUldUTEFnaEY5cm90MC9WTmFkcW1XdlNCN0tuSklzOWp3S21pSm5xZW5peE1GV0VsYlpGSTFTTHIK"
     }
   },
   "bundle": {

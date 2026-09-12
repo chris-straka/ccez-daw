@@ -11,7 +11,7 @@ From repo root:
 2. `bun run test` — ui (118) + mcp (18) + core smoke
 3. `bun run check` — typegen `--check` + `tsc --noEmit` (ui) + core tests
 4. `cd ui && bun run build` — vite production build
-5. `bun run test:e2e` — Playwright web-mode, 5 specs, chromium
+5. `bun run test:e2e` — Playwright web-mode, 4 spec files / 5 tests, chromium
 
 ## 2. e2e browser setup
 
