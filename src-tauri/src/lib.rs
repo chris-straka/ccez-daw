@@ -79,6 +79,7 @@ fn engine_set_tempo(_tempo: f64) {}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             project: Mutex::new(Project::sample()),
             engine: Mutex::new(EngineState::Stopped),

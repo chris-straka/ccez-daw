@@ -1,0 +1,426 @@
+name: release
+
+# Cut a release: push a tag like `v0.1.0` and CI builds every artifact
+# onto one draft GitHub Release:
+#   macOS: per-arch .dmgs (ARM64-only + Intel-only, no universal binary)
+#     + updater artifacts (*.app.tar.gz + *.sig)
+#   Linux: .deb + .AppImage bundles (+ .sig updater artifacts)
+#   Windows: NSIS installers (per-arch: x64 + ARM64) + updater signatures
+# plus latest.json (the in-app updater manifest, merged across platforms
+# by tauri-action as each job uploads).
+#
+# Desktop only: there is deliberately no Android/mobile job.
+#
+# One-time setup before the first release (repo Settings -> Secrets -> Actions):
+#   updater (macOS/Windows/Linux jobs sign updates with these):
+#     TAURI_SIGNING_PRIVATE_KEY            (from `bunx tauri signer generate`)
+#     TAURI_SIGNING_PRIVATE_KEY_PASSWORD   (the password set at key generation)
+#   then paste the public key into `plugins.updater.pubkey` and replace
+#   OWNER in `plugins.updater.endpoints` in src-tauri/tauri.conf.json.
+# No Apple Developer account needed: the macOS bundle is ad-hoc signed, so
+# the first launch on another Mac needs right-click -> Open.
+#
+# ORDERING (strict chain, do not parallelize): ccezstudio v0.2.2 proved that
+# concurrent jobs uploading to the same draft silently lose files (the
+# Intel .dmg, both Linux .sigs, and the x64 Windows .sig all uploaded
+# "successfully" yet never landed). Every job here runs only after its
+# predecessor, so exactly one writer touches the draft at a time. The tail
+# is rename-assets (human-readable names), then verify-release (fails the
+# run on any missing file or updater platform), then publish-release
+# (auto-publishes the verified draft), then prune-old-releases (deletes
+# everything older than the previous release). A shared `concurrency`
+# group was tried first on ccezstudio and made it worse: GitHub cancels
+# queued runs in the group instead of queueing them, which killed whole
+# platform builds. The `needs` chain below is the mechanism that works.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  create-draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create empty draft release for the tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Ccez DAW ${{ github.ref_name }}"
+          draft: true
+
+  release-macos-x86_64:
+    needs: [create-draft]
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - run: bun install
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ccez DAW ${{ github.ref_name }}"
+          releaseDraft: true
+          # Intel-only .dmg: no universal binary ships, so nobody
+          # downloads or stores a slice their Mac can't use.
+          args: --target x86_64-apple-darwin
+
+  release-macos-aarch64:
+    needs: [release-macos-x86_64]
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - run: bun install
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ccez DAW ${{ github.ref_name }}"
+          releaseDraft: true
+          # Apple Silicon-only .dmg alongside the Intel-only one above:
+          # M1+ Macs download just their slice, same signed-for-updates flow.
+          args: --target aarch64-apple-darwin
+
+  # Windows NSIS installers (per-arch: x64 + ARM64) and their updater
+  # signatures, signed with the SAME TAURI_SIGNING_* secrets as above.
+  # Runs only on GitHub-hosted Windows runners; there is deliberately no
+  # local Windows build path (maintainers develop on macOS).
+  # Code signing note: the .exe is NOT Authenticode-signed (no certificate
+  # is configured), so Windows SmartScreen shows an "Unknown publisher"
+  # prompt on first install. The in-app updater signature (TAURI_SIGNING_*)
+  # is unrelated to SmartScreen and IS configured here.
+  release-windows-x64:
+    needs: [release-macos-aarch64]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - run: bun install
+      # tauri-action provisions NSIS on the runner and builds only the NSIS
+      # bundle (--bundles nsis skips the WiX .msi; MSI distribution is
+      # out of scope). TAURI_SIGNING_* signs the updater artifacts.
+      - name: Build NSIS installer (x64)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ccez DAW ${{ github.ref_name }}"
+          releaseDraft: true
+          args: --target x86_64-pc-windows-msvc --bundles nsis
+      # tauri-action already uploads the bundles above; this step is a
+      # belt-and-braces re-attach so the artifacts land on the draft even
+      # if the action's upload step is skipped on a partial failure.
+      - name: Attach NSIS bundles to draft release
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          fail_on_unmatched_files: false
+          files: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip.sig
+
+  release-windows-arm64:
+    # ARM64: native build on a native ARM64 runner (cross-linking ARM64
+    # from an x64 runner is NOT trivial, hence a separate job).
+    # windows-11-arm is GA for public repositories; it does NOT work in
+    # private repositories -- if this repo ever goes private, drop this
+    # job (x64 keeps working).
+    needs: [release-windows-x64]
+    runs-on: windows-11-arm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+      - run: bun install
+      - name: Build NSIS installer (arm64)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ccez DAW ${{ github.ref_name }}"
+          releaseDraft: true
+          args: --target aarch64-pc-windows-msvc --bundles nsis
+      - name: Attach NSIS bundles to draft release
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          fail_on_unmatched_files: false
+          files: |
+            src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip
+            src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip.sig
+
+  # Linux distribution artifacts on the same draft:
+  #   - .deb bundle  (Debian / Ubuntu / Pop!_OS installs)
+  #   - .AppImage bundle (distro-agnostic fallback)
+  #   - updater artifacts (*.sig), signed when the TAURI_SIGNING_*
+  #     secrets are present (same secrets as above).
+  # Baseline: ubuntu-22.04 on purpose. Tauri links against the build
+  # host's glibc/WebKitGTK, so building on the OLDEST supported base
+  # (22.04, which ships libwebkit2gtk-4.1) keeps the binaries runnable on
+  # newer systems. Building on 24.04+ raises the minimum glibc and breaks
+  # older installs.
+  release-linux:
+    needs: [release-windows-arm64]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - run: bun install
+      - name: Build .deb and .AppImage bundles
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ccez DAW ${{ github.ref_name }}"
+          releaseDraft: true
+          args: --bundles deb,appimage
+      # tauri-action already uploads the bundles above; this step is a
+      # belt-and-braces re-attach so the artifacts land on the draft even
+      # if the action's upload step is skipped on a partial failure.
+      - name: Attach Linux bundles to draft release
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          fail_on_unmatched_files: false
+          files: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz
+            src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz.sig
+
+  # Human-readable asset names: Tauri names bundles `ccez-daw_<ver>_<arch>`
+  # with a different arch word per OS (aarch64/amd64/x64/arm64), which no
+  # downloader can decode at a glance. This job renames every file in place
+  # (download, re-upload under the clean name, delete the original) and
+  # rewrites any filenames embedded in latest.json. Signatures sign file
+  # contents, not names, so they stay valid; manifest URLs point at asset
+  # IDs and keep working. latest.json itself keeps its name (the updater
+  # fetches it by name).
+  rename-assets:
+    needs: [release-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Rename release assets to OS-arch names
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd "$RUNNER_TEMP"
+          mkdir -p old new manifest
+          VER="${GITHUB_REF_NAME#v}"
+          R="$GITHUB_REPOSITORY"
+          rename() {
+            gh release download "$GITHUB_REF_NAME" --repo "$R" --pattern "$1" --dir old --clobber
+            mv "old/$1" "new/$2"
+            gh release upload "$GITHUB_REF_NAME" --repo "$R" "new/$2"
+            gh release delete-asset "$GITHUB_REF_NAME" --repo "$R" "$1" -y
+            rm -f "new/$2"
+          }
+          rename "ccez-daw_${VER}_aarch64.dmg" "CcezDAW-macos-apple-silicon.dmg"
+          rename "ccez-daw_${VER}_aarch64.app.tar.gz" "CcezDAW-macos-apple-silicon.app.tar.gz"
+          rename "ccez-daw_${VER}_aarch64.app.tar.gz.sig" "CcezDAW-macos-apple-silicon.app.tar.gz.sig"
+          rename "ccez-daw_${VER}_x64.dmg" "CcezDAW-macos-intel.dmg"
+          rename "ccez-daw_${VER}_x64.app.tar.gz" "CcezDAW-macos-intel.app.tar.gz"
+          rename "ccez-daw_${VER}_x64.app.tar.gz.sig" "CcezDAW-macos-intel.app.tar.gz.sig"
+          rename "ccez-daw_${VER}_amd64.deb" "CcezDAW-linux-x64.deb"
+          rename "ccez-daw_${VER}_amd64.deb.sig" "CcezDAW-linux-x64.deb.sig"
+          rename "ccez-daw_${VER}_amd64.AppImage" "CcezDAW-linux-x64.AppImage"
+          rename "ccez-daw_${VER}_amd64.AppImage.sig" "CcezDAW-linux-x64.AppImage.sig"
+          rename "ccez-daw_${VER}_x64-setup.exe" "CcezDAW-windows-x64-setup.exe"
+          rename "ccez-daw_${VER}_x64-setup.exe.sig" "CcezDAW-windows-x64-setup.exe.sig"
+          rename "ccez-daw_${VER}_arm64-setup.exe" "CcezDAW-windows-arm64-setup.exe"
+          rename "ccez-daw_${VER}_arm64-setup.exe.sig" "CcezDAW-windows-arm64-setup.exe.sig"
+          gh release download "$GITHUB_REF_NAME" --repo "$R" --pattern "latest.json" --dir manifest --clobber
+          python3 - manifest/latest.json "$VER" <<'EOF'
+          import sys
+          path, ver = sys.argv[1], sys.argv[2]
+          pairs = [
+              (f"ccez-daw_{ver}_aarch64.dmg", "CcezDAW-macos-apple-silicon.dmg"),
+              (f"ccez-daw_{ver}_aarch64.app.tar.gz", "CcezDAW-macos-apple-silicon.app.tar.gz"),
+              (f"ccez-daw_{ver}_aarch64.app.tar.gz.sig", "CcezDAW-macos-apple-silicon.app.tar.gz.sig"),
+              (f"ccez-daw_{ver}_x64.dmg", "CcezDAW-macos-intel.dmg"),
+              (f"ccez-daw_{ver}_x64.app.tar.gz", "CcezDAW-macos-intel.app.tar.gz"),
+              (f"ccez-daw_{ver}_x64.app.tar.gz.sig", "CcezDAW-macos-intel.app.tar.gz.sig"),
+              (f"ccez-daw_{ver}_amd64.deb", "CcezDAW-linux-x64.deb"),
+              (f"ccez-daw_{ver}_amd64.deb.sig", "CcezDAW-linux-x64.deb.sig"),
+              (f"ccez-daw_{ver}_amd64.AppImage", "CcezDAW-linux-x64.AppImage"),
+              (f"ccez-daw_{ver}_amd64.AppImage.sig", "CcezDAW-linux-x64.AppImage.sig"),
+              (f"ccez-daw_{ver}_x64-setup.exe", "CcezDAW-windows-x64-setup.exe"),
+              (f"ccez-daw_{ver}_x64-setup.exe.sig", "CcezDAW-windows-x64-setup.exe.sig"),
+              (f"ccez-daw_{ver}_arm64-setup.exe", "CcezDAW-windows-arm64-setup.exe"),
+              (f"ccez-daw_{ver}_arm64-setup.exe.sig", "CcezDAW-windows-arm64-setup.exe.sig"),
+          ]
+          body = open(path).read()
+          new = body
+          for old, new_name in pairs:
+              new = new.replace(old, new_name)
+          if new != body:
+              open(path, "w").write(new)
+              print("manifest filenames rewritten")
+          else:
+              print("manifest needed no rewrite")
+          EOF
+          gh release delete-asset "$GITHUB_REF_NAME" --repo "$R" "latest.json" -y
+          gh release upload "$GITHUB_REF_NAME" --repo "$R" "manifest/latest.json"
+
+  # Durable gate for the ccezstudio v0.2.2 asset loss: this job runs only
+  # after every build uploaded, and fails the run if any expected file is
+  # missing from the draft or any platform is missing from the updater
+  # manifest. (GitHub serves spaces in bundle names as dots; these names
+  # have no spaces, so match them exactly.)
+  verify-release:
+    needs: [rename-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # gh release download shells out to git; without a checkout the
+      # manifest download fails even when every asset is present.
+      - uses: actions/checkout@v4
+      - name: Verify all release assets and updater platforms
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          ASSETS="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')"
+          missing=0
+          for f in \
+            "CcezDAW-macos-apple-silicon.dmg" \
+            "CcezDAW-macos-apple-silicon.app.tar.gz" \
+            "CcezDAW-macos-apple-silicon.app.tar.gz.sig" \
+            "CcezDAW-macos-intel.dmg" \
+            "CcezDAW-macos-intel.app.tar.gz" \
+            "CcezDAW-macos-intel.app.tar.gz.sig" \
+            "CcezDAW-linux-x64.deb" \
+            "CcezDAW-linux-x64.deb.sig" \
+            "CcezDAW-linux-x64.AppImage" \
+            "CcezDAW-linux-x64.AppImage.sig" \
+            "CcezDAW-windows-x64-setup.exe" \
+            "CcezDAW-windows-x64-setup.exe.sig" \
+            "CcezDAW-windows-arm64-setup.exe" \
+            "CcezDAW-windows-arm64-setup.exe.sig" \
+            "latest.json"; do
+            echo "$ASSETS" | grep -qxF "$f" || { echo "MISSING: $f"; missing=1; }
+          done
+          gh release download "$GITHUB_REF_NAME" --pattern "latest.json" --dir "$RUNNER_TEMP/manifest"
+          for platform in darwin-aarch64 darwin-x86_64 linux-x86_64 windows-x86_64 windows-aarch64; do
+            grep -q "\"$platform\"" "$RUNNER_TEMP/manifest/latest.json" || { echo "MISSING PLATFORM: $platform"; missing=1; }
+          done
+          exit $missing
+
+  # Solo-user convenience: publish automatically once verified. This repo
+  # has one user, so no review gate is needed -- verify-release is the
+  # gate. Publishing flips Latest to this tag, which the updater reads.
+  publish-release:
+    needs: [verify-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the verified draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  # Tidiness automation: once the release above is verified, delete every
+  # older release except the newest previous one (kept as a rollback
+  # fallback). Runs last so it can never endanger the current artifacts;
+  # a prune failure goes red without touching the verified release.
+  prune-old-releases:
+    needs: [publish-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete releases older than the previous one
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          import json
+          import os
+          import subprocess
+          repo = os.environ["GITHUB_REPOSITORY"]
+          cur = os.environ["GITHUB_REF_NAME"]
+          out = subprocess.run(
+              ["gh", "release", "list", "--repo", repo,
+               "--json", "tagName,createdAt", "--limit", "100"],
+              capture_output=True, text=True, check=True,
+          )
+          older = sorted(
+              (r for r in json.loads(out.stdout) if r["tagName"] != cur),
+              key=lambda r: r["createdAt"], reverse=True,
+          )
+          for r in older[1:]:
+              print("Deleting old release:", r["tagName"], flush=True)
+              subprocess.run(
+                  ["gh", "release", "delete", r["tagName"],
+                   "--repo", repo, "--cleanup-tag", "-y"],
+                  check=True,
+              )
+          print("Prune done.")
+          EOF

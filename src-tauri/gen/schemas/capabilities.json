@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capability: the bundled SolidJS frontend may invoke all v0 commands.","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Default capability: the bundled SolidJS frontend may invoke all v0 commands.","local":true,"windows":["main"],"permissions":["core:default","updater:default"]}}

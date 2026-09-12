@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default capability: the bundled SolidJS frontend may invoke all v0 commands.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "updater:default"]
 }

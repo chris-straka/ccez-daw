@@ -19,9 +19,20 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "endpoints": [
+        "https://github.com/OWNER/ccez-daw/releases/latest/download/latest.json"
+      ],
+      "pubkey": "TODO: run `bunx tauri signer generate`, store the secret key in CI secrets, paste the public key here"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": ["icons/icon.png"]
   }
 }
