@@ -17,10 +17,41 @@ describe("v0 contracts", () => {
     expect(() => ProjectSchema.parse(bad)).toThrow();
   });
 
-  test("every registry action points at a real IPC command", () => {
+  test("every IPC registry action points at a real IPC command", () => {
     const valid = new Set<string>(COMMAND_NAMES as unknown as string[]);
     for (const a of ACTIONS) {
-      expect(valid.has(a.ipc)).toBe(true);
+      if (a.kind === "local") {
+        // UI-only actions (palette.open, vim.*) are frozen as `— (local)`.
+        expect(a.ipc).toBe("local");
+      } else {
+        expect(valid.has(a.ipc)).toBe(true);
+      }
+    }
+  });
+
+  test("every frozen action id has a registry entry (Track K owns the full registry)", () => {
+    const ids = new Set(ACTIONS.map((a) => a.id));
+    for (const id of [
+      "transport.play",
+      "transport.stop",
+      "project.new",
+      "project.get",
+      "project.open",
+      "project.save",
+      "project.undo",
+      "project.redo",
+      "op.apply",
+      "track.add",
+      "track.list",
+      "clip.add",
+      "param.set",
+      "engine.set_tempo",
+      "palette.open",
+      "vim.mode.normal",
+      "vim.mode.insert",
+      "vim.mode.visual",
+    ]) {
+      expect(ids.has(id)).toBe(true);
     }
   });
 

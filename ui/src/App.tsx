@@ -1,6 +1,10 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
-import { ACTIONS, findAction } from "./actions/registry";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { findAction, registerLocalActionHandler } from "./actions/registry";
 import type { EngineState, Project } from "./generated/project";
+import { createKeymap, eventToToken } from "./input/keybindings";
+import { createVimStore, handleKey } from "./input/vim";
+import Palette from "./palette/Palette";
+import BrowserPalette from "./browser/Browser";
 import { engine_play, engine_stop, project_get } from "./tauri/commands";
 
 function Panel(props: { title: string; children?: unknown }) {
@@ -26,15 +30,13 @@ export default function App() {
   const [project, setProject] = createSignal<Project | null>(null);
   const [engine, setEngine] = createSignal<EngineState>("Stopped");
   const [paletteOpen, setPaletteOpen] = createSignal(false);
-  const [query, setQuery] = createSignal("");
+  const [vimMode, setVimMode] = createSignal("normal");
+  const [cursor, setCursor] = createSignal("0:0");
   const [error, setError] = createSignal<string | null>(null);
 
-  const matches = createMemo(() => {
-    const q = query().toLowerCase();
-    return ACTIONS.filter(
-      (a) => a.title.toLowerCase().includes(q) || a.id.includes(q),
-    );
-  });
+  // Track K: one vim store + remappable keymap for the whole shell.
+  const vim = createVimStore();
+  const keymap = createKeymap();
 
   async function refresh() {
     try {
@@ -63,7 +65,31 @@ export default function App() {
     await refresh();
   }
 
-  void refresh();
+  onMount(() => {
+    registerLocalActionHandler("palette.open", () => setPaletteOpen(true));
+    registerLocalActionHandler("vim.mode.normal", () => setVimMode("normal"));
+    registerLocalActionHandler("vim.mode.insert", () => setVimMode("insert"));
+    registerLocalActionHandler("vim.mode.visual", () => setVimMode("visual"));
+
+    const onKey = (e: KeyboardEvent) => {
+      if (paletteOpen()) return; // palette handles its own keys
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) {
+        if (e.key !== "Escape") return;
+      }
+      const out = handleKey(vim, eventToToken(e), keymap, {
+        runAction: (id) => void runAction(id),
+        openPalette: () => setPaletteOpen(true),
+      });
+      if (out.kind === "mode-changed") setVimMode(out.mode);
+      else if (out.kind === "moved") setCursor(`${out.cursor.track}:${out.cursor.step}`);
+      else if (out.kind === "dispatched" || out.kind === "pending") setVimMode(vim.mode);
+      if (out.kind !== "ignored") e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => window.removeEventListener("keydown", onKey));
+    void refresh();
+  });
 
   return (
     <main
@@ -84,6 +110,8 @@ export default function App() {
         <button onClick={play}>Play</button>
         <button onClick={stop}>Stop</button>
         <span>Engine: {engine()}</span>
+        <span style={{ color: "#8cf" }}>-- {vimMode().toUpperCase()} --</span>
+        <span style={{ color: "#888" }}>cursor {cursor()}</span>
         <button onClick={() => setPaletteOpen((v) => !v)}>
           Palette (Ctrl+K)
         </button>
@@ -96,25 +124,7 @@ export default function App() {
           <span style={{ color: "#f88" }}>{error()}</span>
         </Show>
       </header>
-      <Show when={paletteOpen()}>
-        <div style={{ padding: "0 8px" }}>
-          <input
-            placeholder="Type a command…"
-            value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-            style={{ width: "100%", padding: "6px" }}
-          />
-          <ul>
-            <For each={matches()}>
-              {(a) => (
-                <li>
-                  <button onClick={() => void runAction(a.id)}>{a.title}</button>
-                </li>
-              )}
-            </For>
-          </ul>
-        </div>
-      </Show>
+      <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} onRan={() => void refresh()} />
       <div style={{ display: "grid", "grid-template-columns": "2fr 1fr 1fr", flex: 1 }}>
         <Panel title="Timeline">
           <For each={project()?.tracks ?? []}>
@@ -132,7 +142,7 @@ export default function App() {
             </For>
           </Panel>
           <Panel title="Browser">
-            <div>v0 stub: samples / presets / plugins</div>
+            <BrowserPalette />
           </Panel>
         </div>
         <div style={{ display: "flex", "flex-direction": "column" }}>
@@ -140,7 +150,7 @@ export default function App() {
             <div>v0 stub: FL-style mouse editing lands in Track F</div>
           </Panel>
           <Panel title="Command palette">
-            <div>{matches().length} actions registered</div>
+            <div>Ctrl+K — every registry action, fuzzy-matched</div>
           </Panel>
         </div>
       </div>

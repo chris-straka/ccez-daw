@@ -25,6 +25,10 @@ export type EngineState = z.infer<typeof EngineStateSchema>;
 export const OpKindSchema = z.enum(["TrackAdded", "ClipAdded", "ClipMoved", "ParamSet", "TempoSet", "UndoMarker"]);
 export type OpKind = z.infer<typeof OpKindSchema>;
 
+/** Browsable library discriminator: one palette indexes all four. */
+export const LibraryKindSchema = z.enum(["Sample", "Preset", "Plugin", "Project"]);
+export type LibraryKind = z.infer<typeof LibraryKindSchema>;
+
 /** Universal address of one automatable/modulatable parameter. */
 export const ParamAddressSchema = z.object({
   node: z.string(),
@@ -129,4 +133,21 @@ export const OpSchema = z.object({
   value_json: z.string(),
 });
 export type Op = z.infer<typeof OpSchema>;
+
+/** One browsable library entry: sample, preset, plugin, or project. */
+export const LibraryItemSchema = z.object({
+  id: z.string(),
+  kind: LibraryKindSchema,
+  name: z.string(),
+  tags: z.array(z.string()),
+  text: z.string(),
+});
+export type LibraryItem = z.infer<typeof LibraryItemSchema>;
+
+/** One ranked similarity-search hit: item id plus cosine score. */
+export const LibraryHitSchema = z.object({
+  id: z.string(),
+  score: z.number(),
+});
+export type LibraryHit = z.infer<typeof LibraryHitSchema>;
 

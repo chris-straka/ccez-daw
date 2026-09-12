@@ -73,6 +73,12 @@ pub const ENUMS: &[EnumDef] = &[
             "UndoMarker",
         ],
     },
+    // Track J (additive): browser library kinds. Existing entries untouched.
+    EnumDef {
+        name: "LibraryKind",
+        doc: "Browsable library discriminator: one palette indexes all four.",
+        variants: &["Sample", "Preset", "Plugin", "Project"],
+    },
 ];
 
 pub const STRUCTS: &[StructDef] = &[
@@ -189,6 +195,27 @@ pub const STRUCTS: &[StructDef] = &[
             f!("kind", "OpKind", "OpKindSchema"),
             f!("target", F_STRING, Z_STRING),
             f!("value_json", F_STRING, Z_STRING),
+        ],
+    },
+    // Track J (additive): browser library shapes. Appended last so every
+    // previously emitted line renders byte-identically.
+    StructDef {
+        name: "LibraryItem",
+        doc: "One browsable library entry: sample, preset, plugin, or project.",
+        fields: &[
+            f!("id", F_STRING, Z_STRING),
+            f!("kind", "LibraryKind", "LibraryKindSchema"),
+            f!("name", F_STRING, Z_STRING),
+            f!("tags", "string[]", "z.array(z.string())"),
+            f!("text", F_STRING, Z_STRING),
+        ],
+    },
+    StructDef {
+        name: "LibraryHit",
+        doc: "One ranked similarity-search hit: item id plus cosine score.",
+        fields: &[
+            f!("id", F_STRING, Z_STRING),
+            f!("score", F_NUMBER, Z_NUMBER),
         ],
     },
 ];

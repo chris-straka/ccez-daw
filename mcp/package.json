@@ -6,7 +6,8 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "bun test",
-    "start": "bun src/index.ts"
+    "start": "bun src/index.ts",
+    "start:http": "bun src/index.ts --http"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1",

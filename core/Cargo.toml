@@ -12,6 +12,12 @@ path = "src/lib.rs"
 name = "typegen"
 path = "src/bin/typegen.rs"
 
+[[bin]]
+name = "plugin-worker"
+path = "src/bin/plugin-worker.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+cpal = "0.15"
+libloading = "0.8"
