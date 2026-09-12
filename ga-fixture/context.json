@@ -1,0 +1,486 @@
+{
+  "banks": [
+    {
+      "events": [
+        {
+          "clip_ids": [
+            "clip_step_a",
+            "clip_step_b"
+          ],
+          "cooldown_ms": 90,
+          "id": "player.footstep",
+          "max_polyphony": 4,
+          "name": "Footstep",
+          "pitch_random": 1.0,
+          "rtpc": [
+            {
+              "max": 1.0,
+              "min": 0.5,
+              "param": "threat",
+              "target_node": "bus_sfx",
+              "target_param": "volume"
+            }
+          ],
+          "volume": 0.7,
+          "volume_random": 0.05
+        },
+        {
+          "clip_ids": [
+            "clip_swing_a",
+            "clip_swing_b"
+          ],
+          "cooldown_ms": 120,
+          "id": "sword.swing",
+          "max_polyphony": 3,
+          "name": "Sword Swing",
+          "pitch_random": 2.0,
+          "rtpc": [
+            {
+              "max": 1.0,
+              "min": 0.6,
+              "param": "threat",
+              "target_node": "bus_sfx",
+              "target_param": "volume"
+            }
+          ],
+          "volume": 0.85,
+          "volume_random": 0.08
+        },
+        {
+          "clip_ids": [
+            "clip_ui_a"
+          ],
+          "cooldown_ms": 50,
+          "id": "ui.confirm",
+          "max_polyphony": 4,
+          "name": "UI Confirm",
+          "pitch_random": 0.5,
+          "rtpc": [],
+          "volume": 0.6,
+          "volume_random": 0.03
+        },
+        {
+          "clip_ids": [
+            "clip_gal_a",
+            "clip_gal_b"
+          ],
+          "cooldown_ms": 140,
+          "id": "horse.gallop",
+          "max_polyphony": 2,
+          "name": "Horse Gallop",
+          "pitch_random": 1.5,
+          "rtpc": [
+            {
+              "max": 1.0,
+              "min": 0.4,
+              "param": "mounted",
+              "target_node": "trk_sfx",
+              "target_param": "volume"
+            }
+          ],
+          "volume": 0.75,
+          "volume_random": 0.06
+        }
+      ],
+      "id": "bank_tp",
+      "name": "TP Demo Bank",
+      "schema_version": 1
+    }
+  ],
+  "cues": [
+    {
+      "default_state": "field",
+      "id": "cue_field",
+      "layers": [
+        {
+          "clip_ids": [
+            "clip_field_bed"
+          ],
+          "id": "bed",
+          "name": "Field Bed",
+          "states": [],
+          "volume": 0.8
+        },
+        {
+          "clip_ids": [
+            "clip_field_strings"
+          ],
+          "id": "strings",
+          "name": "Field Strings",
+          "states": [
+            "field",
+            "village"
+          ],
+          "volume": 0.75
+        },
+        {
+          "clip_ids": [
+            "clip_field_drums"
+          ],
+          "id": "drums",
+          "name": "Combat Drums",
+          "states": [
+            "combat"
+          ],
+          "volume": 0.9
+        },
+        {
+          "clip_ids": [
+            "clip_field_night"
+          ],
+          "id": "nightpad",
+          "name": "Night Pad",
+          "states": [
+            "night"
+          ],
+          "volume": 0.7
+        }
+      ],
+      "name": "Field",
+      "schema_version": 1,
+      "tempo": 104.0,
+      "transitions": [
+        {
+          "fade_beats": 2.0,
+          "from_state": "field",
+          "id": "t_field_combat",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "combat"
+        },
+        {
+          "fade_beats": 4.0,
+          "from_state": "combat",
+          "id": "t_combat_field",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "field"
+        },
+        {
+          "fade_beats": 2.0,
+          "from_state": "night",
+          "id": "t_night_field",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "field"
+        },
+        {
+          "fade_beats": 0.0,
+          "from_state": "field",
+          "id": "t_field_boss",
+          "kind": "Stinger",
+          "stinger_cue_id": "cue_stinger_boss",
+          "to_state": "boss"
+        }
+      ]
+    },
+    {
+      "default_state": "boss",
+      "id": "cue_boss",
+      "layers": [
+        {
+          "clip_ids": [
+            "clip_boss_bed"
+          ],
+          "id": "bed",
+          "name": "Boss Bed",
+          "states": [],
+          "volume": 0.8
+        },
+        {
+          "clip_ids": [
+            "clip_boss_brass"
+          ],
+          "id": "brass",
+          "name": "Boss Brass",
+          "states": [
+            "boss"
+          ],
+          "volume": 0.85
+        },
+        {
+          "clip_ids": [
+            "clip_boss_choir"
+          ],
+          "id": "choir",
+          "name": "Boss Choir",
+          "states": [
+            "boss"
+          ],
+          "volume": 0.7
+        }
+      ],
+      "name": "Boss",
+      "schema_version": 1,
+      "tempo": 132.0,
+      "transitions": [
+        {
+          "fade_beats": 4.0,
+          "from_state": "boss",
+          "id": "t_boss_field",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "field"
+        }
+      ]
+    },
+    {
+      "default_state": "boss",
+      "id": "cue_stinger_boss",
+      "layers": [
+        {
+          "clip_ids": [
+            "clip_stinger_hit"
+          ],
+          "id": "hit",
+          "name": "Stinger Hit",
+          "states": [
+            "boss"
+          ],
+          "volume": 0.9
+        }
+      ],
+      "name": "Boss Stinger",
+      "schema_version": 1,
+      "tempo": 132.0,
+      "transitions": []
+    }
+  ],
+  "params": [
+    {
+      "default": 0.0,
+      "id": "threat",
+      "label": "Threat",
+      "max": 1.0,
+      "min": 0.0,
+      "unit": ""
+    },
+    {
+      "default": 12.0,
+      "id": "time_of_day",
+      "label": "Time of day",
+      "max": 24.0,
+      "min": 0.0,
+      "unit": "h"
+    },
+    {
+      "default": 0.0,
+      "id": "health_low",
+      "label": "Health low",
+      "max": 1.0,
+      "min": 0.0,
+      "unit": ""
+    },
+    {
+      "default": 0.0,
+      "id": "mounted",
+      "label": "Mounted",
+      "max": 1.0,
+      "min": 0.0,
+      "unit": ""
+    }
+  ],
+  "project": {
+    "automation": [],
+    "clips": [
+      {
+        "id": "clip_field_bed",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_field_bed",
+        "source": "samples/clip_field_bed.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_field_strings",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_field_strings",
+        "source": "samples/clip_field_strings.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_field_drums",
+        "kind": "Audio",
+        "length_beats": 4.0,
+        "name": "clip_field_drums",
+        "source": "samples/clip_field_drums.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_field_night",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_field_night",
+        "source": "samples/clip_field_night.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_boss_bed",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_boss_bed",
+        "source": "samples/clip_boss_bed.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_boss_brass",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_boss_brass",
+        "source": "samples/clip_boss_brass.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_boss_choir",
+        "kind": "Audio",
+        "length_beats": 4.0,
+        "name": "clip_boss_choir",
+        "source": "samples/clip_boss_choir.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_stinger_hit",
+        "kind": "Audio",
+        "length_beats": 2.0,
+        "name": "clip_stinger_hit",
+        "source": "samples/clip_stinger_hit.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_step_a",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_step_a",
+        "source": "samples/clip_step_a.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_step_b",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_step_b",
+        "source": "samples/clip_step_b.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_swing_a",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_swing_a",
+        "source": "samples/clip_swing_a.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_swing_b",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_swing_b",
+        "source": "samples/clip_swing_b.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_ui_a",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_ui_a",
+        "source": "samples/clip_ui_a.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_gal_a",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_gal_a",
+        "source": "samples/clip_gal_a.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      },
+      {
+        "id": "clip_gal_b",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_gal_b",
+        "source": "samples/clip_gal_b.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_music"
+      }
+    ],
+    "devices": [
+      {
+        "id": "bus_sfx",
+        "kind": "Bus",
+        "name": "SFX bus",
+        "params": [
+          {
+            "default": 0.8,
+            "id": "volume",
+            "label": "Volume",
+            "max": 1.0,
+            "min": 0.0,
+            "unit": "",
+            "value": 0.8
+          }
+        ]
+      },
+      {
+        "id": "bus_music",
+        "kind": "Bus",
+        "name": "Music bus",
+        "params": [
+          {
+            "default": 0.8,
+            "id": "volume",
+            "label": "Volume",
+            "max": 1.0,
+            "min": 0.0,
+            "unit": "",
+            "value": 0.8
+          }
+        ]
+      }
+    ],
+    "id": "proj_tp_demo",
+    "name": "TP Demo",
+    "routing": [],
+    "schema_version": 0,
+    "tempo": 120.0,
+    "time_sig_den": 4,
+    "time_sig_num": 4,
+    "tracks": [
+      {
+        "clip_ids": [],
+        "device_ids": [],
+        "id": "trk_music",
+        "muted": false,
+        "name": "Music",
+        "pan": 0.0,
+        "solo": false,
+        "volume": 0.8
+      },
+      {
+        "clip_ids": [],
+        "device_ids": [],
+        "id": "trk_sfx",
+        "muted": false,
+        "name": "SFX",
+        "pan": 0.0,
+        "solo": false,
+        "volume": 0.8
+      }
+    ]
+  }
+}

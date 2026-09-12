@@ -1,0 +1,29 @@
+{
+  "cue_id": "cue_overworld",
+  "tempo": 100.0,
+  "default_state": "field",
+  "notes": "Title-side copy of the DAW AdaptiveCue: tempo, per-layer state lists, transitions. The v1 manifest does not ship this; keep it in sync with the DAW cue and the loader cross-checks layer ids against the manifest.",
+  "layers": [
+    {"id": "bed", "states": [], "volume": 0.8},
+    {"id": "drums", "states": ["combat", "boss"], "volume": 0.9},
+    {"id": "drone", "states": ["dungeon"], "volume": 0.7},
+    {"id": "brass", "states": ["boss"], "volume": 0.9},
+    {"id": "pad", "states": ["village", "night"], "volume": 0.7},
+    {"id": "bell", "states": ["night"], "volume": 0.6}
+  ],
+  "transitions": [
+    {"id": "t_field_combat", "from": "field", "to": "combat", "kind": "Fade", "fade_beats": 2.0},
+    {"id": "t_combat_field", "from": "combat", "to": "field", "kind": "Fade", "fade_beats": 2.0},
+    {"id": "t_field_dungeon", "from": "field", "to": "dungeon", "kind": "Fade", "fade_beats": 4.0},
+    {"id": "t_dungeon_field", "from": "dungeon", "to": "field", "kind": "Fade", "fade_beats": 4.0},
+    {"id": "t_any_boss", "from": "field", "to": "boss", "kind": "Fade", "fade_beats": 1.0},
+    {"id": "t_field_village", "from": "field", "to": "village", "kind": "Fade", "fade_beats": 2.0},
+    {"id": "t_field_night", "from": "field", "to": "night", "kind": "Fade", "fade_beats": 4.0}
+  ],
+  "params": [
+    {"id": "threat", "min": 0.0, "max": 1.0, "default": 0.0},
+    {"id": "time_of_day", "min": 0.0, "max": 24.0, "default": 12.0},
+    {"id": "health_low", "min": 0.0, "max": 1.0, "default": 0.0},
+    {"id": "mounted", "min": 0.0, "max": 1.0, "default": 0.0}
+  ]
+}

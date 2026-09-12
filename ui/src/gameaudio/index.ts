@@ -32,6 +32,7 @@ export type { CueValidationOptions } from "./cues";
 // helper is re-exported under an alias so both stay reachable.
 export * from "./sample";
 export * from "./export";
+export * from "./batch";
 export {
   addTimelineEntry,
   advanceTransport,
@@ -54,6 +55,11 @@ export {
   valueFor,
 } from "./model";
 export { transitionFor as simulatorTransitionFor } from "./model";
+// S-2 loop-seam audition: gapless preview + click meter + waiver helpers.
+export { default as LoopAudition } from "./loopAudition";
+export * from "./loop";
+// S-1 fixture: TP-like demo package authoring builders + validator mirror.
+export * from "./fixture";
 export type {
   FireRecord,
   FireResult,

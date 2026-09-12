@@ -41,6 +41,7 @@ use crate::game_audio::{
     AdaptiveCue, ExportPackage, ExportStem, GameStateParam, SfxBank, StemKind, TransitionKind,
     GAME_AUDIO_SCHEMA_VERSION,
 };
+use crate::loopseam;
 use crate::model::Project;
 use crate::sfx::SeededRng;
 
@@ -601,16 +602,21 @@ fn rerender_stem_bytes(
 ///    stem lengths match their beat loop points at the cue tempo.
 /// 5. Determinism: the first resolvable stem re-renders byte-identical under
 ///    `options.seed`.
+/// 6. Loop seam (S-2): every music-loop stem's boundary discontinuity
+///    `|last - first|` must stay under `loop_opts.threshold`, unless the
+///    stem is waived with a reason; stale waivers fail. One-shots are exempt
+///    (they never loop).
 ///
 /// `options.sample_rate` is the rate the package was rendered at (production
 /// packages: [`EXPORT_SAMPLE_RATE`); `options.seed` the export seed.
-pub fn validate_package(
+pub fn validate_package_full(
     dir: &Path,
     project: &Project,
     cues: &[AdaptiveCue],
     banks: &[SfxBank],
     params: &[GameStateParam],
     options: ExportOptions,
+    loop_opts: &loopseam::LoopSeamOptions,
 ) -> ValidationReport {
     let mut errors = Vec::new();
     let manifest = match read_manifest(dir) {
@@ -843,7 +849,57 @@ pub fn validate_package(
         }
     }
 
+    // Rule 6 (S-2 loop seam): every music-loop stem must meet at its
+    // boundary — a step above threshold is a click the game would loop
+    // audibly. One-shots never loop, so they are exempt. Waived stems pass
+    // by human decision; stale waivers fail loudly.
+    if loop_opts.is_enabled() {
+        let stem_paths: HashSet<String> = manifest.stems.iter().map(|s| s.path.clone()).collect();
+        errors.extend(loopseam::stale_waiver_errors(&loop_opts.waivers, &stem_paths));
+        for entry in &manifest.stems {
+            if entry.kind != StemKind::MusicLayer {
+                continue;
+            }
+            if loop_opts.waivers.contains_key(&entry.path) {
+                continue;
+            }
+            let bytes = match std::fs::read(dir.join(&entry.path)) {
+                Ok(b) => b,
+                Err(_) => continue, // missing file already reported above
+            };
+            let decoded = match decode_wav(&bytes) {
+                Ok(d) => d,
+                Err(_) => continue, // unparseable WAV already reported above
+            };
+            if let Some(err) = loopseam::check_stem(&entry.path, &decoded.samples, loop_opts) {
+                errors.push(err);
+            }
+        }
+    }
+
     ValidationReport { errors }
+}
+
+/// Validate with the default loop-seam gate (rule 6 on, no waivers).
+/// Packages rendered by [`build_package`] pass: whole-beat reference tones
+/// with edge fades wrap near zero, far under the threshold.
+pub fn validate_package(
+    dir: &Path,
+    project: &Project,
+    cues: &[AdaptiveCue],
+    banks: &[SfxBank],
+    params: &[GameStateParam],
+    options: ExportOptions,
+) -> ValidationReport {
+    validate_package_full(
+        dir,
+        project,
+        cues,
+        banks,
+        params,
+        options,
+        &loopseam::LoopSeamOptions::default(),
+    )
 }
 
 #[cfg(test)]
@@ -1307,6 +1363,96 @@ mod tests {
             options(),
         );
         assert!(!report.is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// S-2 validation: a clean package passes the seam gate, a seeded click
+    /// in one music stem is rejected, and a reasoned waiver lets it ship.
+    #[test]
+    fn rule6_seeded_click_rejected_clean_passes_waiver_excuses() {
+        use std::collections::HashMap;
+
+        fn click_tail(path: &std::path::Path, seed: u64) {
+            let bytes = std::fs::read(path).expect("read stem");
+            let mut stem = decode_wav(&bytes).expect("decode stem");
+            // Seeded jump over the last 32 samples: deterministic per seed.
+            let mut state = seed;
+            let mut next = || {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                ((state >> 33) as f64) / (u32::MAX as f64)
+            };
+            let start = stem.samples.len().saturating_sub(32);
+            for s in &mut stem.samples[start..] {
+                *s += (next() as f32 * 2.0 - 1.0) * 0.3;
+            }
+            // Pin the final sample so the seam step reads 0.3 exactly.
+            let first = stem.samples.first().copied().unwrap_or(0.0);
+            if let Some(last) = stem.samples.last_mut() {
+                *last = first + 0.3;
+            }
+            std::fs::write(path, encode_wav(&stem)).expect("rewrite stem");
+        }
+
+        let dir = scratch("rule6");
+        let _ = std::fs::remove_dir_all(&dir);
+        let project = demo_project();
+        let cues = vec![demo_cue()];
+        let banks = vec![demo_bank()];
+        let params = demo_params();
+        clean_package(&dir, options());
+
+        // Clean stems pass the default gate (rule 6 on, no waivers).
+        let report = validate_package(&dir, &project, &cues, &banks, &params, options());
+        assert!(report.is_ok(), "clean loop must pass: {:?}", report.errors);
+
+        // Seeded click in the bed stem: rejected with fix-or-waive guidance.
+        let bed = dir.join("stems/cue_fight_bed.wav");
+        click_tail(&bed, 2026);
+        let report = validate_package(&dir, &project, &cues, &banks, &params, options());
+        assert!(!report.is_ok(), "seeded click must be rejected");
+        let err = report
+            .errors
+            .iter()
+            .find(|e| e.contains("cue_fight_bed.wav") && e.contains("loop seam"))
+            .expect("seam error names the stem");
+        assert!(err.contains("Fix:"), "{err}");
+        assert!(err.contains("--waive"), "{err}");
+
+        // Same click with a reasoned waiver: the seam error is gone. (The
+        // tamper also trips rule 5 determinism — expected, since we edited
+        // the file post-export; a genuinely rendered click would re-render
+        // identically and ship clean.)
+        let mut waivers = HashMap::new();
+        waivers.insert(
+            "stems/cue_fight_bed.wav".to_string(),
+            "test waiver: intentional splice".to_string(),
+        );
+        let loop_opts = crate::loopseam::LoopSeamOptions {
+            threshold: crate::loopseam::DEFAULT_CLICK_THRESHOLD,
+            waivers,
+        };
+        let report = validate_package_full(&dir, &project, &cues, &banks, &params, options(), &loop_opts);
+        assert!(
+            report.errors.iter().all(|e| !e.contains("loop seam")),
+            "waived click must clear the seam gate: {:?}",
+            report.errors
+        );
+
+        // A waiver for a stem that does not exist is stale, not silent.
+        let mut waivers = HashMap::new();
+        waivers.insert("stems/ghost.wav".to_string(), "stale".to_string());
+        let loop_opts = crate::loopseam::LoopSeamOptions {
+            threshold: crate::loopseam::DEFAULT_CLICK_THRESHOLD,
+            waivers,
+        };
+        let report = validate_package_full(&dir, &project, &cues, &banks, &params, options(), &loop_opts);
+        assert!(
+            report.errors.iter().any(|e| e.contains("stems/ghost.wav")),
+            "{:?}",
+            report.errors
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

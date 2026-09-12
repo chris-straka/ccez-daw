@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "name": "demo-tp-v1",
+  "cue_ids": [
+    "cue_field",
+    "cue_boss",
+    "cue_stinger_boss"
+  ],
+  "bank_ids": [
+    "bank_tp"
+  ],
+  "stems": [
+    {
+      "path": "stems/cue_field_bed.wav",
+      "source_id": "cue_field",
+      "source_layer_id": "bed",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "stems/cue_field_strings.wav",
+      "source_id": "cue_field",
+      "source_layer_id": "strings",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "stems/cue_field_drums.wav",
+      "source_id": "cue_field",
+      "source_layer_id": "drums",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 4.0
+    },
+    {
+      "path": "stems/cue_field_nightpad.wav",
+      "source_id": "cue_field",
+      "source_layer_id": "nightpad",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "stems/cue_boss_bed.wav",
+      "source_id": "cue_boss",
+      "source_layer_id": "bed",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "stems/cue_boss_brass.wav",
+      "source_id": "cue_boss",
+      "source_layer_id": "brass",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "stems/cue_boss_choir.wav",
+      "source_id": "cue_boss",
+      "source_layer_id": "choir",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 4.0
+    },
+    {
+      "path": "stems/cue_stinger_boss_hit.wav",
+      "source_id": "cue_stinger_boss",
+      "source_layer_id": "hit",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 2.0
+    },
+    {
+      "path": "sfx/player.footstep_0.wav",
+      "source_id": "player.footstep",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/player.footstep_1.wav",
+      "source_id": "player.footstep",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/sword.swing_0.wav",
+      "source_id": "sword.swing",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/sword.swing_1.wav",
+      "source_id": "sword.swing",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/ui.confirm_0.wav",
+      "source_id": "ui.confirm",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/horse.gallop_0.wav",
+      "source_id": "horse.gallop",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/horse.gallop_1.wav",
+      "source_id": "horse.gallop",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    }
+  ],
+  "event_bank_path": "bank_bank_tp.json",
+  "validator_version": "1"
+}

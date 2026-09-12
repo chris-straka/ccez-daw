@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "name": "overworld-v1",
+  "cue_ids": [
+    "cue_overworld"
+  ],
+  "bank_ids": [
+    "bank_adventure"
+  ],
+  "stems": [
+    {
+      "path": "stems/cue_overworld_bed.wav",
+      "source_id": "cue_overworld",
+      "source_layer_id": "bed",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "stems/cue_overworld_drums.wav",
+      "source_id": "cue_overworld",
+      "source_layer_id": "drums",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 4.0
+    },
+    {
+      "path": "stems/cue_overworld_drone.wav",
+      "source_id": "cue_overworld",
+      "source_layer_id": "drone",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "stems/cue_overworld_brass.wav",
+      "source_id": "cue_overworld",
+      "source_layer_id": "brass",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 4.0
+    },
+    {
+      "path": "stems/cue_overworld_pad.wav",
+      "source_id": "cue_overworld",
+      "source_layer_id": "pad",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "stems/cue_overworld_bell.wav",
+      "source_id": "cue_overworld",
+      "source_layer_id": "bell",
+      "kind": "MusicLayer",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 8.0
+    },
+    {
+      "path": "sfx/player.footstep_0.wav",
+      "source_id": "player.footstep",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/player.footstep_1.wav",
+      "source_id": "player.footstep",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/sword.swing_0.wav",
+      "source_id": "sword.swing",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/sword.swing_1.wav",
+      "source_id": "sword.swing",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/ui.click_0.wav",
+      "source_id": "ui.click",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    },
+    {
+      "path": "sfx/horse.gallop_0.wav",
+      "source_id": "horse.gallop",
+      "source_layer_id": "",
+      "kind": "SfxClip",
+      "loop_start_beats": 0.0,
+      "loop_end_beats": 0.0
+    }
+  ],
+  "event_bank_path": "bank_bank_adventure.json",
+  "validator_version": "1"
+}

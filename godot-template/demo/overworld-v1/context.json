@@ -1,0 +1,389 @@
+{
+  "banks": [
+    {
+      "events": [
+        {
+          "clip_ids": [
+            "clip_step_a",
+            "clip_step_b"
+          ],
+          "cooldown_ms": 90,
+          "id": "player.footstep",
+          "max_polyphony": 4,
+          "name": "Footstep",
+          "pitch_random": 1.0,
+          "rtpc": [
+            {
+              "max": 1.0,
+              "min": 0.5,
+              "param": "threat",
+              "target_node": "bus_sfx",
+              "target_param": "volume"
+            }
+          ],
+          "volume": 0.7,
+          "volume_random": 0.05
+        },
+        {
+          "clip_ids": [
+            "clip_swing_a",
+            "clip_swing_b"
+          ],
+          "cooldown_ms": 120,
+          "id": "sword.swing",
+          "max_polyphony": 3,
+          "name": "Sword swing",
+          "pitch_random": 2.0,
+          "rtpc": [],
+          "volume": 0.8,
+          "volume_random": 0.05
+        },
+        {
+          "clip_ids": [
+            "clip_click"
+          ],
+          "cooldown_ms": 30,
+          "id": "ui.click",
+          "max_polyphony": 2,
+          "name": "UI click",
+          "pitch_random": 0.0,
+          "rtpc": [],
+          "volume": 0.6,
+          "volume_random": 0.0
+        },
+        {
+          "clip_ids": [
+            "clip_gallop"
+          ],
+          "cooldown_ms": 200,
+          "id": "horse.gallop",
+          "max_polyphony": 2,
+          "name": "Gallop",
+          "pitch_random": 1.0,
+          "rtpc": [
+            {
+              "max": 1.0,
+              "min": 0.3,
+              "param": "mounted",
+              "target_node": "bus_sfx",
+              "target_param": "volume"
+            }
+          ],
+          "volume": 0.75,
+          "volume_random": 0.05
+        }
+      ],
+      "id": "bank_adventure",
+      "name": "Adventure",
+      "schema_version": 1
+    }
+  ],
+  "cues": [
+    {
+      "default_state": "field",
+      "id": "cue_overworld",
+      "layers": [
+        {
+          "clip_ids": [
+            "clip_bed"
+          ],
+          "id": "bed",
+          "name": "Bed",
+          "states": [],
+          "volume": 0.8
+        },
+        {
+          "clip_ids": [
+            "clip_drums"
+          ],
+          "id": "drums",
+          "name": "Drums",
+          "states": [
+            "combat",
+            "boss"
+          ],
+          "volume": 0.9
+        },
+        {
+          "clip_ids": [
+            "clip_drone"
+          ],
+          "id": "drone",
+          "name": "Dungeon drone",
+          "states": [
+            "dungeon"
+          ],
+          "volume": 0.7
+        },
+        {
+          "clip_ids": [
+            "clip_brass"
+          ],
+          "id": "brass",
+          "name": "Boss brass",
+          "states": [
+            "boss"
+          ],
+          "volume": 0.9
+        },
+        {
+          "clip_ids": [
+            "clip_pad"
+          ],
+          "id": "pad",
+          "name": "Calm pad",
+          "states": [
+            "village",
+            "night"
+          ],
+          "volume": 0.7
+        },
+        {
+          "clip_ids": [
+            "clip_bell"
+          ],
+          "id": "bell",
+          "name": "Night bell",
+          "states": [
+            "night"
+          ],
+          "volume": 0.6
+        }
+      ],
+      "name": "Overworld",
+      "schema_version": 1,
+      "tempo": 100.0,
+      "transitions": [
+        {
+          "fade_beats": 2.0,
+          "from_state": "field",
+          "id": "t_field_combat",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "combat"
+        },
+        {
+          "fade_beats": 2.0,
+          "from_state": "combat",
+          "id": "t_combat_field",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "field"
+        },
+        {
+          "fade_beats": 4.0,
+          "from_state": "field",
+          "id": "t_field_dungeon",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "dungeon"
+        },
+        {
+          "fade_beats": 4.0,
+          "from_state": "dungeon",
+          "id": "t_dungeon_field",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "field"
+        },
+        {
+          "fade_beats": 1.0,
+          "from_state": "field",
+          "id": "t_any_boss",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "boss"
+        },
+        {
+          "fade_beats": 2.0,
+          "from_state": "field",
+          "id": "t_field_village",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "village"
+        },
+        {
+          "fade_beats": 4.0,
+          "from_state": "field",
+          "id": "t_field_night",
+          "kind": "Fade",
+          "stinger_cue_id": "",
+          "to_state": "night"
+        }
+      ]
+    }
+  ],
+  "params": [
+    {
+      "default": 0.0,
+      "id": "threat",
+      "label": "Threat",
+      "max": 1.0,
+      "min": 0.0,
+      "unit": ""
+    },
+    {
+      "default": 12.0,
+      "id": "time_of_day",
+      "label": "Time of day",
+      "max": 24.0,
+      "min": 0.0,
+      "unit": "h"
+    },
+    {
+      "default": 0.0,
+      "id": "health_low",
+      "label": "Low health",
+      "max": 1.0,
+      "min": 0.0,
+      "unit": ""
+    },
+    {
+      "default": 0.0,
+      "id": "mounted",
+      "label": "Mounted",
+      "max": 1.0,
+      "min": 0.0,
+      "unit": ""
+    }
+  ],
+  "project": {
+    "automation": [],
+    "clips": [
+      {
+        "id": "clip_bed",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_bed",
+        "source": "samples/clip_bed.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_drums",
+        "kind": "Audio",
+        "length_beats": 4.0,
+        "name": "clip_drums",
+        "source": "samples/clip_drums.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_drone",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_drone",
+        "source": "samples/clip_drone.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_brass",
+        "kind": "Audio",
+        "length_beats": 4.0,
+        "name": "clip_brass",
+        "source": "samples/clip_brass.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_pad",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_pad",
+        "source": "samples/clip_pad.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_bell",
+        "kind": "Audio",
+        "length_beats": 8.0,
+        "name": "clip_bell",
+        "source": "samples/clip_bell.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_step_a",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_step_a",
+        "source": "samples/clip_step_a.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_step_b",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_step_b",
+        "source": "samples/clip_step_b.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_swing_a",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_swing_a",
+        "source": "samples/clip_swing_a.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_swing_b",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_swing_b",
+        "source": "samples/clip_swing_b.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_click",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_click",
+        "source": "samples/clip_click.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      },
+      {
+        "id": "clip_gallop",
+        "kind": "Audio",
+        "length_beats": 1.0,
+        "name": "clip_gallop",
+        "source": "samples/clip_gallop.wav",
+        "start_beats": 0.0,
+        "track_id": "trk_1"
+      }
+    ],
+    "devices": [
+      {
+        "id": "bus_sfx",
+        "kind": "Bus",
+        "name": "SFX bus",
+        "params": [
+          {
+            "default": 0.8,
+            "id": "volume",
+            "label": "Volume",
+            "max": 1.0,
+            "min": 0.0,
+            "unit": "",
+            "value": 0.8
+          }
+        ]
+      }
+    ],
+    "id": "proj_overworld",
+    "name": "Overworld Demo",
+    "routing": [],
+    "schema_version": 0,
+    "tempo": 100.0,
+    "time_sig_den": 4,
+    "time_sig_num": 4,
+    "tracks": []
+  }
+}

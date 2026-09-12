@@ -17,16 +17,25 @@
 //! [`true_peak`] (4x-oversampled peak), [`spectrum`] (Hann-windowed FFT
 //! tap), [`tap`] (the combined graph tap + non-blocking reader),
 //! [`export`] (Track Q: loudness-normalized bounce target — integrated LUFS
-//! + true-peak ceiling over the existing WAV stem codec).
+//! + true-peak ceiling over the existing WAV stem codec),
+//! [`conform`](conform) (Track S-3: platform preset table + one-click
+//! conform + report artifact, measured with [`export`]).
 //! Reads the frozen `Project` routing only via buffer names — adds no new
 //! IPC or project-schema surface, so the typegen drift gate stays green.
 
+pub mod conform;
 pub mod export;
 pub mod lufs;
 pub mod spectrum;
 pub mod tap;
 pub mod true_peak;
 
+pub use conform::{
+    conform_mix_to_preset, conform_to_preset, measure_stem, preset_by_id, preview_conform_gain,
+    ConformancePreset, ConformanceReport, ConformedBounce, ConformedStem, CONFORM_CEILING_SLACK_DB,
+    CONFORM_TOLERANCE_LU, PRESETS, PRESET_MOBILE, PRESET_PC, PRESET_PLAYSTATION, PRESET_SWITCH,
+    PRESET_XBOX, REPORT_SUFFIX,
+};
 pub use export::{LoudnessReport, LoudnessTarget, NormalizedBounce};
 pub use lufs::LufsMeter;
 pub use spectrum::{dominant_freq, spectrum_magnitudes, SharedRing};

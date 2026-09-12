@@ -1,0 +1,12 @@
+[package]
+name = "ccez-fixture"
+version = "0.1.0"
+edition = "2021"
+description = "S-1 fixture builder: authors the demo TP-like GA-4 export package through the frozen export path"
+
+[workspace]
+
+[dependencies]
+ccez-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

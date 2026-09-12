@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "id": "bank_tp",
+  "name": "TP Demo Bank",
+  "events": [
+    {
+      "id": "player.footstep",
+      "name": "Footstep",
+      "clip_ids": [
+        "clip_step_a",
+        "clip_step_b"
+      ],
+      "volume": 0.7,
+      "volume_random": 0.05,
+      "pitch_random": 1.0,
+      "cooldown_ms": 90,
+      "max_polyphony": 4,
+      "rtpc": [
+        {
+          "param": "threat",
+          "target_node": "bus_sfx",
+          "target_param": "volume",
+          "min": 0.5,
+          "max": 1.0
+        }
+      ]
+    },
+    {
+      "id": "sword.swing",
+      "name": "Sword Swing",
+      "clip_ids": [
+        "clip_swing_a",
+        "clip_swing_b"
+      ],
+      "volume": 0.85,
+      "volume_random": 0.08,
+      "pitch_random": 2.0,
+      "cooldown_ms": 120,
+      "max_polyphony": 3,
+      "rtpc": [
+        {
+          "param": "threat",
+          "target_node": "bus_sfx",
+          "target_param": "volume",
+          "min": 0.6,
+          "max": 1.0
+        }
+      ]
+    },
+    {
+      "id": "ui.confirm",
+      "name": "UI Confirm",
+      "clip_ids": [
+        "clip_ui_a"
+      ],
+      "volume": 0.6,
+      "volume_random": 0.03,
+      "pitch_random": 0.5,
+      "cooldown_ms": 50,
+      "max_polyphony": 4,
+      "rtpc": []
+    },
+    {
+      "id": "horse.gallop",
+      "name": "Horse Gallop",
+      "clip_ids": [
+        "clip_gal_a",
+        "clip_gal_b"
+      ],
+      "volume": 0.75,
+      "volume_random": 0.06,
+      "pitch_random": 1.5,
+      "cooldown_ms": 140,
+      "max_polyphony": 2,
+      "rtpc": [
+        {
+          "param": "mounted",
+          "target_node": "trk_sfx",
+          "target_param": "volume",
+          "min": 0.4,
+          "max": 1.0
+        }
+      ]
+    }
+  ]
+}

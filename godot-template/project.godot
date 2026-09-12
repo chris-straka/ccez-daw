@@ -1,0 +1,24 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="CCEZ Overworld Audio Demo"
+config/description="Playback-layer template for a CCEZ GA-4 export package: bank-JSON loader, crossfaded music layers, RTPC SFX."
+run/main_scene="res://demo/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[audio]
+
+driver/enable_input=false
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
