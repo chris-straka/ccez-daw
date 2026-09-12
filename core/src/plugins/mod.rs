@@ -16,6 +16,8 @@
 //! - [`worker`]: the child side of the wire protocol plus a built-in mock
 //!   gain plugin. Real `.clap` binaries attach behind the same protocol
 //!   (see the `ClapUnimplemented` seam in [`host`]).
+//! - [`ara`]: the Track Q ARA host seam. Unimplemented phase-2 hooks only
+//!   (`AraHost` refuses every operation); see `docs/notes/q-formats.md`.
 //! - [`chain`](crate::plugins::chain): sibling Track C surface —
 //!   device-chain conventions (oversampling flag, wet/dry, chain
 //!   snapshots) on the frozen `Node`/`Param` shapes. Untouched by this
@@ -24,6 +26,7 @@
 //! Reads the frozen `Node` / `Param` / `Track` types only — adds no IPC or
 //! project-schema surface, so the typegen drift gate is unaffected.
 
+pub mod ara;
 pub mod au;
 pub mod chain;
 pub mod host;
