@@ -9,3 +9,4 @@ ui/dist/
 mcp/dist/
 ui/test-results/
 ui/playwright-report/
+.agents/memory/.muse-memory.lock
