@@ -719,8 +719,22 @@ impl DriftMonitor {
 pub enum StripTool {
     /// `ffmpeg` at this binary path.
     Ffmpeg(String),
+    /// `ffmpeg` decoded, `tiny-codec` encoded the JPEGs (binary path shown).
+    TinyCodec(String),
     /// No usable `ffmpeg`: every frame is a layout placeholder.
     Placeholder(String),
+}
+
+/// Who JPEG-encodes strip frames. `ffmpeg` writes the `.jpg` itself;
+/// [`StripJpeg::TinyCodec`] decodes a raw frame with `ffmpeg` and encodes
+/// the JPEG with `tiny-codec` (q72, 4:2:0, optimized Huffman) instead.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StripJpeg {
+    /// `ffmpeg -q:v 4` writes the JPEG (default, historical behavior).
+    #[default]
+    Ffmpeg,
+    /// Raw frame via `ffmpeg`, JPEG via `tiny-codec`.
+    TinyCodec,
 }
 
 /// One filmstrip cell: a JPEG on disk, or a placeholder the lane renders as
@@ -779,6 +793,8 @@ pub struct ThumbStripRequest {
     /// `ffmpeg` binary: explicit path > `$CCEZ_VIDEO_FFMPEG` > `PATH`.
     /// `None` = auto-detect. An unusable value degrades to placeholders.
     pub ffmpeg_bin: Option<String>,
+    /// Who JPEG-encodes the frames. Default [`StripJpeg::Ffmpeg`].
+    pub jpeg: StripJpeg,
     /// Where to write JPEGs. Default: a fresh `ccez-video-thumbs-*` temp dir.
     pub out_dir: Option<PathBuf>,
 }
@@ -792,6 +808,7 @@ impl ThumbStripRequest {
             positions_seconds: None,
             duration_hint_seconds: None,
             ffmpeg_bin: None,
+            jpeg: StripJpeg::Ffmpeg,
             out_dir: None,
         }
     }
@@ -872,6 +889,60 @@ fn strip_out_dir(req: &ThumbStripRequest) -> Option<PathBuf> {
     }
 }
 
+/// Encode one strip frame with `tiny-codec`: q72, 4:2:0, optimized Huffman
+/// (measured 7–53% smaller than standard tables on stills; thumbnails sit
+/// at the high end of that range). `None` on bad input — never panics, so
+/// the strip job keeps its always-usable contract.
+pub fn thumb_jpeg_tiny_codec(w: u32, h: u32, rgb: &[u8]) -> Option<Vec<u8>> {
+    if w == 0 || h == 0 || rgb.len() != w as usize * h as usize * 3 {
+        return None;
+    }
+    Some(tiny_jfif::mux::encode_rgb_full(
+        w,
+        h,
+        rgb,
+        72,
+        tiny_jfif::mux::Subsampling::Yuv420,
+        tiny_jfif::mux::HuffmanMode::Optimized,
+    ))
+}
+
+/// Extract one frame with `ffmpeg` as raw RGB24 on stdout, then JPEG-encode
+/// it with [`thumb_jpeg_tiny_codec`]. Height is inferred from the byte
+/// count (`scale=W:-2` fixes an even height on the decode side). Any
+/// failure is `false` (placeholder cell).
+fn grab_frame_tiny(ffmpeg: &str, file: &str, at_seconds: f64, width_px: u32, out: &Path) -> bool {
+    let w = width_px.clamp(32, 640);
+    let raw = Command::new(ffmpeg)
+        .args([
+            "-v",
+            "error",
+            "-ss",
+            &format!("{:.3}", at_seconds.max(0.0)),
+            "-i",
+            file,
+            "-frames:v",
+            "1",
+            "-vf",
+            &format!("scale={w}:-2"),
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-",
+        ])
+        .output();
+    let Ok(raw) = raw else { return false };
+    if !raw.status.success() || raw.stdout.len() % (w as usize * 3) != 0 {
+        return false;
+    }
+    let h = (raw.stdout.len() / (w as usize * 3)) as u32;
+    let Some(jpeg) = thumb_jpeg_tiny_codec(w, h, &raw.stdout) else {
+        return false;
+    };
+    std::fs::write(out, jpeg).is_ok() && out.is_file()
+}
+
 /// Extract one frame with `ffmpeg`: seek, decode one picture, scale to
 /// `width_px` wide (even height). Any failure is `None` (placeholder cell).
 fn grab_frame(ffmpeg: &str, file: &str, at_seconds: f64, width_px: u32, out: &Path) -> bool {
@@ -922,7 +993,13 @@ pub fn extract_strip(req: &ThumbStripRequest) -> ThumbStrip {
     let mut any_real = false;
     for (index, at_seconds) in positions.iter().enumerate() {
         let out = dir.join(format!("{stem}_{index:03}.jpg"));
-        if grab_frame(&ffmpeg, &req.file, *at_seconds, req.width_px, &out) {
+        let grabbed = match req.jpeg {
+            StripJpeg::Ffmpeg => grab_frame(&ffmpeg, &req.file, *at_seconds, req.width_px, &out),
+            StripJpeg::TinyCodec => {
+                grab_frame_tiny(&ffmpeg, &req.file, *at_seconds, req.width_px, &out)
+            }
+        };
+        if grabbed {
             any_real = true;
             frames.push(ThumbFrame {
                 index,
@@ -943,7 +1020,10 @@ pub fn extract_strip(req: &ThumbStripRequest) -> ThumbStrip {
         file: req.file.clone(),
         frames,
         tool: if any_real {
-            StripTool::Ffmpeg(ffmpeg)
+            match req.jpeg {
+                StripJpeg::Ffmpeg => StripTool::Ffmpeg(ffmpeg),
+                StripJpeg::TinyCodec => StripTool::TinyCodec(ffmpeg),
+            }
         } else {
             StripTool::Placeholder("ffmpeg decoded no frames".into())
         },
@@ -1231,6 +1311,7 @@ mod tests {
             positions_seconds: None,
             duration_hint_seconds: Some(32.0),
             ffmpeg_bin: Some("/nonexistent/ccez-ffmpeg".to_string()),
+            jpeg: StripJpeg::Ffmpeg,
             out_dir: None,
         };
         assert!(resolve_ffmpeg(req.ffmpeg_bin.as_deref()).is_none());
@@ -1287,6 +1368,7 @@ mod tests {
             positions_seconds: Some(vec![0.2, 1.0, 1.8]),
             duration_hint_seconds: None,
             ffmpeg_bin: None,
+            jpeg: StripJpeg::Ffmpeg,
             out_dir: Some(dir.join("thumbs")),
         };
         let strip = extract_strip(&req);
@@ -1296,6 +1378,99 @@ mod tests {
             assert!(!f.placeholder);
             let p = f.path.as_ref().expect("real frame needs a path");
             assert!(Path::new(p).is_file(), "missing {p}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn strip_request_defaults_to_ffmpeg_engine() {
+        assert_eq!(ThumbStripRequest::new("f.mp4", 8).jpeg, StripJpeg::Ffmpeg);
+        assert_eq!(StripJpeg::default(), StripJpeg::Ffmpeg);
+    }
+
+    fn synthetic_thumb_rgb(w: u32, h: u32) -> Vec<u8> {
+        let mut rgb = vec![0u8; w as usize * h as usize * 3];
+        for y in 0..h {
+            for x in 0..w {
+                let i = (y as usize * w as usize + x as usize) * 3;
+                rgb[i] = (x * 255 / (w - 1).max(1)) as u8;
+                rgb[i + 1] = (y * 255 / (h - 1).max(1)) as u8;
+                rgb[i + 2] = 128;
+            }
+        }
+        rgb
+    }
+
+    #[test]
+    fn tiny_codec_thumb_encodes_synthetic_rgb() {
+        // No ffmpeg needed: the tiny-codec half of the seam stands alone.
+        let (w, h) = (64, 48);
+        let rgb = synthetic_thumb_rgb(w, h);
+        let jpeg = thumb_jpeg_tiny_codec(w, h, &rgb).expect("encodes");
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
+        assert_eq!(&jpeg[jpeg.len() - 2..], &[0xFF, 0xD9]);
+        let (dw, dh, back) = tiny_jfif::demux::decode_jpeg(&jpeg).expect("decodes");
+        assert_eq!((dw, dh), (w, h));
+        let psnr = tiny_jfif::metrics::psnr_luma(w, h, &rgb, &back);
+        assert!(psnr >= 40.0, "thumb luma PSNR {psnr}");
+        // Bad input is None, never a panic (strip-job contract).
+        assert!(thumb_jpeg_tiny_codec(0, h, &[]).is_none());
+        assert!(thumb_jpeg_tiny_codec(w, h, &rgb[..rgb.len() - 1]).is_none());
+    }
+
+    #[test]
+    fn strip_extracts_tiny_codec_frames_when_ffmpeg_exists() {
+        // Same skip-guarded real-ffmpeg harness as the Ffmpeg-engine test,
+        // but the JPEGs must come from tiny-codec and decode in it too.
+        if resolve_ffmpeg(None).is_none() {
+            eprintln!("SKIP: no ffmpeg on PATH");
+            return;
+        }
+        let dir = test_dir("real-tiny");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("pattern.mp4");
+        let made = Command::new(resolve_ffmpeg(None).unwrap())
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=2:size=128x96:rate=30",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&src)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !made || !src.is_file() {
+            eprintln!("SKIP: could not synthesize test clip");
+            return;
+        }
+        let req = ThumbStripRequest {
+            file: src.to_string_lossy().into_owned(),
+            count: 2,
+            width_px: 64,
+            positions_seconds: Some(vec![0.2, 1.8]),
+            duration_hint_seconds: None,
+            ffmpeg_bin: None,
+            jpeg: StripJpeg::TinyCodec,
+            out_dir: Some(dir.join("thumbs")),
+        };
+        let strip = extract_strip(&req);
+        assert!(!strip.is_placeholder(), "tool: {:?}", strip.tool);
+        assert!(matches!(strip.tool, StripTool::TinyCodec(_)));
+        assert_eq!(strip.frames.len(), 2);
+        for f in &strip.frames {
+            assert!(!f.placeholder);
+            let p = f.path.as_ref().expect("real frame needs a path");
+            let bytes = std::fs::read(p).expect("thumb readable");
+            let (dw, dh, _) = tiny_jfif::demux::decode_jpeg(&bytes).expect("thumb decodes");
+            assert_eq!(dw, 64);
+            assert_eq!(dh, 48);
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -29,6 +29,7 @@ wgpu = { version = "0.19", optional = true }
 pollster = { version = "0.3", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
 wasmtime = { version = "48.0.2", optional = true }
+tiny-jfif = { version = "0.1.0", path = "../../tiny-codec/crates/jfif" }
 
 [features]
 default = []

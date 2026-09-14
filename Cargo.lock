@@ -434,6 +434,7 @@ dependencies = [
  "pollster",
  "serde",
  "serde_json",
+ "tiny-jfif",
  "wasmtime",
  "wgpu",
 ]
@@ -4954,6 +4955,22 @@ checksum = "7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85"
 dependencies = [
  "num-conv",
  "time-core",
+]
+
+[[package]]
+name = "tiny-dct"
+version = "0.1.0"
+
+[[package]]
+name = "tiny-entropy"
+version = "0.1.0"
+
+[[package]]
+name = "tiny-jfif"
+version = "0.1.0"
+dependencies = [
+ "tiny-dct",
+ "tiny-entropy",
 ]
 
 [[package]]
