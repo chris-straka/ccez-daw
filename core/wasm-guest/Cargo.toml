@@ -2,6 +2,7 @@
 name = "ccez-wasm-delay"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "ccez-daw WASM guest: ported delay kernel for wasm32-wasip2 (no DSP of its own; includes core/src/wasmdevices/guest.rs by path)"
 
 [lib]

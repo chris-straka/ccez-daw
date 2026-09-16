@@ -2,6 +2,7 @@
 name = "ccez-clap-gain"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Test-only CLAP gain fixture for the ccez-daw plugin sandbox (never shipped, never a workspace member)"
 
 [lib]

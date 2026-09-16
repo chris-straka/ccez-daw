@@ -2,6 +2,7 @@
 name = "ccez-core"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "ccez-daw project/engine truth: project model, op log, IPC shapes, Rust-to-TS typegen"
 
 [lib]
