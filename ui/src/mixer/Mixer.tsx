@@ -69,39 +69,34 @@ export default function Mixer(props: {
   }
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
-      <div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" }}>
+    <div class="session-view">
+      <div class="session-controls">
         <button onClick={() => take("A")}>Capture A</button>
         <button onClick={() => take("B")}>Capture B</button>
         <button onClick={() => flip("A")} disabled={!slotA()}>Recall A{ab() === "A" ? " ●" : ""}</button>
         <button onClick={() => flip("B")} disabled={!slotB()}>Recall B{ab() === "B" ? " ●" : ""}</button>
         <Show when={note()}>
-          <span style={{ color: "#8cf", "font-size": "12px" }}>{note()}</span>
+          <span class="session-launch-note">{note()}</span>
         </Show>
       </div>
       <Show when={refs().length > 0}>
-        <div style={{ "font-size": "12px", color: "#fa0" }}>
+        <div class="mixer-ref">
           REF (never in mix): {refs().join(", ")} — cue solo-listens the reference, mix stays muted.
         </div>
       </Show>
-      <div style={{ display: "flex", gap: "8px", overflow: "auto" }}>
+      <div class="strip-row">
         <For each={list()}>
           {(s) => (
             <div
-              style={{
-                border: "1px solid #555",
-                "border-radius": "4px",
-                padding: "6px",
-                "min-width": "110px",
-                background: s.isReference ? "#2a2200" : "#222",
-              }}
+              class="mixer-strip"
+              classList={{ reference: s.isReference }}
             >
-              <div style={{ "font-size": "12px", "font-weight": "bold" }}>{s.name}</div>
-              <div style={{ "font-size": "11px", color: "#888" }}>
+              <div class="mixer-strip-name">{s.name}</div>
+              <div class="mixer-strip-out">
                 → {s.out ?? "master"}
                 {s.isReference ? " · REF" : ""}
               </div>
-              <label style={{ display: "block", "font-size": "11px" }}>
+              <label class="mixer-label">
                 vol
                 <input
                   type="range"
@@ -111,9 +106,9 @@ export default function Mixer(props: {
                   value={s.volume}
                   onInput={(e) => props.onPatch(s.id, "volume", Number(e.target.value))}
                 />
-                {s.volume.toFixed(2)} (eff {effectiveTrackGain(props.project, groups(), s.id).toFixed(2)})
+                <span class="mixer-values">{s.volume.toFixed(2)} (eff {effectiveTrackGain(props.project, groups(), s.id).toFixed(2)})</span>
               </label>
-              <label style={{ display: "block", "font-size": "11px" }}>
+              <label class="mixer-label">
                 pan
                 <input
                   type="range"
@@ -123,17 +118,19 @@ export default function Mixer(props: {
                   value={s.pan}
                   onInput={(e) => props.onPatch(s.id, "pan", Number(e.target.value))}
                 />
-                {s.pan.toFixed(2)}
+                <span class="mixer-values">{s.pan.toFixed(2)}</span>
               </label>
-              <div style={{ display: "flex", gap: "4px" }}>
+              <div class="scene-row">
                 <button
-                  style={{ background: s.muted ? "#a33" : undefined }}
+                  class="mute-btn"
+                  classList={{ on: s.muted }}
                   onClick={() => props.onPatch(s.id, "muted", !s.muted)}
                 >
                   M
                 </button>
                 <button
-                  style={{ background: s.solo ? "#3a3" : undefined }}
+                  class="solo-btn"
+                  classList={{ on: s.solo }}
                   onClick={() => props.onPatch(s.id, "solo", !s.solo)}
                 >
                   S
@@ -143,7 +140,7 @@ export default function Mixer(props: {
           )}
         </For>
       </div>
-      <div style={{ "font-size": "11px", color: "#888" }}>
+      <div class="mixer-foot">
         Loudness-matched A/B: compare buffers at equal RMS so louder never wins by default.
         (match gain = rms(A)/rms(B); silence matches at 1.0.)
       </div>

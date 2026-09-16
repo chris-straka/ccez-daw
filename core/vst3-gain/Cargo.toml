@@ -1,0 +1,14 @@
+[package]
+name = "ccez-vst3-gain"
+version = "0.1.0"
+edition = "2021"
+description = "Test-only VST3 gain fixture for the ccez-daw plugin sandbox (never shipped, never a workspace member)"
+
+[lib]
+crate-type = ["cdylib"]
+name = "ccez_vst3_gain"
+
+[workspace]
+
+[dependencies]
+vst3 = "0.3"

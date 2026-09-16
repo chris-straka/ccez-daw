@@ -4,13 +4,14 @@
 
 mod menu;
 
+use ccez_core::audio::TransportController;
 use ccez_core::model::{Clip, EngineState, Op, ParamAddress, Project};
 use std::sync::Mutex;
 use tauri::State;
 
 struct AppState {
     project: Mutex<Project>,
-    engine: Mutex<EngineState>,
+    transport: Mutex<TransportController>,
 }
 
 #[tauri::command]
@@ -63,20 +64,38 @@ fn clip_add(clip: Clip, _state: State<AppState>) -> String {
 #[tauri::command]
 fn param_set(_target: ParamAddress, _value: f64) {}
 
+/// Start the realtime transport: opens (or reuses) a cpal output stream
+/// driving the deterministic renderer, degrading to the null device on
+/// headless/CI machines with no audio hardware. Never panics — a
+/// half-broken hardware layer reports `Stopped` instead.
 #[tauri::command]
 fn engine_play(state: State<AppState>) -> EngineState {
-    *state.engine.lock().expect("engine lock") = EngineState::Playing;
-    EngineState::Playing
+    let transport = state.transport.lock().expect("transport lock");
+    match transport.play() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("engine_play: audio stream failed ({e}); staying stopped");
+            EngineState::Stopped
+        }
+    }
 }
 
+/// Stop the realtime transport: closes/suspends the output stream.
 #[tauri::command]
 fn engine_stop(state: State<AppState>) -> EngineState {
-    *state.engine.lock().expect("engine lock") = EngineState::Stopped;
-    EngineState::Stopped
+    state.transport.lock().expect("transport lock").stop()
 }
 
+/// Set the transport tempo in BPM; maps to block scheduling from the next
+/// rendered block.
 #[tauri::command]
-fn engine_set_tempo(_tempo: f64) {}
+fn engine_set_tempo(tempo: f64, state: State<AppState>) {
+    state
+        .transport
+        .lock()
+        .expect("transport lock")
+        .set_tempo(tempo);
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -88,7 +107,7 @@ pub fn run() {
         })
         .manage(AppState {
             project: Mutex::new(Project::sample()),
-            engine: Mutex::new(EngineState::Stopped),
+            transport: Mutex::new(TransportController::new()),
         })
         .invoke_handler(tauri::generate_handler![
             project_new,

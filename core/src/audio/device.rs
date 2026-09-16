@@ -17,7 +17,7 @@
 //! what `cargo test` exercises. [`CpalBackend`] is the real output path.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -63,11 +63,17 @@ impl ParamBank {
     }
 
     /// Refresh `cache` from every cell whose lock is immediately available.
-    /// Never blocks: a busy lock just leaves those entries stale.
+    /// Never blocks: a busy lock just leaves those entries stale. Entries
+    /// whose value did not change are left untouched, so the steady-state
+    /// callback does no per-param `String` clone or map insert — only
+    /// changed params allocate, and only once per change.
     pub fn refresh_cache(&self, cache: &mut HashMap<String, f32>) {
         if let Ok(cells) = self.cells.try_lock() {
             for (target, cell) in cells.iter() {
-                cache.insert(target.clone(), f32::from_bits(cell.load(Ordering::Relaxed)));
+                let value = f32::from_bits(cell.load(Ordering::Relaxed));
+                if cache.get(target.as_str()).copied() != Some(value) {
+                    cache.insert(target.clone(), value);
+                }
             }
         }
     }
@@ -98,6 +104,56 @@ pub trait AudioBackend {
     fn pump(&mut self, frames: usize) -> bool;
 }
 
+/// One mono-block render shared by every output path.
+///
+/// Both [`NullBackend::pump`] and the cpal callback call this with
+/// `threads = 1`, so the offline bounce and the live stream are
+/// byte-identical by construction: there is only one code path.
+/// Returns `None` when the callback must substitute silence (no graph yet,
+/// missing out node, or a schedule error) — the caller counts that block
+/// as an underrun.
+pub fn render_mono_block(
+    graph: Option<&RenderGraph>,
+    delays: &std::collections::BTreeMap<(String, String), u64>,
+    out_node: &str,
+    frames: usize,
+) -> Option<Vec<f32>> {
+    let g = graph?;
+    g.render(frames, 1, delays).ok()?.remove(out_node)
+}
+
+/// Thread-safe block counters shared between an audio callback (or the
+/// null backend's pump loop) and the UI side.
+///
+/// - `blocks`: blocks rendered so far.
+/// - `underruns`: blocks where silence was substituted because no renderable
+///   graph was available (no graph swapped yet, missing out node, or a
+///   schedule error). On hardware each one is an audible dropout.
+/// - `overruns`: command bursts absorbed inside one block's deadline — the
+///   number of commands drained beyond the first in a single block. A
+///   nonzero count means the UI thread queued more deferred work than one
+///   callback budget; the audio still rendered, but the handoff is hot.
+#[derive(Debug, Clone, Default)]
+pub struct SharedCounters {
+    pub blocks: Arc<AtomicU64>,
+    pub underruns: Arc<AtomicU64>,
+    pub overruns: Arc<AtomicU64>,
+}
+
+impl SharedCounters {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn snapshot(&self) -> (u64, u64, u64) {
+        (
+            self.blocks.load(Ordering::Relaxed),
+            self.underruns.load(Ordering::Relaxed),
+            self.overruns.load(Ordering::Relaxed),
+        )
+    }
+}
+
 /// Hardware-free backend: renders the current graph on demand. This is the
 /// contract the cpal callback honors, minus the hardware — and therefore
 /// what `cargo test` proves.
@@ -114,10 +170,20 @@ pub struct NullBackend {
     pub rendered: Vec<Vec<f32>>,
     /// Commands drained so far (proves the handoff delivers).
     pub drained: u64,
+    /// Block counters (mirrors what the cpal callback shares with the UI).
+    pub counters: SharedCounters,
 }
 
 impl NullBackend {
     pub fn new(rx: Receiver<AudioCommand>, params: Arc<ParamBank>) -> Self {
+        Self::with_counters(rx, params, SharedCounters::new())
+    }
+
+    pub fn with_counters(
+        rx: Receiver<AudioCommand>,
+        params: Arc<ParamBank>,
+        counters: SharedCounters,
+    ) -> Self {
         Self {
             rx,
             params,
@@ -127,12 +193,18 @@ impl NullBackend {
             out_node: "mix".to_string(),
             rendered: Vec::new(),
             drained: 0,
+            counters,
         }
     }
 
-    fn drain(&mut self) -> bool {
+    /// Drain pending commands without blocking. Returns `(running, n)` where
+    /// `running` is false once [`AudioCommand::Stop`] arrived and `n` is the
+    /// number of commands drained (feeds the overrun counter).
+    fn drain(&mut self) -> (bool, u64) {
         let mut running = true;
+        let mut n = 0u64;
         while let Ok(cmd) = self.rx.try_recv() {
+            n += 1;
             self.drained += 1;
             match cmd {
                 AudioCommand::SetParam { target, value } => {
@@ -147,23 +219,31 @@ impl NullBackend {
             }
         }
         self.params.refresh_cache(&mut self.cache);
-        running
+        (running, n)
     }
 }
 
 impl AudioBackend for NullBackend {
     fn pump(&mut self, frames: usize) -> bool {
-        if !self.drain() {
+        let (running, n) = self.drain();
+        if !running {
             return false;
         }
-        let block = match &self.graph {
-            None => vec![0.0; frames],
-            Some(g) => g
-                .render(frames, 1, &self.delays)
-                .ok()
-                .and_then(|mut bufs| bufs.remove(&self.out_node))
-                .unwrap_or_else(|| vec![0.0; frames]),
+        if n > 1 {
+            self.counters
+                .overruns
+                .fetch_add(n - 1, Ordering::Relaxed);
+        }
+        // Same code path as the cpal callback: byte-identical by
+        // construction (see `render_mono_block`).
+        let block = match render_mono_block(self.graph.as_ref(), &self.delays, &self.out_node, frames) {
+            Some(b) => b,
+            None => {
+                self.counters.underruns.fetch_add(1, Ordering::Relaxed);
+                vec![0.0; frames]
+            }
         };
+        self.counters.blocks.fetch_add(1, Ordering::Relaxed);
         self.rendered.push(block);
         true
     }
@@ -224,11 +304,23 @@ pub struct CpalBackend;
 impl CpalBackend {
     /// Open the default output device and start rendering `initial` (may be
     /// `None` for silence until the first [`AudioCommand::SwapGraph`]).
-    /// Returns the live stream (keep it alive: dropping stops audio) plus
-    /// the [`AudioEngine`] the UI keeps.
+    /// Returns the live stream (keep it alive: dropping stops audio), the
+    /// [`AudioEngine`] the UI keeps, and the [`SharedCounters`] the
+    /// realtime callback feeds (underrun/overrun accounting).
+    /// A [`DeviceError::NoDevice`] means "no hardware here" — the caller
+    /// (see `transport`) degrades to the null device instead of panicking.
     pub fn open_default(
         initial: Option<(RenderGraph, std::collections::BTreeMap<(String, String), u64>, String)>,
-    ) -> Result<(cpal::Stream, AudioEngine), DeviceError> {
+    ) -> Result<(cpal::Stream, AudioEngine, SharedCounters), DeviceError> {
+        Self::open_default_with_counters(initial, SharedCounters::new())
+    }
+
+    /// Same as [`CpalBackend::open_default`], but the callback feeds the
+    /// caller's counters so one controller observes both backends.
+    pub fn open_default_with_counters(
+        initial: Option<(RenderGraph, std::collections::BTreeMap<(String, String), u64>, String)>,
+        counters: SharedCounters,
+    ) -> Result<(cpal::Stream, AudioEngine, SharedCounters), DeviceError> {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         let host = cpal::default_host();
         let device = host.default_output_device().ok_or_else(|| {
@@ -238,9 +330,9 @@ impl CpalBackend {
             DeviceError::NoDevice(format!("default output config: {e}"))
         })?;
         let (engine, rx, params) = AudioEngine::channel();
-        let stream = build_stream(&device, &supported, rx, params, initial)?;
+        let stream = build_stream(&device, &supported, rx, params, counters.clone(), initial)?;
         stream.play().map_err(|e| DeviceError::Stream(e.to_string()))?;
-        Ok((stream, engine))
+        Ok((stream, engine, counters))
     }
 }
 
@@ -250,6 +342,7 @@ fn build_stream(
     config: &cpal::SupportedStreamConfig,
     rx: Receiver<AudioCommand>,
     params: Arc<ParamBank>,
+    counters: SharedCounters,
     initial: Option<(RenderGraph, std::collections::BTreeMap<(String, String), u64>, String)>,
 ) -> Result<cpal::Stream, DeviceError> {
     use cpal::traits::DeviceTrait;
@@ -258,7 +351,7 @@ fn build_stream(
     let _ = sample_rate; // reserved for resampling when graph rate != device rate (phase 2)
     let stream_config: cpal::StreamConfig = config.clone().into();
 
-    let mut state = CallbackState::new(rx, params, initial);
+    let mut state = CallbackState::new(rx, params, counters, initial);
     let err_fn = |err| eprintln!("cpal stream error: {err}");
     match config.sample_format() {
         cpal::SampleFormat::F32 => device
@@ -298,7 +391,10 @@ fn build_stream(
 /// Callback-owned render state. Lives on the audio thread; everything in
 /// here is either owned or drained via `try_recv` — the callback never
 /// touches UI-thread data.
-struct CallbackState {
+/// Callback-owned render state. Public within the crate so the transport
+/// layer (and its tests) can drive the exact callback path without
+/// hardware; the cpal stream owns one on the audio thread.
+pub(crate) struct CallbackState {
     rx: Receiver<AudioCommand>,
     params: Arc<ParamBank>,
     cache: HashMap<String, f32>,
@@ -306,12 +402,14 @@ struct CallbackState {
     delays: std::collections::BTreeMap<(String, String), u64>,
     out_node: String,
     silence: Vec<f32>,
+    counters: SharedCounters,
 }
 
 impl CallbackState {
     fn new(
         rx: Receiver<AudioCommand>,
         params: Arc<ParamBank>,
+        counters: SharedCounters,
         initial: Option<(RenderGraph, std::collections::BTreeMap<(String, String), u64>, String)>,
     ) -> Self {
         let (graph, delays, out_node) = match initial {
@@ -326,12 +424,18 @@ impl CallbackState {
             delays,
             out_node,
             silence: Vec::new(),
+            counters,
         }
     }
 
     /// Drain commands without blocking, then render one device block.
+    /// Uses [`render_mono_block`] — the same code path as
+    /// [`NullBackend::pump`] — and feeds the shared underrun/overrun
+    /// counters so the UI can observe callback health lock-free.
     fn next_block(&mut self, frames: usize) -> &[f32] {
+        let mut drained = 0u64;
         while let Ok(cmd) = self.rx.try_recv() {
+            drained += 1;
             match cmd {
                 AudioCommand::SetParam { target, value } => {
                     self.cache.insert(target, value);
@@ -344,30 +448,33 @@ impl CallbackState {
                 AudioCommand::Stop => {}
             }
         }
+        if drained > 1 {
+            self.counters
+                .overruns
+                .fetch_add(drained - 1, Ordering::Relaxed);
+        }
         self.params.refresh_cache(&mut self.cache);
         // let _cache = &self.cache; // params feed device params in phase 2 (audible DSP reads them)
-        match &self.graph {
+        // Render serially in the callback (block is small); the multicore
+        // schedule pays off in the offline renderer.
+        static EMPTY: Vec<f32> = Vec::new();
+        match render_mono_block(self.graph.as_ref(), &self.delays, &self.out_node, frames) {
+            Some(buf) => {
+                self.counters.blocks.fetch_add(1, Ordering::Relaxed);
+                self.silence = buf;
+                &self.silence
+            }
             None => {
+                self.counters.blocks.fetch_add(1, Ordering::Relaxed);
+                self.counters.underruns.fetch_add(1, Ordering::Relaxed);
                 if self.silence.len() != frames {
                     self.silence.resize(frames, 0.0);
                     self.silence.fill(0.0);
                 }
-                &self.silence
-            }
-            Some(g) => {
-                // Render serially in the callback (block is small); the
-                // multicore schedule pays off in the offline renderer.
-                static EMPTY: Vec<f32> = Vec::new();
-                match g.render(frames, 1, &self.delays) {
-                    Ok(mut bufs) => {
-                        if let Some(buf) = bufs.remove(&self.out_node) {
-                            self.silence = buf;
-                            &self.silence
-                        } else {
-                            &EMPTY
-                        }
-                    }
-                    Err(_) => &EMPTY,
+                if self.silence.is_empty() {
+                    &EMPTY
+                } else {
+                    &self.silence
                 }
             }
         }
@@ -378,11 +485,13 @@ impl CallbackState {
             return;
         }
         let frames = out.len() / channels;
-        // Copy out of the borrow: next_block borrows self mutably, so take
-        // an owned snapshot of the mono block first.
-        let mono: Vec<f32> = self.next_block(frames).to_vec();
+        // Render first, then read the block back out of `self.silence`.
+        // Ending the `next_block` borrow before touching `self.silence`
+        // removes the old per-callback `to_vec()` snapshot copy: the only
+        // copy left is the unavoidable interleave into the device buffer.
+        self.next_block(frames);
         for (i, sample) in out.iter_mut().enumerate() {
-            *sample = mono.get(i / channels).copied().unwrap_or(0.0);
+            *sample = self.silence.get(i / channels).copied().unwrap_or(0.0);
         }
     }
 
@@ -391,9 +500,9 @@ impl CallbackState {
             return;
         }
         let frames = out.len() / channels;
-        let mono: Vec<f32> = self.next_block(frames).to_vec();
+        self.next_block(frames);
         for (i, slot) in out.iter_mut().enumerate() {
-            *slot = conv(mono.get(i / channels).copied().unwrap_or(0.0));
+            *slot = conv(self.silence.get(i / channels).copied().unwrap_or(0.0));
         }
     }
 }

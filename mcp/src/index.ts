@@ -5,10 +5,18 @@ import { InMemoryBackend } from "./backend.js";
 import { GameAudioStore } from "./gameaudio.js";
 import {
   AuditionInput,
+  AutomationPointInput,
+  BranchMergeInput,
   ClipInput,
+  CompCommitInput,
   ExportInput,
+  GrooveApplyInput,
+  JamRecordInput,
+  LinkJoinInput,
   ParamInput,
   ProjectRef,
+  PunchCommitInput,
+  SessionLaunchInput,
   TOOLS,
   TriggerSfxInput,
   createToolHandlers,
@@ -37,6 +45,15 @@ export function createServer(backend: InMemoryBackend, gameAudio: GameAudioStore
     AuditionInput.shape,
     TriggerSfxInput.shape,
     ExportInput.shape,
+    // Post-v0 coverage (additive rows in TOOLS order):
+    AutomationPointInput.shape,
+    SessionLaunchInput.shape,
+    JamRecordInput.shape,
+    CompCommitInput.shape,
+    GrooveApplyInput.shape,
+    BranchMergeInput.shape,
+    PunchCommitInput.shape,
+    LinkJoinInput.shape,
   ] as const;
 
   TOOLS.forEach((tool, i) => {

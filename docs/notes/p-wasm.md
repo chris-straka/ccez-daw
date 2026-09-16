@@ -140,3 +140,9 @@ component-API + WASI-context wiring is the documented follow-up.
 - `ui/src/generated/*`, `model.rs`, `ipc.rs`, and `devices/wasm.rs`
   untouched — the old seam marker still names phase 2; this module is
   phase 2 arriving alongside it, not a rewrite of it.
+- Worker-process hosting of `.wasm` modules (the plugins-side arrival:
+  `core/src/plugins/wasm.rs`, `LoadWasm` op, `PluginKind::Wasm`) — see
+  `docs/notes/track-c.md` §11. This primer's in-process `Store` path
+  stays the DSP-isolation reference; the worker path reuses its pin
+  (`wasmtime` 48.0.2), its zero-import aperture, and its per-sample
+  mono-`f32` contract.

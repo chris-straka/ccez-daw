@@ -1,4 +1,5 @@
-import type { Clip, ClipKind } from "../generated/project";
+import type { Clip, ClipKind, Op, OpKind } from "../generated/project";
+import { OpSchema } from "../generated/project";
 
 /**
  * Track E (agent 2): comping + retrospective capture.
@@ -123,6 +124,48 @@ export function buildComp(
     kind: kind as ClipKind,
     source: `comp:${sections.map((s) => s.take_id).join("+")}`,
   };
+}
+
+/**
+ * Pick the take to audition (monitor) for a comp section: the take must
+ * exist and sit on `trackId`. Exact mirror of `core/src/comp.rs`
+ * `audition_take`. Pure selection — auditioning never touches the project;
+ * the caller routes the returned take to the monitor path and records the
+ * choice as `CompSection`s for `buildComp`. Throws CompError.
+ */
+export function auditionTake(
+  takes: Clip[],
+  trackId: string,
+  takeId: string,
+): Clip {
+  const take = takes.find((c) => c.id === takeId);
+  if (!take) {
+    throw new CompError("unknown-take", `unknown comp take \`${takeId}\``);
+  }
+  if (take.track_id !== trackId) {
+    throw new CompError(
+      "wrong-track",
+      `take \`${take.id}\` is not on track \`${trackId}\``,
+    );
+  }
+  return take;
+}
+
+/**
+ * Commit a composite as one frozen `ClipAdded` op: `seq: 0` is a
+ * placeholder the engine replaces; `target` names the comp clip and
+ * `value_json` carries the full clip. Exact mirror of
+ * `core/src/comp.rs` `comp_commit_op`. Later nudges are frozen `ClipMoved`
+ * ops and the commit itself undoes/redoes like any op.
+ */
+export function compCommitOp(actor: string, comp: Clip): Op {
+  return OpSchema.parse({
+    seq: 0,
+    actor,
+    kind: "ClipAdded" as OpKind,
+    target: comp.id,
+    value_json: JSON.stringify(comp),
+  });
 }
 
 export interface RetroEvent {

@@ -73,6 +73,59 @@ pub struct MergeOutcome {
     pub conflicts: Vec<MergeConflict>,
 }
 
+/// Op-granularity category for branch compare rows.
+///
+/// Every `OpKind` maps to exactly one category, so a compare view can group
+/// the `only_in_a` / `only_in_b` lists with no new IPC and no schema change:
+/// - `Added`: `TrackAdded` / `ClipAdded` — new objects enter the project.
+/// - `Moved`: `ClipMoved` — a clip's timeline position changes.
+/// - `Retargeted`: `ParamSet` — an existing `node:param` address is aimed at
+///   a new value.
+/// - `Tempo`: `TempoSet`.
+/// - `Automation`: `AutomationPointSet` — a lane point is (re)aimed.
+/// - `Marker`: `UndoMarker` — history bookkeeping, still rendered as a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OpCategory {
+    Added,
+    Moved,
+    Retargeted,
+    Tempo,
+    Automation,
+    Marker,
+}
+
+impl fmt::Display for OpCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OpCategory::Added => write!(f, "added"),
+            OpCategory::Moved => write!(f, "moved"),
+            OpCategory::Retargeted => write!(f, "retargeted"),
+            OpCategory::Tempo => write!(f, "tempo"),
+            OpCategory::Automation => write!(f, "automation"),
+            OpCategory::Marker => write!(f, "marker"),
+        }
+    }
+}
+
+/// Classify one op for compare/merge display. Total over `OpKind`: adding a
+/// future variant is a compile error here, so the rows can never go stale.
+pub fn classify_op(op: &Op) -> OpCategory {
+    match op.kind {
+        OpKind::TrackAdded | OpKind::ClipAdded => OpCategory::Added,
+        OpKind::ClipMoved => OpCategory::Moved,
+        OpKind::ParamSet => OpCategory::Retargeted,
+        OpKind::TempoSet => OpCategory::Tempo,
+        OpKind::AutomationPointSet => OpCategory::Automation,
+        OpKind::UndoMarker => OpCategory::Marker,
+    }
+}
+
+/// One-line human rendering of an op for compare/merge rows:
+/// `#<seq> <Kind> <target> <value_json>`.
+pub fn describe_op(op: &Op) -> String {
+    format!("#{} {:?} {} {}", op.seq, op.kind, op.target, op.value_json)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BranchError {
     NotFound(String),
@@ -145,7 +198,10 @@ impl BranchStore {
         if self.branches.contains_key(name) {
             return Err(BranchError::AlreadyExists(name.to_string()));
         }
-        let base_seq = self.tip_seq(from).ok_or_else(|| BranchError::NotFound(from.to_string()))?;
+        // Existence check first: the fork point must name a real branch.
+        // An empty branch forks at 0 (`tip_seq` is 0 when empty).
+        self.get(from)?;
+        let base_seq = self.tip_seq(from).unwrap_or(0);
         self.branches.insert(
             name.to_string(),
             Branch {
@@ -506,5 +562,125 @@ mod tests {
         assert!(reloaded.redo().is_some());
         assert!(reloaded.redo().is_some());
         assert!(reloaded.redo().is_none());
+    }
+
+    #[test]
+    fn op_categories_cover_every_kind() {
+        let kinds = [
+            (OpKind::TrackAdded, OpCategory::Added),
+            (OpKind::ClipAdded, OpCategory::Added),
+            (OpKind::ClipMoved, OpCategory::Moved),
+            (OpKind::ParamSet, OpCategory::Retargeted),
+            (OpKind::TempoSet, OpCategory::Tempo),
+            (OpKind::AutomationPointSet, OpCategory::Automation),
+            (OpKind::UndoMarker, OpCategory::Marker),
+        ];
+        for (kind, want) in kinds {
+            let op = Op {
+                seq: 1,
+                actor: "ui".to_string(),
+                kind,
+                target: "t".to_string(),
+                value_json: "0".to_string(),
+            };
+            assert_eq!(classify_op(&op), want);
+        }
+    }
+
+    #[test]
+    fn describe_op_names_seq_kind_and_target() {
+        let op = Op {
+            seq: 7,
+            actor: "ui".to_string(),
+            kind: OpKind::ParamSet,
+            target: "trk_a:volume".to_string(),
+            value_json: "0.5".to_string(),
+        };
+        let text = describe_op(&op);
+        assert!(text.contains("#7"), "seq: {text}");
+        assert!(text.contains("ParamSet"), "kind: {text}");
+        assert!(text.contains("trk_a:volume"), "target: {text}");
+        assert_eq!(classify_op(&op).to_string(), "retargeted");
+    }
+
+    #[test]
+    fn merge_conflicts_on_clip_moved_to_different_beats() {
+        let mut store = BranchStore::new();
+        store
+            .apply("main", "ui", OpKind::ClipAdded, "clip_b", "{\"id\":\"clip_b\"}")
+            .unwrap();
+        store.create_branch("arr", "main").unwrap();
+        store
+            .apply("main", "ui", OpKind::ClipMoved, "clip_b", "{\"startBeats\": 8}")
+            .unwrap();
+        store
+            .apply("arr", "ui", OpKind::ClipMoved, "clip_b", "{\"startBeats\": 2}")
+            .unwrap();
+        let outcome = store.merge_preview("arr", "main").unwrap();
+        assert!(outcome.merged.is_empty());
+        assert_eq!(outcome.conflicts.len(), 1);
+        assert_eq!(outcome.conflicts[0].target, "clip_b");
+        assert_eq!(classify_op(&outcome.conflicts[0].source_op), OpCategory::Moved);
+        // Same destination on both sides merges cleanly (idempotent).
+        let mut calm = BranchStore::new();
+        calm.apply("main", "ui", OpKind::ClipAdded, "clip_b", "{\"id\":\"clip_b\"}")
+            .unwrap();
+        calm.create_branch("arr", "main").unwrap();
+        for branch in ["main", "arr"] {
+            calm.apply(branch, "ui", OpKind::ClipMoved, "clip_b", "{\"startBeats\": 4}")
+                .unwrap();
+        }
+        let outcome = calm.merge_preview("arr", "main").unwrap();
+        assert!(outcome.conflicts.is_empty());
+        assert!(outcome.merged.is_empty());
+    }
+
+    #[test]
+    fn automation_merge_is_clean_across_lanes_but_conflicts_on_one_point() {
+        let mut store = BranchStore::new();
+        store.create_branch("auto", "main").unwrap();
+        store
+            .apply(
+                "auto",
+                "ui",
+                OpKind::AutomationPointSet,
+                "lane_vol",
+                "{\"beat\": 4, \"value\": 0.5, \"node\": \"trk_a\", \"param\": \"volume\"}",
+            )
+            .unwrap();
+        store
+            .apply(
+                "main",
+                "ui",
+                OpKind::AutomationPointSet,
+                "lane_pan",
+                "{\"beat\": 4, \"value\": 0.0, \"node\": \"trk_a\", \"param\": \"pan\"}",
+            )
+            .unwrap();
+        let outcome = store.merge_preview("auto", "main").unwrap();
+        assert!(outcome.conflicts.is_empty());
+        assert_eq!(outcome.merged.len(), 1);
+        assert_eq!(
+            classify_op(&outcome.merged[0]),
+            OpCategory::Automation
+        );
+
+        // Same lane, different value: one conflict, nothing smuggled in.
+        store
+            .apply(
+                "main",
+                "ui",
+                OpKind::AutomationPointSet,
+                "lane_vol",
+                "{\"beat\": 4, \"value\": 0.9, \"node\": \"trk_a\", \"param\": \"volume\"}",
+            )
+            .unwrap();
+        let outcome = store.merge_preview("auto", "main").unwrap();
+        assert!(outcome.merged.is_empty());
+        assert_eq!(outcome.conflicts.len(), 1);
+        assert_eq!(outcome.conflicts[0].target, "lane_vol");
+        let applied = store.merge_apply("auto", "main").unwrap();
+        assert_eq!(applied.conflicts.len(), 1);
+        assert!(applied.merged.is_empty());
     }
 }

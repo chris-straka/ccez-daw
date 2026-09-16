@@ -40,7 +40,7 @@ describe("GA-5 validation: MCP client drives game audio", () => {
     const client = await linkedClient(backend, store);
 
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).slice(6)).toEqual([
+    expect(tools.map((t) => t.name).slice(6, 10)).toEqual([
       "gameaudio_list_cues",
       "gameaudio_audition",
       "gameaudio_trigger_sfx",

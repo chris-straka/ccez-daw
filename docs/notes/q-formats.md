@@ -108,14 +108,47 @@ signing, no fee — the cost is engineering, and it is large but separable:
    region range and invalidate on timeline edits (the hardest part; needs
    the engine's render path, not just the plugin registry).
 
-**Verdict: SHIP as phase-2 design.** This track lands step 0 only: the
-[`AraHost`](../../core/src/plugins/ara.rs) seam — constructs, reports
+**Verdict: SHIP as phase-2 design.** Step 0 (this track's original seam:
+[`AraHost`](../../core/src/plugins/ara.rs) constructs, reports
 `is_available() == false`, and refuses `share_source` / `render_region` /
-`detach_clip` with [`AraError::AraUnimplemented`](../../core/src/plugins/ara.rs),
-mirroring `HostError::ClapUnimplemented`. Region-range validation
-(`AraRegion::new` rejects empty/inverted/NaN ranges) is real logic now
-because "never hand a plugin a backwards region" is a rule the host must
-own regardless of when phase 2 lands.
+`detach_clip` with
+[`AraError::AraUnimplemented`](../../core/src/plugins/ara.rs)) has since
+landed as a live document model — the follow-up arrived in `core/` only,
+`ui/` untouched:
+
+1. **Document model** (live): [`AraDocument`](../../core/src/plugins/ara.rs)
+   — [`MusicalContext`](../../core/src/plugins/ara.rs) (tempo/key/meter,
+   beats↔seconds mapping, `from_project`), [`AraAudioSource`](../../core/src/plugins/ara.rs)
+   with random sample access (`sample_at` / `read_range`), and region
+   sequences mapped from arrangement clips (`from_project` /
+   `add_region_for_clip`, invalid spans skipped by the same
+   [`AraRegion::new`](../../core/src/plugins/ara.rs) rule as before).
+   [`AraHost`](../../core/src/plugins/ara.rs) owns the document:
+   `is_available()` is `true`, `share_source` registers clip audio,
+   `render_region` slices a clip's region through a mock effect, and
+   `detach_clip` is idempotent.
+2. **Offline bounce wiring** (live): [`ara_document_for_track`,
+   `render_track_with_ara`,
+   `render_mix_with_ara`](../../core/src/bounce.rs) — a bound effect
+   transforms exactly its clip's window span before the stem sums; no
+   binding (or an effect with no region in the document) renders
+   bit-identical to the plain path, and the mix honors mute/solo.
+3. **Mock effect + round-trip proof** (live, tested):
+   [`MockAraEffect`](../../core/src/plugins/ara.rs) — zero-crossing
+   analysis into editable [`notes`](../../core/src/plugins/ara.rs),
+   per-note/region gain plus a length-preserving naive transpose.
+   Hand-rolled on purpose (~40 lines, zero new cargo deps): an ARA SDK
+   crate would drag C++ bindings and license weight for test-only value;
+   a real pitch engine arrives with real binary hosting.
+4. **Real third-party binaries** (follow-up, no code): exactly two pieces
+   are missing — (a) **factory entry hosting**: ARA plug-ins ship inside
+   VST3/AU binaries, so the host must load the binary through the existing
+   VST3/AU worker backends and perform the ARA factory handshake
+   (`ARAFactory::createDocumentController` negotiation over the plug-in
+   extension); (b) **document controller lifecycle**: create/bind/destroy
+   the `ARADocumentController`, drive its analysis + playback-renderer
+   roles, and invalidate on timeline edits. [`AraHost::load_binary_plugin`](../../core/src/plugins/ara.rs)
+   names this seam and refuses with it.
 
 ## Why no contract changes
 
@@ -129,7 +162,8 @@ deliberately unregistered from `emit.rs`, never written to project files.
 ## Validation
 
 ```sh
-cargo test -p ccez-core plugins::ara   # 2 tests: region validation, seam refusal
+cargo test -p ccez-core plugins::ara   # 8 tests: region, context, sources, mapping, host, binary seam, round-trip, transpose
+cargo test -p ccez-core bounce         # 13 tests: 10 pre-existing + 3 ARA bounce wiring
 cargo test --workspace                 # full workspace stays green (this track's gate)
 bun run check                          # typegen drift gate unaffected (no contract surface touched)
 ```

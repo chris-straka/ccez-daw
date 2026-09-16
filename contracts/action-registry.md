@@ -52,7 +52,28 @@ to descriptors until Track K wires real behavior.
 | `view.focusArrangement` | — (local) | UI-only; shortcut hardening (`ga`) |
 | `view.focusPianoRoll` | — (local) | UI-only; shortcut hardening (`gp`) |
 | `view.focusMixer` | — (local) | UI-only; shortcut hardening (`gm`) |
+| `view.focusSession` | — (local) | UI-only; Session View focus (`gs`, View menu) |
 | `section.goto.chorus` | — (local) | UI-only; shortcut hardening (`gc` chord) |
 | `section.goto.verse` | — (local) | UI-only; shortcut hardening (`gv` chord) |
 | `mixer.muteSelected` | — (local) | UI-only; shortcut hardening (mixer `m`) |
 | `mixer.soloSelected` | — (local) | UI-only; shortcut hardening (mixer `M`) |
+
+## Additive post-v0 coverage rows
+
+Everything added since the v0 freeze, same contract: one action id runs
+from the palette, the vim layer, the scripting API, and MCP alike.
+`automation.point_set` is IPC-backed (`op_apply` carries the
+`AutomationPointSet` op); the rest are `— (local)` pure
+computations / ordinary-op builders over the frozen v0 model, so no new
+IPC surface was needed.
+
+| Action id | IPC command | Notes |
+|---|---|---|
+| `automation.point_set` | `op_apply` | Upsert one automation point (`{ lane, beat, value, node?, param?, laneExists? }`); undoable |
+| `session.launch` | — (local) | Quantized slot/scene launch plan (`S`, View menu) |
+| `session.jam_record` | — (local) | Jam → `ClipAdded` ops (`J`, View menu) |
+| `comp.commit` | — (local) | Composite take → `ClipAdded` (`C`, Clip menu) |
+| `groove.apply` | — (local) | Grooved clip → `ClipAdded` (programmatic/palette, Clip menu) |
+| `branch.merge` | — (local) | Merge preview/apply → ops (programmatic/palette, File menu) |
+| `record.punch` | — (local) | Punched take → `ClipAdded` (`r`, Transport menu) |
+| `link.join` | — (local) | Join Link session clock (`L`, Transport menu; writes no ops) |

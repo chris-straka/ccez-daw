@@ -42,3 +42,12 @@ export {
   transposeSelection,
 } from "./selection";
 export { default as ScoreView } from "./ScoreView";
+export { default as ScorePanel } from "./ScorePanel";
+export {
+  emptyStaffFor,
+  midiClips,
+  readScoreClip,
+  resolveScoreClip,
+  scoreCommitOp,
+  writeScoreClip,
+} from "./score";

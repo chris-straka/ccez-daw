@@ -1,0 +1,846 @@
+/* ccez-daw studio theme: one dark theme, done once.
+ *
+ * Color carries meaning here, never decoration:
+ * - amber accent  = armed / playing / selected / focus
+ * - teal          = audio clips and audio-bearing slots
+ * - steel blue    = MIDI clips and game-audio state
+ * - red           = errors and clipping only
+ */
+
+:root {
+  --daw-bg: #0d1117;
+  --daw-surface: #141a22;
+  --daw-surface-2: #1a212b;
+  --daw-border: rgba(255, 255, 255, 0.08);
+  --daw-text: #ece7dd;
+  --daw-text-dim: #9aa3ad;
+  --daw-text-faint: #5f6a75;
+  --daw-accent: #f5a623;
+  --daw-accent-ink: #1a1206;
+  --daw-audio: #3fc1a5;
+  --daw-midi: #6f9fd8;
+  --daw-state: #7d8ea3;
+  --daw-danger: #e5534b;
+  --daw-ok: #3fb950;
+  --daw-radius: 6px;
+  --daw-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --daw-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--daw-bg);
+  color: var(--daw-text);
+  font-family: var(--daw-font);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Tabular numerals for every time/counter readout so the clock never jitters. */
+.daw-numeric {
+  font-family: var(--daw-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+/* ---- shell layout ---- */
+
+.daw-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--daw-bg);
+  color: var(--daw-text);
+}
+
+.transport-bar {
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px;
+  align-items: center;
+  background: var(--daw-surface);
+  border-bottom: 1px solid var(--daw-border);
+  flex: none;
+}
+
+.transport-brand {
+  font-weight: 650;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  margin-right: 4px;
+}
+
+.transport-readout {
+  color: var(--daw-text-dim);
+  font-size: 12px;
+}
+
+.transport-spacer {
+  flex: 1;
+}
+
+.engine-badge {
+  font-family: var(--daw-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--daw-border);
+  color: var(--daw-text-dim);
+}
+
+.engine-badge.playing {
+  color: var(--daw-accent);
+  border-color: var(--daw-accent);
+}
+
+.vim-badge {
+  font-family: var(--daw-mono);
+  font-size: 11px;
+  color: var(--daw-midi);
+}
+
+.vim-badge.insert {
+  color: var(--daw-ok);
+}
+
+.vim-badge.visual {
+  color: var(--daw-accent);
+}
+
+.transport-error {
+  color: var(--daw-danger);
+  font-size: 12px;
+}
+
+.daw-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+  padding: 8px;
+}
+
+.daw-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+}
+
+/* ---- panels ---- */
+
+.daw-panel {
+  border: 1px solid var(--daw-border);
+  border-radius: var(--daw-radius);
+  background: var(--daw-surface);
+  padding: 10px;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.daw-panel > h2 {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--daw-text-faint);
+}
+
+.track-row {
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--daw-text-dim);
+}
+
+.track-row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ---- buttons, inputs ---- */
+
+.daw-shell button,
+.daw-shell select,
+.daw-shell input {
+  font: inherit;
+  font-size: 12px;
+  color: var(--daw-text);
+  background: var(--daw-surface-2);
+  border: 1px solid var(--daw-border);
+  border-radius: var(--daw-radius);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.daw-shell button:hover,
+.daw-shell select:hover {
+  border-color: rgba(245, 166, 35, 0.55);
+}
+
+.transport-play {
+  border-color: var(--daw-accent);
+  color: var(--daw-accent);
+  font-weight: 600;
+  min-width: 64px;
+}
+
+.transport-play.playing {
+  background: var(--daw-accent);
+  color: var(--daw-accent-ink);
+}
+
+/* ---- command palette ---- */
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 11, 0.6);
+  z-index: 40;
+}
+
+.palette-dialog {
+  position: fixed;
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 90vw);
+  background: var(--daw-surface-2);
+  border: 1px solid var(--daw-border);
+  border-radius: 10px;
+  padding: 10px;
+  z-index: 50;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+
+.palette-dialog input {
+  width: 100%;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  font-size: 14px;
+}
+
+.palette-dialog ul {
+  list-style: none;
+  margin: 8px 0 0 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.palette-item {
+  width: 100%;
+  text-align: left;
+  padding: 5px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--daw-text);
+  cursor: pointer;
+}
+
+.palette-item .palette-id {
+  color: var(--daw-text-faint);
+}
+
+.palette-item.selected {
+  background: rgba(245, 166, 35, 0.16);
+  color: var(--daw-accent);
+}
+
+.palette-error {
+  color: var(--daw-danger);
+  margin-top: 6px;
+}
+
+/* ---- session view ---- */
+
+.session-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  outline: none;
+}
+
+.session-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.session-controls label {
+  color: var(--daw-text-dim);
+  font-size: 12px;
+}
+
+.session-dim {
+  color: var(--daw-text-dim);
+  font-size: 12px;
+}
+
+.session-launch-note {
+  color: var(--daw-accent);
+  font-size: 12px;
+}
+
+.scene-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.scene-btn {
+  width: 96px;
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-btn {
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  min-width: 48px;
+  font-family: var(--daw-mono);
+}
+
+/* Filled slots read as audio (teal); silent slots recede. */
+.slot-btn.filled {
+  border-color: rgba(63, 193, 165, 0.6);
+  color: var(--daw-audio);
+}
+
+.slot-btn.silent {
+  color: var(--daw-text-faint);
+}
+
+/* ---- shared arrangement views ---- */
+
+.view-label {
+  color: var(--daw-text-dim);
+  font-size: 12px;
+  margin: 0 0 4px 0;
+}
+
+.lane {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.lane-name {
+  width: 64px;
+  flex: none;
+  color: var(--daw-text-dim);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-chip {
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-family: var(--daw-mono);
+  white-space: nowrap;
+}
+
+/* Clip color follows signal kind: teal audio, steel-blue MIDI. */
+.clip-audio {
+  border: 1px solid rgba(63, 193, 165, 0.6);
+  color: var(--daw-audio);
+}
+
+.clip-midi {
+  border: 1px solid rgba(111, 159, 216, 0.6);
+  color: var(--daw-midi);
+}
+
+.slot-chip {
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-family: var(--daw-mono);
+  min-width: 48px;
+  border: 1px solid var(--daw-border);
+}
+
+.slot-chip.filled {
+  border-color: rgba(63, 193, 165, 0.6);
+  color: var(--daw-audio);
+}
+
+.slot-chip.silent {
+  color: var(--daw-text-faint);
+}
+
+/* ---- score ---- */
+
+/* The printed page stays black-on-white inside the dark shell; the steel-blue
+ * frame marks it as MIDI, and selection/accents stay amber per the theme. */
+.score-sheet {
+  border: 1px solid rgba(111, 159, 216, 0.6);
+  border-radius: var(--daw-radius);
+  overflow: auto;
+  background: #fff;
+  max-height: 420px;
+}
+
+.score-sheet svg {
+  display: block;
+}
+
+.score-sheet .screen-hint {
+  background: var(--daw-surface);
+  margin: 0;
+  padding: 4px 8px;
+}
+
+/* ---- mixer ---- */
+
+.strip-row {
+  display: flex;
+  gap: 8px;
+  overflow: auto;
+  padding-bottom: 4px;
+}
+
+.mixer-strip {
+  border: 1px solid var(--daw-border);
+  border-radius: var(--daw-radius);
+  background: var(--daw-surface-2);
+  padding: 8px;
+  min-width: 120px;
+}
+
+.mixer-strip.reference {
+  border-color: rgba(245, 166, 35, 0.5);
+}
+
+.mixer-strip-name {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.mixer-strip-out {
+  font-size: 11px;
+  color: var(--daw-text-faint);
+  font-family: var(--daw-mono);
+}
+
+.mixer-label {
+  display: block;
+  font-size: 11px;
+  color: var(--daw-text-dim);
+  margin-top: 6px;
+}
+
+.mixer-label input[type="range"] {
+  width: 100%;
+  accent-color: var(--daw-accent);
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.mixer-values {
+  font-family: var(--daw-mono);
+  font-size: 11px;
+}
+
+.mixer-ref {
+  font-size: 12px;
+  color: var(--daw-accent);
+}
+
+.mixer-foot {
+  font-size: 11px;
+  color: var(--daw-text-faint);
+}
+
+.mute-btn.on {
+  background: var(--daw-danger);
+  border-color: var(--daw-danger);
+  color: #fff;
+}
+
+.solo-btn.on {
+  background: var(--daw-ok);
+  border-color: var(--daw-ok);
+  color: #06130a;
+  font-weight: 700;
+}
+
+/* ---- metering ---- */
+
+.meter-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.meter-bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--daw-surface-2);
+  border: 1px solid var(--daw-border);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: var(--daw-ok);
+}
+
+.meter-fill.hot {
+  background: var(--daw-accent);
+}
+
+.meter-fill.over {
+  background: var(--daw-danger);
+}
+
+.meter-hold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--daw-accent);
+}
+
+.clear-clip-btn {
+  background: var(--daw-danger);
+  border-color: var(--daw-danger);
+  color: #fff;
+}
+
+.meter-note {
+  color: var(--daw-danger);
+  font-size: 11px;
+}
+
+.meter-readout {
+  color: var(--daw-midi);
+  font-size: 12px;
+}
+
+/* ---- bounce + export ---- */
+
+/* Export queue rows reuse the clip-chip signal colors: teal = ready to
+ * ship, steel-blue = still queued, red text = blocked. */
+.export-status {
+  font-family: var(--daw-mono);
+  font-size: 11px;
+  color: var(--daw-state);
+}
+
+.export-status.ready {
+  color: var(--daw-audio);
+}
+
+.export-status.error {
+  color: var(--daw-danger);
+}
+
+.export-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+/* ---- game-audio audition ---- */
+
+.audition-canvas {
+  border: 1px solid var(--daw-border);
+  border-radius: var(--daw-radius);
+  display: block;
+}
+
+.state-btn.active {
+  border-color: var(--daw-accent);
+  color: var(--daw-accent);
+  font-weight: 600;
+}
+
+.audition-log {
+  max-height: 120px;
+  overflow: auto;
+}
+
+.seam-status {
+  font-size: 12px;
+}
+
+.seam-status.clean {
+  color: var(--daw-ok);
+}
+
+.seam-status.click {
+  color: var(--daw-danger);
+  font-weight: 600;
+}
+
+.waiver-pre {
+  font-size: 11px;
+  color: var(--daw-text-dim);
+  font-family: var(--daw-mono);
+  background: var(--daw-surface-2);
+  border: 1px solid var(--daw-border);
+  border-radius: var(--daw-radius);
+  padding: 8px;
+  overflow: auto;
+}
+
+/* ---- automation lanes ---- */
+
+.lane-canvas {
+  fill: var(--daw-surface-2);
+  stroke: var(--daw-border);
+}
+
+.lane-curve {
+  fill: none;
+  stroke: var(--daw-accent);
+  stroke-width: 1.5;
+}
+
+.lane-point {
+  fill: var(--daw-accent);
+}
+
+/* Compact labeled control rows (repair, editors). */
+.form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--daw-text-dim);
+  flex-wrap: wrap;
+}
+
+/* ---- device panels ---- */
+
+/* 4x4 drum pad grid: pads read as MIDI (steel blue), selection as amber. */
+.pad-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(64px, 1fr));
+  gap: 6px;
+}
+
+.pad-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 1px solid rgba(111, 159, 216, 0.45);
+  border-radius: var(--daw-radius);
+  background: var(--daw-surface-2);
+  color: var(--daw-midi);
+  text-align: left;
+}
+
+.pad-btn:hover {
+  border-color: rgba(245, 166, 35, 0.55);
+}
+
+.pad-btn.selected {
+  border-color: var(--daw-accent);
+  color: var(--daw-accent);
+}
+
+.pad-index {
+  font-size: 11px;
+  color: var(--daw-text-faint);
+}
+
+.pad-btn.selected .pad-index {
+  color: var(--daw-accent);
+}
+
+.pad-name {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.pad-note {
+  font-size: 11px;
+  color: var(--daw-text-dim);
+}
+
+/* ---- video ---- */
+
+.filmstrip-cell {
+  display: flex;
+  gap: 2px;
+  cursor: ew-resize;
+  border: 1px solid rgba(111, 159, 216, 0.5);
+  border-radius: 4px;
+  padding: 2px;
+  overflow: hidden;
+}
+
+.filmstrip-cell.dragging {
+  border-color: var(--daw-accent);
+  opacity: 0.85;
+}
+
+.filmstrip-thumb {
+  flex: 1;
+  height: 22px;
+  border-radius: 2px;
+  min-width: 4px;
+}
+
+.video-empty {
+  background: #000;
+  color: var(--daw-text-faint);
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--daw-radius);
+  font-size: 12px;
+  border: 1px solid var(--daw-border);
+}
+
+.video-frame {
+  border-radius: var(--daw-radius);
+  background: #000;
+  display: block;
+}
+
+/* ---- shortcuts editor (shares the palette dialog) ---- */
+
+.editor-dialog {
+  width: min(640px, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.editor-notice {
+  color: var(--daw-accent);
+}
+
+.editor-conflicts {
+  color: var(--daw-danger);
+}
+
+.editor-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+}
+
+.editor-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--daw-border);
+}
+
+.editor-keys {
+  min-width: 90px;
+  font-family: var(--daw-mono);
+  font-size: 12px;
+  color: var(--daw-midi);
+}
+
+.editor-keys.contested {
+  color: var(--daw-danger);
+}
+
+.editor-action {
+  flex: 1;
+  color: var(--daw-text);
+}
+
+.editor-action small {
+  color: var(--daw-text-faint);
+}
+
+/* ---- browser / lists ---- */
+
+.browser-search {
+  width: 100%;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.browser-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.browser-tabs button.active {
+  border-color: var(--daw-accent);
+  color: var(--daw-accent);
+}
+
+.browser-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.browser-row {
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--daw-text-dim);
+  cursor: pointer;
+}
+
+.browser-row:hover,
+.browser-row.selected {
+  background: rgba(245, 166, 35, 0.12);
+  color: var(--daw-text);
+}
+
+/* ---- focus: this is a keyboard-first app, focus is always visible ---- */
+
+.daw-shell :focus-visible {
+  outline: 2px solid var(--daw-accent);
+  outline-offset: 1px;
+}
+
+/* ---- scrollbars ---- */
+
+.daw-shell ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.daw-shell ::-webkit-scrollbar-thumb {
+  background: #2a333e;
+  border-radius: 5px;
+  border: 2px solid var(--daw-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daw-shell *,
+  .daw-shell *::before,
+  .daw-shell *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

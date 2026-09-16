@@ -56,59 +56,43 @@ export default function Palette(props: {
 
   return (
     <Show when={props.open}>
-      <div
-        role="dialog"
-        aria-label="Command palette"
-        style={{
-          position: "fixed",
-          top: "12%",
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "min(560px, 90vw)",
-          background: "#222",
-          border: "1px solid #555",
-          "border-radius": "8px",
-          padding: "8px",
-          "z-index": 50,
-        }}
-        onKeyDown={onKey}
-      >
-        <input
-          ref={inputEl}
-          placeholder="Type a command…"
-          value={query()}
-          onInput={(e) => {
-            setQuery(e.currentTarget.value);
-            setSelected(0);
-          }}
-          style={{ width: "100%", padding: "6px", "box-sizing": "border-box" }}
-        />
-        <ul style={{ "list-style": "none", margin: "8px 0 0 0", padding: 0, "max-height": "40vh", overflow: "auto" }}>
-          <For each={matches()}>
-            {(a, i) => (
-              <li>
-                <button
-                  onClick={() => void run(a.id)}
-                  style={{
-                    width: "100%",
-                    "text-align": "left",
-                    padding: "4px 8px",
-                    background: i() === selected() ? "#3a3a3a" : "transparent",
-                    color: "#eee",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  {a.title} <span style={{ color: "#888" }}>({a.id})</span>
-                </button>
-              </li>
-            )}
-          </For>
-        </ul>
-        <Show when={error()}>
-          <div style={{ color: "#f88" }}>{error()}</div>
-        </Show>
-      </div>
+      <>
+        <div class="palette-backdrop" onClick={props.onClose} />
+        <div
+          role="dialog"
+          aria-label="Command palette"
+          class="palette-dialog"
+          onKeyDown={onKey}
+        >
+          <input
+            ref={inputEl}
+            placeholder="Type a command…"
+            value={query()}
+            onInput={(e) => {
+              setQuery(e.currentTarget.value);
+              setSelected(0);
+            }}
+          />
+          <ul>
+            <For each={matches()}>
+              {(a, i) => (
+                <li>
+                  <button
+                    class="palette-item"
+                    classList={{ selected: i() === selected() }}
+                    onClick={() => void run(a.id)}
+                  >
+                    {a.title} <span class="palette-id">({a.id})</span>
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+          <Show when={error()}>
+            <div class="palette-error">{error()}</div>
+          </Show>
+        </div>
+      </>
     </Show>
   );
 }

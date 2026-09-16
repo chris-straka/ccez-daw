@@ -89,6 +89,22 @@ describe("multi-key chords", () => {
   });
 });
 
+describe("session view focus", () => {
+  test("gs dispatches view.focusSession and the action is registered", () => {
+    const { store, effects } = rig();
+    expect(handleKey(store, "g", bindings, effects)).toEqual({ kind: "pending" });
+    expect(handleKey(store, "s", bindings, effects)).toEqual({
+      kind: "dispatched",
+      action: "view.focusSession",
+    });
+    expect(new Set(ACTIONS.map((a) => a.id)).has("view.focusSession")).toBe(true);
+  });
+
+  test("the default table stays conflict-free with the session chord", () => {
+    expect(findConflicts(createKeymap())).toEqual([]);
+  });
+});
+
 describe("per-view contexts (arrangement vs piano-roll vs mixer)", () => {
   test("mixer m / M dispatch only in the mixer view", () => {
     const { store, effects } = rig();

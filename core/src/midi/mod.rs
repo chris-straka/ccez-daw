@@ -29,7 +29,7 @@ pub mod groove;
 pub mod transport;
 
 pub use clip::MidiClip;
-pub use groove::GrooveTemplate;
+pub use groove::{ApplyParams, GroovePool, GrooveTemplate, apply_full, extract};
 pub use transport::{Recorder, ScheduledNote, expand};
 
 use serde::{Deserialize, Serialize};

@@ -86,77 +86,59 @@ export default function ShortcutEditor(props: {
 
   return (
     <Show when={props.open}>
-      <div
-        role="dialog"
-        aria-label="Shortcuts editor"
-        style={{
-          position: "fixed",
-          top: "8%",
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "min(640px, 92vw)",
-          "max-height": "80vh",
-          overflow: "auto",
-          background: "#222",
-          border: "1px solid #555",
-          "border-radius": "8px",
-          padding: "12px",
-          "z-index": 50,
-        }}
-      >
-        <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
-          <strong>Shortcuts</strong>
-          <input
-            placeholder="Search keys or actions…"
-            value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-            style={{ flex: 1 }}
-          />
-          <button onClick={reset}>Reset to defaults</button>
-          <button onClick={props.onClose}>Close</button>
+      <>
+        <div class="palette-backdrop" onClick={props.onClose} />
+        <div
+          role="dialog"
+          aria-label="Shortcuts editor"
+          class="palette-dialog editor-dialog"
+        >
+          <div class="session-controls">
+            <strong>Shortcuts</strong>
+            <input
+              placeholder="Search keys or actions…"
+              value={query()}
+              onInput={(e) => setQuery(e.currentTarget.value)}
+              style={{ flex: 1 }}
+            />
+            <button onClick={reset}>Reset to defaults</button>
+            <button onClick={props.onClose}>Close</button>
+          </div>
+          <Show when={notice()}>
+            <p class="editor-notice">{notice()}</p>
+          </Show>
+          <Show when={conflicts().length > 0}>
+            <p class="editor-conflicts">
+              Conflicts:{" "}
+              {conflicts()
+                .map((c) => `${c.keys} (${c.actions.join(", ")})`)
+                .join("; ")}
+            </p>
+          </Show>
+          <ul class="editor-list">
+            <For each={rows()}>
+              {(b) => (
+                <li class="editor-row">
+                  <code class={`editor-keys${badKeys().has(b.keys) ? " contested" : ""}`}>
+                    {b.keys === " " ? "Space" : b.keys}
+                  </code>
+                  <span class="editor-action" title={formatBinding(b)}>
+                    {b.action} <small>({b.mode}/{b.context})</small>
+                  </span>
+                  <input
+                    placeholder="new keys"
+                    aria-label={`Remap ${b.action}`}
+                    value={drafts()[b.action] ?? ""}
+                    onInput={(e) => setDrafts((d) => ({ ...d, [b.action]: e.currentTarget.value }))}
+                    style={{ width: "90px" }}
+                  />
+                  <button onClick={() => applyRemap(b.action)}>Remap</button>
+                </li>
+              )}
+            </For>
+          </ul>
         </div>
-        <Show when={notice()}>
-          <p style={{ color: "#fc8" }}>{notice()}</p>
-        </Show>
-        <Show when={conflicts().length > 0}>
-          <p style={{ color: "#f88" }}>
-            Conflicts:{" "}
-            {conflicts()
-              .map((c) => `${c.keys} (${c.actions.join(", ")})`)
-              .join("; ")}
-          </p>
-        </Show>
-        <ul style={{ "list-style": "none", padding: 0 }}>
-          <For each={rows()}>
-            {(b) => (
-              <li
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  "align-items": "center",
-                  padding: "4px 0",
-                  "border-bottom": "1px solid #333",
-                }}
-              >
-                <code style={{ "min-width": "90px", color: badKeys().has(b.keys) ? "#f88" : "#8cf" }}>
-                  {b.keys === " " ? "Space" : b.keys}
-                </code>
-                <span style={{ flex: 1, color: "#ccc" }} title={formatBinding(b)}>
-                  {b.action} <small style={{ color: "#888" }}>({b.mode}/{b.context})</small>
-                </span>
-                <input
-                  placeholder="new keys"
-                  aria-label={`Remap ${b.action}`}
-                  value={drafts()[b.action] ?? ""}
-                  onInput={(e) => setDrafts((d) => ({ ...d, [b.action]: e.currentTarget.value }))}
-                  style={{ width: "90px" }}
-                />
-                <button onClick={() => applyRemap(b.action)}>Remap</button>
-              </li>
-            )}
-          </For>
-        </ul>
-      </div>
+      </>
     </Show>
   );
 }

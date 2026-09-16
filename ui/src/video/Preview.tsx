@@ -62,31 +62,20 @@ export default function VideoPreview(props: {
   const tc = () => timecodeForTransport(props.doc, props.transportBeats, props.tempo);
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
-      <div style={{ color: "#aaa", "font-size": "12px" }}>
-        Video preview <span style={{ color: "#8cf", "font-family": "monospace" }}>{tc() ?? "--:--:--:--"}</span>
+    <div class="session-view" style={{ gap: "4px" }}>
+      <div class="view-label">
+        Video preview <span class="daw-numeric meter-readout">{tc() ?? "--:--:--:--"}</span>
       </div>
       <Show
         when={activeSrc()}
         fallback={
-          <div
-            style={{
-              background: "#000",
-              color: "#666",
-              height: "120px",
-              display: "flex",
-              "align-items": "center",
-              "justify-content": "center",
-              "border-radius": "4px",
-              "font-size": "12px",
-            }}
-          >
+          <div class="video-empty">
             {tc() === null ? "No video under playhead" : `Preview: ${tc()} (take: source — no media wired)`}
           </div>
         }
       >
         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video ref={el} src={activeSrc()!} style={{ width: "100%", "border-radius": "4px", background: "#000" }} />
+        <video ref={el} src={activeSrc()!} class="video-frame" style={{ width: "100%" }} />
       </Show>
     </div>
   );

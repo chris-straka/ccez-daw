@@ -9,13 +9,17 @@
 //!    directory. Pure path logic, no loading, never fails loud (a missing
 //!    plugin dir just means "no plugins").
 //! 2. **Loading** ([`Vst3Host::load_bundle`]): open one bundle as a
-//!    [`Vst3Instance`]. v1 loads the `descriptor.json` dev/test format
+//!    [`Vst3Instance`]. The `descriptor.json` dev/test format loads
 //!    in-process; native binaries go through [`Vst3Host::load_module`],
-//!    which really `dlopen`s the module and enumerates its factory classes.
-//! 3. **Running** ([`Vst3Instance`]): the host-side plugin contract —
-//!    params as frozen [`Param`](crate::model::Param)s, block processing,
-//!    reset. [`DescriptorPlugin`] and [`NullVst3Plugin`] implement it
-//!    in-process; real binary instances are the phase-2 follow-up.
+//!    which really `dlopen`s the module and enumerates its factory classes
+//!    (discovery), while [`Vst3Backend::load`] instantiates the first
+//!    audio-effect class for real audio through `vst3-host`.
+//! 3. **Running**: the host-side plugin contract
+//!    ([`Vst3Instance`]: params as frozen [`Param`](crate::model::Param)s,
+//!    block processing, reset) implemented in-process by
+//!    [`DescriptorPlugin`] and [`NullVst3Plugin`]; and [`Vst3Backend`],
+//!    the sandboxed-worker twin of the CLAP backend (`vst3-host` mono
+//!    process, normalized params, live latency, real state chunks).
 //!
 //! Frozen-contract rule: plugin params reuse the frozen `Param` shape and
 //! [`Vst3Instance::as_device_node`] maps a plugin to a frozen
@@ -25,12 +29,14 @@
 //! format, never written to project files.)
 //!
 //! Sandbox seam (shared with the sibling CLAP track): out-of-process
-//! isolation is owned by the CLAP agent in `plugins/sandbox.rs` —
-//! read-only for this track. [`Vst3Instance`] is `Send` so a boxed instance
-//! can move behind that sandbox interface later without changing this
-//! file's public behavior; the adapter belongs in `vst3.rs` when the
-//! sandbox lands.
+//! isolation lives in `plugins/sandbox.rs` + `plugins/worker.rs`.
+//! [`Vst3Backend`] runs *inside* that worker behind the additive `LoadVst3`
+//! op — the same convergence the CLAP backend uses — so a segfault still
+//! kills only the child and [`PluginHost`](super::host::PluginHost)
+//! recovery (respawn + replay the last-known-good
+//! [`PluginState`](super::host::PluginState)) works unchanged.
 
+use std::collections::BTreeMap;
 use std::ffi::c_void;
 use std::fmt;
 use std::fs;
@@ -38,6 +44,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use super::host::PluginState;
 use crate::model::{Node, NodeKind, Param};
 
 /// File extension (and bundle marker) for VST3 plugins on every platform.
@@ -599,6 +606,602 @@ impl Vst3Host {
         }
         Ok(out)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Real binary hosting: VST3 audio through `vst3-host`, inside the worker.
+// ---------------------------------------------------------------------------
+//
+// Teaching note: this is the VST3 twin of [`ClapBackend`](super::clap::ClapBackend)
+// and lives in the same place — *inside* the sandboxed [`worker`](super::worker)
+// child, behind the additive `LoadVst3` op. Untrusted C-ABI code stays behind
+// the process boundary; the host, sandbox, and recovery paths never branch on
+// format. Compare the two backends side by side: same shape (load at a rate,
+// mono `process`, clamped params, live latency query, host-side state truth),
+// different plugin ABI underneath.
+//
+// v1 scope, honestly documented (mirrors the CLAP v1 limits):
+//
+// - Mono only: one input bus, one output bus, one channel each. Anything
+//   else fails [`Vst3Backend::load`] with [`Vst3BackendError::PortLayout`]
+//   instead of rendering wrong audio.
+// - Params are VST3 normalized values (`0.0..=1.0` by spec). Worker ids
+//   match plugin param names case-insensitively and clamp to the plugin's
+//   `[min, max]` (the same rule the engine's `ParamSet` applies). Unknown
+//   ids are kept in the host-side snapshot but never sent — snapshots stay
+//   exact.
+// - The opaque `blob` is a *real* VST3 state chunk now (not passthrough):
+//   [`Vst3Backend::state`] reads it from `save_state` (`IComponent::getState`
+//   on the fixture) and [`Vst3Backend::set_state`] pushes it back through
+//   `load_state` — best-effort on the plugin side, exact on the host side,
+//   which is what `recover()` replays.
+// - Multi-effect bundles enumerate every factory class
+//   ([`Vst3Backend::available_classes`]) and instantiate by class id
+//   ([`Vst3Backend::load_class`]); the id-less [`Vst3Backend::load`]
+//   keeps the old default (first audio-effect class).
+
+/// Largest single `process` call handed to the plugin. Bigger worker
+/// blocks are chunked; smaller ones pass through untouched.
+const VST3_MAX_BLOCK_FRAMES: usize = 1024;
+
+/// One audio-effect class inside a (possibly multi-effect) VST3 bundle:
+/// the 32-hex-char uid [`Vst3Backend::load_class`] instantiates plus the
+/// display name and factory category.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Vst3BackendClass {
+    pub uid: String,
+    pub name: String,
+    pub category: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Vst3BackendError {
+    /// The bundle could not be opened, negotiated, or started.
+    /// (A factory with no audio-effect class fails inside `load_plugin`
+    /// and surfaces here too — the loader never returns a plugin the host
+    /// cannot drive.)
+    Load(String),
+    /// The plugin's bus layout is not v1 mono in/out.
+    PortLayout(String),
+    /// Unknown param id on `set_param` (never sent to the plugin).
+    BadParam(String),
+    /// The plugin refused a `process` call.
+    Process(String),
+}
+
+impl fmt::Display for Vst3BackendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Load(m) => write!(f, "vst3 load: {m}"),
+            Self::PortLayout(m) => write!(f, "vst3 bus layout: {m}"),
+            Self::BadParam(id) => write!(f, "unknown vst3 param `{id}`"),
+            Self::Process(m) => write!(f, "vst3 process: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for Vst3BackendError {}
+
+pub type BackendResult<T> = std::result::Result<T, Vst3BackendError>;
+
+/// One discovered parameter: stable VST3 id plus the normalized range the
+/// host clamps worker-side values into.
+#[derive(Debug, Clone)]
+struct Vst3ParamSlot {
+    id: u32,
+    name: String,
+    min: f64,
+    max: f64,
+}
+
+/// A live VST3 instance running inside the worker process.
+///
+/// Owns the [`vst3_host::Plugin`](https://docs.rs/vst3-host) (loaded
+/// in-process — which *is* the worker child, so a crash still kills only
+/// the child). [`Drop`] stops processing so the bundle unloads cleanly.
+pub struct Vst3Backend {
+    plugin: vst3_host::Plugin,
+    /// Canonical param names (as the plugin spells them).
+    slots: Vec<Vst3ParamSlot>,
+    /// Current values by canonical name, plus any unknown ids the worker
+    /// was told (kept for snapshot exactness, never sent).
+    params: BTreeMap<String, f64>,
+    blob: Vec<u8>,
+    plugin_id: String,
+    plugin_name: String,
+    sample_rate: f64,
+}
+
+impl Vst3Backend {
+    /// List every class the bundle's factory exports (effects and
+    /// controllers alike), in factory order. Pure discovery: nothing is
+    /// instantiated, so this never fails with
+    /// [`Vst3BackendError::PortLayout`].
+    pub fn available_classes(path: &str) -> BackendResult<Vec<Vst3BackendClass>> {
+        let info = vst3_host::discovery::get_detailed_plugin_info(std::path::Path::new(path))
+            .map_err(|e| Vst3BackendError::Load(format!("{path}: {e}")))?;
+        Ok(info
+            .classes
+            .into_iter()
+            .map(|c| Vst3BackendClass {
+                uid: c.class_id,
+                name: c.name,
+                category: c.category,
+            })
+            .collect())
+    }
+
+    /// Load `path` (a real `*.vst3` bundle dir), instantiate its first
+    /// audio-effect class, negotiate mono buses at `sample_rate`, discover
+    /// its params, and start processing.
+    pub fn load(path: &str, sample_rate: f64) -> BackendResult<Self> {
+        Self::load_inner(path, sample_rate, None)
+    }
+
+    /// Load `path` and instantiate the audio-effect class named by
+    /// `class_id` (one of [`Vst3Backend::available_classes`]), then
+    /// negotiate mono buses at `sample_rate`, discover params, and start
+    /// processing. An unknown id is [`Vst3BackendError::Load`], never a
+    /// silent fallback to the first class.
+    pub fn load_class(path: &str, sample_rate: f64, class_id: &str) -> BackendResult<Self> {
+        Self::load_inner(path, sample_rate, Some(class_id))
+    }
+
+    fn load_inner(
+        path: &str,
+        sample_rate: f64,
+        class_id: Option<&str>,
+    ) -> BackendResult<Self> {
+        // SAFETY: loading a bundle executes its code — that is the point,
+        // and the worker process boundary is what contains it.
+        let mut host = vst3_host::Vst3Host::builder()
+            .sample_rate(sample_rate)
+            .block_size(VST3_MAX_BLOCK_FRAMES)
+            .input_channels(1)
+            .output_channels(1)
+            .build()
+            .map_err(|e| Vst3BackendError::Load(format!("{path}: {e}")))?;
+        let mut plugin = match class_id {
+            Some(id) => host
+                .load_plugin_class(path, id)
+                .map_err(|e| Vst3BackendError::Load(format!("{path}: {e}")))?,
+            None => host
+                .load_plugin(path)
+                .map_err(|e| Vst3BackendError::Load(format!("{path}: {e}")))?,
+        };
+
+        check_mono_layout(&plugin, path)?;
+
+        let (slots, params) = discover_vst3_params(&plugin)
+            .map_err(|e| Vst3BackendError::Load(format!("{path}: {e}")))?;
+
+        plugin
+            .start_processing()
+            .map_err(|e| Vst3BackendError::Load(format!("start {}: {e}", plugin.info().name)))?;
+
+        let blob = plugin.save_state().unwrap_or_default();
+        Ok(Self {
+            plugin_id: plugin.info().uid.clone(),
+            plugin_name: plugin.info().name.clone(),
+            plugin,
+            slots,
+            params,
+            blob,
+            sample_rate,
+        })
+    }
+
+    pub fn plugin_id(&self) -> &str {
+        &self.plugin_id
+    }
+
+    pub fn plugin_name(&self) -> &str {
+        &self.plugin_name
+    }
+
+    pub fn sample_rate(&self) -> f64 {
+        self.sample_rate
+    }
+
+    /// Set one param by worker id (matches plugin names,
+    /// case-insensitively; unknown ids are an error, never sent).
+    pub fn set_param(&mut self, id: &str, value: f64) -> BackendResult<()> {
+        let slot = find_vst3_slot(&self.slots, id)
+            .ok_or_else(|| Vst3BackendError::BadParam(id.to_string()))?;
+        let clamped = value.clamp(slot.min, slot.max);
+        self.plugin
+            .set_parameter(slot.id, clamped)
+            .map_err(|e| Vst3BackendError::Process(e.to_string()))?;
+        self.params.insert(slot.name.clone(), clamped);
+        Ok(())
+    }
+
+    /// Render one mono block. Every call re-sends the full current param
+    /// set first, so the plugin converges even after a kill-and-respawn
+    /// that skipped `set_param` replays (the CLAP backend's rule).
+    pub fn process(&mut self, input: &[f32]) -> BackendResult<Vec<f32>> {
+        let mut out = Vec::with_capacity(input.len());
+        for chunk in input.chunks(VST3_MAX_BLOCK_FRAMES) {
+            if chunk.is_empty() {
+                continue;
+            }
+            let Self {
+                plugin,
+                slots,
+                params,
+                plugin_name,
+                sample_rate,
+                ..
+            } = self;
+            out.extend(Self::process_chunk(
+                plugin,
+                slots,
+                params,
+                plugin_name,
+                *sample_rate,
+                chunk,
+            )?);
+        }
+        Ok(out)
+    }
+
+    /// Render one chunk (≤ [`VST3_MAX_BLOCK_FRAMES`]) through a started
+    /// plugin. Associated function (no `self`) so [`Vst3Backend::process`]
+    /// can hold the plugin loan beside the param tables without
+    /// double-borrowing.
+    fn process_chunk(
+        plugin: &mut vst3_host::Plugin,
+        slots: &[Vst3ParamSlot],
+        params: &BTreeMap<String, f64>,
+        plugin_name: &str,
+        sample_rate: f64,
+        chunk: &[f32],
+    ) -> BackendResult<Vec<f32>> {
+        for slot in slots {
+            if let Some(value) = params.get(&slot.name) {
+                plugin
+                    .set_parameter(slot.id, *value)
+                    .map_err(|e| Vst3BackendError::Process(format!("{plugin_name}: {e}")))?;
+            }
+        }
+        let mut buffers =
+            vst3_host::audio::AudioBuffers::new(1, 1, chunk.len(), sample_rate);
+        buffers.inputs[0].copy_from_slice(chunk);
+        plugin
+            .process_audio(&mut buffers)
+            .map_err(|e| Vst3BackendError::Process(format!("{plugin_name}: {e}")))?;
+        Ok(buffers.outputs[0].clone())
+    }
+
+    /// Current processing latency in samples: a live query of
+    /// `IAudioProcessor::getLatencySamples` (0 when the plugin reports
+    /// none). Feeds [`LatencyMap`](super::latency::LatencyMap) via the
+    /// worker's `GetLatency` op, like the CLAP backend's probe.
+    pub fn latency_samples(&self) -> u32 {
+        self.plugin.latency_samples()
+    }
+
+    pub fn state(&self) -> PluginState {
+        PluginState::new(self.params.clone(), self.blob.clone())
+    }
+
+    /// Push worker-side truth into the backend. Known ids clamp into the
+    /// plugin's ranges; unknown ids ride along host-side so snapshots
+    /// round-trip exactly (the mock's rule). The blob goes back through
+    /// `load_state` best-effort — the host-side copy is adopted regardless,
+    /// so snapshot exactness never depends on the plugin accepting it.
+    pub fn set_state(&mut self, state: &PluginState) {
+        for (id, value) in &state.params {
+            match find_vst3_slot(&self.slots, id) {
+                Some(slot) => {
+                    let clamped = value.clamp(slot.min, slot.max);
+                    let _ = self.plugin.set_parameter(slot.id, clamped);
+                    self.params.insert(slot.name.clone(), clamped);
+                }
+                None => {
+                    self.params.insert(id.clone(), *value);
+                }
+            }
+        }
+        if !state.blob.is_empty() {
+            let _ = self.plugin.load_state(&state.blob);
+        }
+        self.blob = state.blob.clone();
+    }
+}
+
+impl Drop for Vst3Backend {
+    fn drop(&mut self) {
+        let _ = self.plugin.stop_processing();
+    }
+}
+
+/// v1 accepts exactly one mono input bus and one mono output bus.
+/// Anything else is a clean refusal, never silent misrouting.
+fn check_mono_layout(plugin: &vst3_host::Plugin, path: &str) -> BackendResult<()> {
+    let layout = plugin
+        .audio_bus_layout()
+        .map_err(|e| Vst3BackendError::PortLayout(format!("{path}: {e}")))?;
+    let mono = |label: &str, buses: &[vst3_host::audio::AudioBusConfig]| -> BackendResult<()> {
+        if buses.len() != 1 {
+            return Err(Vst3BackendError::PortLayout(format!(
+                "{path}: expected 1 {label} bus, found {}",
+                buses.len()
+            )));
+        }
+        if buses[0].channel_count != 1 {
+            return Err(Vst3BackendError::PortLayout(format!(
+                "{path}: {label} bus has {} channels, want 1",
+                buses[0].channel_count
+            )));
+        }
+        if !buses[0].active {
+            return Err(Vst3BackendError::PortLayout(format!(
+                "{path}: {label} bus is inactive"
+            )));
+        }
+        Ok(())
+    };
+    mono("input", &layout.inputs)?;
+    mono("output", &layout.outputs)?;
+    Ok(())
+}
+
+/// Read the plugin's param list: canonical names, ids, normalized ranges,
+/// and seed values (live value when the controller answers).
+fn discover_vst3_params(
+    plugin: &vst3_host::Plugin,
+) -> std::result::Result<(Vec<Vst3ParamSlot>, BTreeMap<String, f64>), String> {
+    let infos = plugin.get_parameters().map_err(|e| e.to_string())?;
+    let mut slots = Vec::new();
+    let mut values = BTreeMap::new();
+    for info in infos {
+        // VST3 values are normalized by spec; a plugin reporting an
+        // inverted or empty range is a hostile descriptor — refuse it.
+        if !(info.min < info.max) {
+            return Err(format!("param `{}` has no range", info.name));
+        }
+        values.insert(
+            info.name.clone(),
+            info.value.clamp(info.min, info.max),
+        );
+        slots.push(Vst3ParamSlot {
+            id: info.id,
+            name: info.name,
+            min: info.min,
+            max: info.max,
+        });
+    }
+    Ok((slots, values))
+}
+
+fn find_vst3_slot<'s>(slots: &'s [Vst3ParamSlot], id: &str) -> Option<&'s Vst3ParamSlot> {
+    if let Some(slot) = slots.iter().find(|s| s.name == id) {
+        return Some(slot);
+    }
+    slots
+        .iter()
+        .find(|s| s.name.eq_ignore_ascii_case(id.trim()))
+}
+
+#[cfg(test)]
+pub(crate) mod fixture {
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+
+    /// The staged `CcezGain.vst3` bundle path, built once per test process.
+    static BUNDLE: OnceLock<PathBuf> = OnceLock::new();
+
+    /// Build the `ccez-vst3-gain` cdylib fixture (when missing) and stage
+    /// it as a real `.vst3` bundle dir. Panics with a clear message when
+    /// the build fails — a missing fixture is a setup error, not a test
+    /// failure. Mirrors [`super::super::worker::ensure_worker_built`] and
+    /// [`super::super::clap::fixture::ensure_fixture_built`].
+    pub(crate) fn ensure_fixture_built() -> PathBuf {
+        BUNDLE
+            .get_or_init(|| {
+                let manifest =
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vst3-gain/Cargo.toml");
+                let target =
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vst3-gain/target/debug");
+                let lib = if cfg!(target_os = "macos") {
+                    target.join("libccez_vst3_gain.dylib")
+                } else if cfg!(target_os = "windows") {
+                    target.join("ccez_vst3_gain.dll")
+                } else {
+                    target.join("libccez_vst3_gain.so")
+                };
+                if !lib.exists() {
+                    let status = std::process::Command::new("cargo")
+                        .args(["build", "--manifest-path"])
+                        .arg(&manifest)
+                        .status()
+                        .expect("cargo build launches");
+                    assert!(status.success() && lib.exists(), "vst3 fixture must build");
+                }
+                stage_bundle(&target, &lib)
+            })
+            .clone()
+    }
+
+    /// Stage the cdylib as a platform-real bundle dir. Only rewrites when
+    /// stale, so parallel tests never race a half-written binary under a
+    /// concurrent loader.
+    fn stage_bundle(target: &PathBuf, lib: &PathBuf) -> PathBuf {
+        let bundle = target.join("CcezGain.vst3");
+        let binary = if cfg!(target_os = "macos") {
+            bundle.join("Contents").join("MacOS").join("CcezGain")
+        } else if cfg!(target_os = "windows") {
+            bundle
+                .join("Contents")
+                .join("x86_64-win")
+                .join("CcezGain.vst3")
+        } else {
+            bundle
+                .join("Contents")
+                .join("x86_64-linux")
+                .join("CcezGain.so")
+        };
+        let bytes = std::fs::read(lib).expect("read fixture dylib");
+        let stale = std::fs::read(&binary).map(|b| b != bytes).unwrap_or(true);
+        if stale {
+            let dir = binary.parent().expect("binary dir");
+            std::fs::create_dir_all(dir).expect("bundle dir");
+            let tmp = dir.join("CcezGain.bin.tmp");
+            std::fs::write(&tmp, &bytes).expect("stage fixture binary");
+            std::fs::rename(&tmp, &binary).expect("publish fixture binary");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                let mut perms = std::fs::metadata(&binary).expect("meta").permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&binary, perms).expect("chmod fixture binary");
+            }
+        }
+        if cfg!(target_os = "macos") {
+            let plist = bundle.join("Contents").join("Info.plist");
+            if !plist.is_file() {
+                std::fs::write(
+                    &plist,
+                    concat!(
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+                        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
+                        "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+                        "<plist version=\"1.0\"><dict>\n",
+                        "<key>CFBundleExecutable</key><string>CcezGain</string>\n",
+                        "<key>CFBundleIdentifier</key><string>com.ccez.gain</string>\n",
+                        "<key>CFBundleName</key><string>Ccez Gain</string>\n",
+                        "<key>CFBundlePackageType</key><string>BNDL</string>\n",
+                        "</dict></plist>\n",
+                    ),
+                )
+                .expect("write Info.plist");
+            }
+        }
+        bundle
+    }
+
+    #[test]
+    fn fixture_bundle_loads_and_reports_latency() {
+        let bundle = ensure_fixture_built();
+        assert!(bundle.is_dir(), "a real bundle dir: {}", bundle.display());
+        let backend =
+            super::Vst3Backend::load(&bundle.display().to_string(), 44100.0).expect("load");
+        assert!(!backend.plugin_id().is_empty());
+        assert_eq!(backend.plugin_name(), "Ccez Gain");
+        assert_eq!(backend.latency_samples(), super::fixture_latency());
+    }
+
+    #[test]
+    fn fixture_gain_audio_is_sample_exact() {
+        let bundle = ensure_fixture_built();
+        let mut backend =
+            super::Vst3Backend::load(&bundle.display().to_string(), 44100.0).expect("load");
+        backend.set_param("gain", 0.5).expect("set_param");
+        let out = backend.process(&[1.0, 0.5, -1.0]).expect("process");
+        assert_eq!(out, vec![0.5, 0.25, -0.5]);
+    }
+
+    #[test]
+    fn missing_bundle_is_a_clean_error() {
+        match super::Vst3Backend::load("/nonexistent/ghost.vst3", 44100.0) {
+            Err(super::Vst3BackendError::Load(_)) => {}
+            other => panic!("expected Load error, got {}", other.is_ok()),
+        }
+    }
+
+    #[test]
+    fn bundle_enumerates_effects_and_controller_in_factory_order() {
+        let bundle = ensure_fixture_built();
+        let listed =
+            super::Vst3Backend::available_classes(&bundle.display().to_string()).expect("list");
+        let names: Vec<&str> = listed.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "Ccez Gain",
+                "Ccez Gain Two",
+                "Ccez Stereo Gain",
+                "Ccez Gain"
+            ]
+        );
+        let effects: Vec<&str> = listed
+            .iter()
+            .filter(|c| c.category == super::AUDIO_EFFECT_CLASS)
+            .map(|c| c.name.as_str())
+            .collect();
+        assert_eq!(effects, vec!["Ccez Gain", "Ccez Gain Two", "Ccez Stereo Gain"]);
+        for class in &listed {
+            assert_eq!(class.uid.len(), 32, "uid is 32 hex chars: {}", class.uid);
+            assert!(class.uid.chars().all(|ch| ch.is_ascii_hexdigit()));
+        }
+    }
+
+    #[test]
+    fn second_effect_selects_by_class_id_and_renders() {
+        let bundle = ensure_fixture_built();
+        let path = bundle.display().to_string();
+        let listed = super::Vst3Backend::available_classes(&path).expect("list");
+        let two = listed
+            .iter()
+            .find(|c| c.name == "Ccez Gain Two")
+            .expect("second effect");
+        let mut backend =
+            super::Vst3Backend::load_class(&path, 44100.0, &two.uid).expect("load_class");
+        assert_eq!(backend.plugin_id(), two.uid);
+        assert_eq!(backend.plugin_name(), "Ccez Gain Two");
+        backend.set_param("gain", 0.5).expect("set_param");
+        let out = backend.process(&[1.0, 0.5, -1.0]).expect("process");
+        assert_eq!(out, vec![0.5, 0.25, -0.5]);
+    }
+
+    #[test]
+    fn unknown_class_id_is_a_clean_load_error() {
+        let bundle = ensure_fixture_built();
+        match super::Vst3Backend::load_class(
+            &bundle.display().to_string(),
+            44100.0,
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+        ) {
+            Err(super::Vst3BackendError::Load(_)) => {}
+            other => panic!("expected Load error, got {}", other.is_ok()),
+        }
+    }
+
+    #[test]
+    fn stereo_effect_refuses_with_port_layout() {
+        let bundle = ensure_fixture_built();
+        let path = bundle.display().to_string();
+        let listed = super::Vst3Backend::available_classes(&path).expect("list");
+        let stereo = listed
+            .iter()
+            .find(|c| c.name == "Ccez Stereo Gain")
+            .expect("stereo effect");
+        match super::Vst3Backend::load_class(&path, 44100.0, &stereo.uid) {
+            Err(super::Vst3BackendError::PortLayout(msg)) => {
+                assert!(msg.contains("2 channels"), "got {msg}");
+            }
+            other => panic!("expected PortLayout, got {}", other.is_ok()),
+        }
+    }
+
+    #[test]
+    fn unknown_param_is_bad_param() {
+        let bundle = ensure_fixture_built();
+        let mut backend =
+            super::Vst3Backend::load(&bundle.display().to_string(), 44100.0).expect("load");
+        match backend.set_param("cutoff", 1.0) {
+            Err(super::Vst3BackendError::BadParam(id)) => assert_eq!(id, "cutoff"),
+            other => panic!("expected BadParam, got {other:?}"),
+        }
+    }
+}
+
+/// Re-exported for tests: the latency the fixture declares, so the
+/// roundtrip test asserts reporting instead of hard-coding a constant.
+#[cfg(test)]
+pub(crate) fn fixture_latency() -> u32 {
+    32
 }
 
 #[cfg(test)]

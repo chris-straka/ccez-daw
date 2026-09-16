@@ -90,11 +90,13 @@ export default function PianoRoll(props: {
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     // Background + beat grid (bar lines brighter every 4 beats).
-    ctx.fillStyle = "#141414";
+    // Canvas palette mirrors theme.css (MIDI notes read steel-blue,
+    // selection reads amber, per the studio theme).
+    ctx.fillStyle = "#0d1117";
     ctx.fillRect(0, 0, w, h);
     const ppb = pxPerBeat(v);
     const firstLine = Math.floor(v.scrollBeats / snap()) * snap();
-    ctx.strokeStyle = "#2a2a2a";
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
     ctx.beginPath();
     for (let b = firstLine; b <= v.scrollBeats + v.beatsVisible + snap(); b += snap()) {
       const x = Math.round(beatToX(b, v)) + 0.5;
@@ -102,7 +104,7 @@ export default function PianoRoll(props: {
       ctx.lineTo(x, h);
     }
     ctx.stroke();
-    ctx.strokeStyle = "#3d3d3d";
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
     ctx.beginPath();
     for (let b = Math.floor(v.scrollBeats / 4) * 4; b <= v.scrollBeats + v.beatsVisible; b += 4) {
       const x = Math.round(beatToX(b, v)) + 0.5;
@@ -112,7 +114,7 @@ export default function PianoRoll(props: {
     ctx.stroke();
     // Black-key rows shaded (pure visual, no model read).
     const rh = rowH(v);
-    ctx.fillStyle = "#1c1c1c";
+    ctx.fillStyle = "#141a22";
     for (let p = 0; p <= 127; p++) {
       if ([1, 3, 6, 8, 10].includes(p % 12)) {
         ctx.fillRect(0, pitchToY(p, v), w, rh);
@@ -124,7 +126,7 @@ export default function PianoRoll(props: {
       const y = pitchToY(n.pitch, v);
       const nw = Math.max(2, n.len_beats * ppb);
       const selected = frame.hover === n.note_id;
-      ctx.fillStyle = n.muted ? "#555" : selected ? "#7fd4ff" : "#4aa3df";
+      ctx.fillStyle = n.muted ? "#5f6a75" : selected ? "#f5a623" : "#6f9fd8";
       ctx.fillRect(x, y + 1, nw, rh - 2);
       ctx.fillStyle = "rgba(255,255,255,0.35)";
       ctx.fillRect(x + nw - 4, y + 1, 3, rh - 2);
@@ -133,7 +135,7 @@ export default function PianoRoll(props: {
     const d = frame.drag;
     if (d && d.mode !== "delete") {
       const sb = snapBeat(d.curBeat, snap());
-      ctx.fillStyle = "rgba(127,212,255,0.35)";
+      ctx.fillStyle = "rgba(111,159,216,0.35)";
       if (d.mode === "create") {
         const y = pitchToY(d.curPitch, v);
         ctx.fillRect(beatToX(sb, v), y + 1, snap() * ppb, rh - 2);

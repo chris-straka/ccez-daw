@@ -10,9 +10,9 @@ Machine truth: `Op` / `OpKind` in `core/src/model.rs`.
 - `seq` — monotonic per project, assigned by `op_apply` (the return value).
 - `actor` — who produced the op: `ui`, `mcp`, `ai:<sidecar>`, `script:<name>`.
   All AI output lands as ordinary ops from an `ai:*` actor (undoable by design).
-- `kind` — `TrackAdded | ClipAdded | ClipMoved | ParamSet | TempoSet | UndoMarker`.
-- `target` — node id, track id, clip id, or param address (`node:param`).
-- `value_json` — JSON payload, e.g. `"0.5"`, `{"startBeats": 8}`.
+- `kind` — `TrackAdded | ClipAdded | ClipMoved | ParamSet | TempoSet | UndoMarker | AutomationPointSet` (`AutomationPointSet` is the one additive extension past the v0 freeze: upsert one automation point; replay of older logs is unaffected).
+- `target` — node id, track id, clip id, automation lane id, or param address (`node:param`).
+- `value_json` — JSON payload, e.g. `"0.5"`, `{"startBeats": 8}`, `{"beat": 4, "value": 0.5}` (plus `"node"`/`"param"` when the op creates its lane).
 
 ## Rules (Track A implements)
 

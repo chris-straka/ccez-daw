@@ -90,48 +90,34 @@ export default function MeterBridge(props: {
     props.onNormalize(t);
   }
 
+  const over = () => peak() >= 1;
+  const hot = () => !clipped() && !over() && peak() >= 0.7;
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
-      <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+    <div class="session-view">
+      <div class="meter-row">
         <div
+          class="meter-bar"
           title={`peak ${(20 * Math.log10(Math.max(peak(), 1e-6))).toFixed(1)} dBFS`}
-          style={{
-            width: "160px",
-            height: "10px",
-            background: "#111",
-            border: "1px solid #555",
-            position: "relative",
-          }}
+          style={{ width: "160px", flex: "none", position: "relative" }}
         >
           <div
-            style={{
-              width: `${Math.min(100, peak() * 100)}%`,
-              height: "100%",
-              background: clipped() ? "#c33" : "#4c4",
-            }}
+            class="meter-fill"
+            classList={{ over: clipped() || over(), hot: hot() }}
+            style={{ width: `${Math.min(100, peak() * 100)}%` }}
           />
-          <div
-            style={{
-              position: "absolute",
-              left: `${Math.min(100, hold() * 100)}%`,
-              top: "0",
-              bottom: "0",
-              width: "2px",
-              background: "#ff4",
-            }}
-          />
+          <div class="meter-hold" style={{ left: `${Math.min(100, hold() * 100)}%` }} />
         </div>
-        <span style={{ "font-size": "11px", color: "#888" }}>
+        <span class="mixer-values session-dim">
           peak {peak().toFixed(2)} · rms {rmsDb().toFixed(1)} dBFS · hold {hold().toFixed(2)}
         </span>
         <Show when={clipped()}>
-          <button onClick={clearClip} style={{ background: "#a33" }} title="A block hit full scale">
+          <button onClick={clearClip} class="clear-clip-btn" title="A block hit full scale">
             CLIP — clear
           </button>
         </Show>
       </div>
       <Show when={props.measuredLufs != null}>
-        <div style={{ "font-size": "12px", color: "#8cf" }}>
+        <div class="meter-readout">
           Mix measures {formatLufs(props.measuredLufs as number)}
           {props.lastGainDb != null ? (
             <span>
@@ -141,8 +127,8 @@ export default function MeterBridge(props: {
           ) : null}
         </div>
       </Show>
-      <div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" }}>
-        <label style={{ "font-size": "11px" }}>
+      <div class="session-controls">
+        <label class="mixer-label">
           target (LUFS)
           <input
             type="number"
@@ -154,7 +140,7 @@ export default function MeterBridge(props: {
             style={{ width: "64px" }}
           />
         </label>
-        <label style={{ "font-size": "11px" }}>
+        <label class="mixer-label">
           true-peak ceiling (dBFS)
           <input
             type="number"
@@ -167,9 +153,9 @@ export default function MeterBridge(props: {
           />
         </label>
         <button onClick={normalize}>Normalize bounce</button>
-        <span style={{ "font-size": "11px", color: "#888" }}>{preview()}</span>
+        <span class="mixer-foot">{preview()}</span>
         <Show when={note()}>
-          <span style={{ color: "#f88", "font-size": "11px" }}>{note()}</span>
+          <span class="meter-note">{note()}</span>
         </Show>
       </div>
     </div>

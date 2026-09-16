@@ -95,6 +95,8 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
         A { id: "project.new", title: "New Project…", accelerator: Some("CmdOrCtrl+N") },
         A { id: "project.open", title: "Open…", accelerator: Some("CmdOrCtrl+O") },
         A { id: "project.save", title: "Save", accelerator: Some("CmdOrCtrl+S") },
+        S,
+        A { id: "branch.merge", title: "Merge Branch…", accelerator: None },
     ];
     if !macos {
         file.push(S);
@@ -131,6 +133,10 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
             A { id: "view.zoom.reset", title: "Reset Zoom", accelerator: Some("CmdOrCtrl+0") },
             S,
             A { id: "view.fullscreen", title: "Toggle Fullscreen", accelerator: Some("F11") },
+            A { id: "view.focusSession", title: "Focus Session", accelerator: None },
+            S,
+            A { id: "session.launch", title: "Launch Session Slot…", accelerator: None },
+            A { id: "session.jam_record", title: "Record Jam to Timeline", accelerator: None },
         ],
     ));
 
@@ -143,6 +149,8 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
             A { id: "transport.stop", title: "Stop", accelerator: None },
             S,
             A { id: "engine.set_tempo", title: "Set Tempo…", accelerator: None },
+            A { id: "record.punch", title: "Punch In/Out", accelerator: None },
+            A { id: "link.join", title: "Join Link Session", accelerator: None },
         ],
     ));
 
@@ -162,6 +170,10 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
             A { id: "clip.add", title: "Add Clip", accelerator: Some("CmdOrCtrl+L") },
             A { id: "clip.duplicate", title: "Duplicate Clip", accelerator: Some("CmdOrCtrl+D") },
             A { id: "clip.delete", title: "Delete Clip", accelerator: Some("CmdOrCtrl+Backspace") },
+            S,
+            A { id: "automation.point_set", title: "Set Automation Point…", accelerator: None },
+            A { id: "comp.commit", title: "Commit Comp…", accelerator: None },
+            A { id: "groove.apply", title: "Apply Groove…", accelerator: None },
         ],
     ));
 
@@ -384,6 +396,15 @@ mod tests {
         "view.zoom.out",
         "view.zoom.reset",
         "view.fullscreen",
+        "view.focusSession",
+        "session.launch",
+        "session.jam_record",
+        "automation.point_set",
+        "comp.commit",
+        "groove.apply",
+        "branch.merge",
+        "record.punch",
+        "link.join",
         "help.open_docs",
         "help.show_shortcuts",
         "track.delete",

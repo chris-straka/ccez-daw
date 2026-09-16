@@ -195,7 +195,94 @@ pub fn apply_op_to_project(project: &mut Project, op: &Op) -> Result<()> {
         OpKind::TempoSet => {
             project.tempo = parse_number(&op.value_json, "TempoSet")?;
         }
+        OpKind::AutomationPointSet => {
+            apply_automation_point(project, op)?;
+        }
         OpKind::UndoMarker => {}
+    }
+    Ok(())
+}
+
+/// `AutomationPointSet` payloads: `{"beat": <n>, "value": <n>}`, plus
+/// `"node"`/`"param"` when the target lane does not exist yet (the lane
+/// is created). Upsert: an exact-beat point is replaced, otherwise the
+/// point inserts keeping strictly-ascending beat order.
+fn apply_automation_point(project: &mut Project, op: &Op) -> Result<()> {
+    let v: serde_json::Value =
+        serde_json::from_str(&op.value_json).map_err(|_| {
+            EngineError::BadPayload(format!(
+                "AutomationPointSet needs {{\"beat\": <n>, \"value\": <n>}}: {}",
+                op.value_json
+            ))
+        })?;
+    let o = v.as_object().ok_or_else(|| {
+        EngineError::BadPayload(format!(
+            "AutomationPointSet needs {{\"beat\": <n>, \"value\": <n>}}: {}",
+            op.value_json
+        ))
+    })?;
+    let beat = o
+        .get("beat")
+        .and_then(|n| n.as_f64())
+        .ok_or_else(|| {
+            EngineError::BadPayload(format!(
+                "AutomationPointSet needs a finite \"beat\": {}",
+                op.value_json
+            ))
+        })?;
+    let value = o
+        .get("value")
+        .and_then(|n| n.as_f64())
+        .ok_or_else(|| {
+            EngineError::BadPayload(format!(
+                "AutomationPointSet needs a finite \"value\": {}",
+                op.value_json
+            ))
+        })?;
+    if !beat.is_finite() || beat < 0.0 || !value.is_finite() {
+        return Err(EngineError::BadPayload(format!(
+            "AutomationPointSet beat must be finite and >= 0, value finite: {}",
+            op.value_json
+        )));
+    }
+    let lane = match project.automation.iter_mut().find(|l| l.id == op.target) {
+        Some(l) => l,
+        None => {
+            let node = o
+                .get("node")
+                .and_then(|n| n.as_str())
+                .ok_or_else(|| EngineError::UnknownTarget(op.target.clone()))?;
+            let param = o
+                .get("param")
+                .and_then(|n| n.as_str())
+                .ok_or_else(|| EngineError::UnknownTarget(op.target.clone()))?;
+            if node.is_empty() || param.is_empty() {
+                return Err(EngineError::UnknownTarget(op.target.clone()));
+            }
+            project.automation.push(crate::model::AutomationLane {
+                id: op.target.clone(),
+                target: crate::model::ParamAddress {
+                    node: node.to_string(),
+                    param: param.to_string(),
+                },
+                points: Vec::new(),
+            });
+            project.automation.last_mut().expect("just pushed")
+        }
+    };
+    match lane.points.iter_mut().find(|p| p.beat == beat) {
+        Some(p) => p.value = value,
+        None => {
+            let pos = lane
+                .points
+                .iter()
+                .position(|p| p.beat > beat)
+                .unwrap_or(lane.points.len());
+            lane.points.insert(
+                pos,
+                crate::model::AutomationPoint { beat, value },
+            );
+        }
     }
     Ok(())
 }
@@ -883,6 +970,51 @@ mod tests {
         assert_eq!(p.tracks.iter().find(|t| t.id == "t1").expect("track").volume, 0.5);
         assert_eq!(p.tempo, 100.0);
         assert_eq!(e.live_ops().len(), 5);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn automation_point_set_creates_upserts_and_orders() {
+        let dir = scratch("auto");
+        let mut e = Engine::create(&dir, Project::new("p", "P")).expect("create");
+        // Missing lane without node/param refuses.
+        assert!(matches!(
+            e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": 0, \"value\": 0.5}"),
+            Err(EngineError::UnknownTarget(_))
+        ));
+        // Missing lane with address creates it.
+        e.apply(
+            "ui",
+            OpKind::AutomationPointSet,
+            "lane_a",
+            "{\"beat\": 4, \"value\": 0.5, \"node\": \"t1\", \"param\": \"volume\"}",
+        )
+        .expect("create lane");
+        // Out-of-order insert keeps ascending beats; exact beat replaces.
+        e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": 0, \"value\": 0.0}")
+            .expect("insert");
+        e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": 4, \"value\": 0.9}")
+            .expect("replace");
+        let lane = e.project().automation.iter().find(|l| l.id == "lane_a").expect("lane");
+        assert_eq!(lane.target.node, "t1");
+        assert_eq!(lane.target.param, "volume");
+        let beats: Vec<f64> = lane.points.iter().map(|p| p.beat).collect();
+        assert_eq!(beats, vec![0.0, 4.0]);
+        assert_eq!(lane.points[1].value, 0.9);
+        // Bad payloads refuse: junk, missing value, negative beat.
+        assert!(matches!(
+            e.apply("ui", OpKind::AutomationPointSet, "lane_a", "forte"),
+            Err(EngineError::BadPayload(_))
+        ));
+        assert!(matches!(
+            e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": 8}"),
+            Err(EngineError::BadPayload(_))
+        ));
+        assert!(matches!(
+            e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": -1, \"value\": 0.5}"),
+            Err(EngineError::BadPayload(_))
+        ));
+        assert_eq!(e.live_ops().len(), 3);
         let _ = fs::remove_dir_all(&dir);
     }
 

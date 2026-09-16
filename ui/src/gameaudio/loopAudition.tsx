@@ -102,12 +102,13 @@ export default function LoopAudition(props: {
   }
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
-      <div style={{ display: "flex", gap: "6px", "align-items": "center", "flex-wrap": "wrap" }}>
-        <span style={{ "font-size": "12px", color: "#aaa" }}>Loop layer:</span>
+    <div class="session-view">
+      <div class="session-controls">
+        <span class="session-dim">Loop layer:</span>
         {props.cue.layers.map((l) => (
           <button
-            style={{ background: layerId() === l.id ? "#4af" : undefined }}
+            class="state-btn"
+            classList={{ active: layerId() === l.id }}
             onClick={() => {
               stop();
               setLayerId(l.id);
@@ -118,12 +119,12 @@ export default function LoopAudition(props: {
           </button>
         ))}
         <button onClick={toggle}>{playing() ? "Stop" : "Play loop"}</button>
-        <span style={{ "font-size": "12px", color: "#8cf" }}>
+        <span class="meter-readout daw-numeric">
           gapless wrap demo: beat 9.5 of 0–8 plays at {wrapped().toFixed(2)}
         </span>
       </div>
-      <div style={{ display: "flex", gap: "12px", "align-items": "center", "flex-wrap": "wrap" }}>
-        <label style={{ "font-size": "12px" }}>
+      <div class="session-controls">
+        <label class="mixer-label">
           click threshold
           <input
             type="range"
@@ -133,24 +134,19 @@ export default function LoopAudition(props: {
             value={threshold()}
             onInput={(e) => setThreshold(Number(e.target.value))}
           />
-          {threshold().toFixed(3)}
+          <span class="mixer-values daw-numeric">{threshold().toFixed(3)}</span>
         </label>
-        <span
-          style={{
-            "font-size": "12px",
-            color: report().click ? "#f66" : "#6d6",
-          }}
-        >
+        <span class={`seam-status daw-numeric${report().click ? " click" : " clean"}`}>
           seam step {report().step.toFixed(4)} {report().click ? "— CLICKS" : "— clean"}
           {" "}(peak {report().peak.toFixed(3)})
         </span>
       </div>
       {report().click && (
-        <div style={{ "font-size": "12px", color: "#f99" }}>
+        <div class="meter-note" style={{ "font-size": "12px" }}>
           {clickErrorText(`stems/${props.cue.id}_${layerId()}.wav`, report())}
         </div>
       )}
-      <div style={{ display: "flex", gap: "6px", "align-items": "center", "flex-wrap": "wrap" }}>
+      <div class="session-controls">
         <button onClick={() => setFixed(true)} disabled={fixed() || !report().click}>
           Fix: fade edges
         </button>
@@ -166,7 +162,7 @@ export default function LoopAudition(props: {
         </button>
       </div>
       {waivers().length > 0 && (
-        <pre style={{ "font-size": "11px", color: "#aaa" }}>{waiverFileJson(waivers())}</pre>
+        <pre class="waiver-pre">{waiverFileJson(waivers())}</pre>
       )}
     </div>
   );

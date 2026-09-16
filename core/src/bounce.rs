@@ -26,8 +26,11 @@
 //! This module adds no IPC or project-schema surface (like `branch.rs`), so
 //! the typegen drift gate (`bun run typegen -- --check`) is unaffected.
 
+use std::collections::HashMap;
+
 use crate::engine::Engine;
 use crate::model::{Clip, Project};
+use crate::plugins::ara::{AraDocument, MockAraEffect, MusicalContext};
 
 /// Default render rate: CD-adjacent, the game-audio lingua franca.
 pub const DEFAULT_SAMPLE_RATE: u32 = 44100;
@@ -252,18 +255,29 @@ fn track_gain(project: &Project, track_id: &str) -> f32 {
 /// Add one clip's contribution into `out`. Time is beats; only the overlap
 /// with the bounce window sounds.
 fn render_clip_into(clip: &Clip, tempo: f64, config: &BounceConfig, out: &mut [f32]) {
+    let buf = clip_window(clip, tempo, config, out.len());
+    for (dst, s) in out.iter_mut().zip(buf.iter()) {
+        *dst += *s;
+    }
+}
+
+/// Render one clip alone into a full-window buffer (silence outside the
+/// clip's overlap with the window). Same math as [`render_clip_into`],
+/// owned per clip so the ARA path can transform a clip before it sums.
+fn clip_window(clip: &Clip, tempo: f64, config: &BounceConfig, n: usize) -> Vec<f32> {
+    let mut buf = vec![0.0f32; n];
     let sr = config.sample_rate as f64;
     let beats_per_sec = tempo / 60.0;
     let win_end = config.start_beat + config.length_beats;
     let clip_end = clip.start_beats + clip.length_beats;
     if clip_end <= config.start_beat || clip.start_beats >= win_end {
-        return;
+        return buf;
     }
     let is_click = clip.kind == crate::model::ClipKind::Audio && clip.source == "builtin:click";
     // Loop-clean reference tone: exactly 220 cycles per beat at any tempo,
     // so whole-beat windows wrap without a click (A440 at 120 BPM).
     let tone_hz = 220.0 * beats_per_sec;
-    for (i, dst) in out.iter_mut().enumerate() {
+    for (i, dst) in buf.iter_mut().enumerate() {
         let beat = config.start_beat + (i as f64 / sr) * beats_per_sec;
         if beat < clip.start_beats || beat >= clip_end {
             continue;
@@ -274,8 +288,184 @@ fn render_clip_into(clip: &Clip, tempo: f64, config: &BounceConfig, out: &mut [f
         } else {
             tone_sample(tone_hz, t_sec, clip.length_beats / beats_per_sec)
         };
-        *dst += s;
+        *dst = s;
     }
+    buf
+}
+
+// -- ARA document model wiring ------------------------------------------------
+
+/// Build the ARA document for one track's clips: each clip's window audio
+/// becomes the clip's source, and each valid clip maps to a region entry
+/// (beats → seconds at the project tempo). The entry's source offset pins
+/// the region's project-timeline seconds to the window-based source
+/// buffer (see [`crate::plugins::ara::AraRegionEntry`]).
+pub fn ara_document_for_track(
+    project: &Project,
+    track_id: &str,
+    config: &BounceConfig,
+) -> Result<AraDocument> {
+    if !project.tracks.iter().any(|t| t.id == track_id) {
+        return Err(BounceError::UnknownTrack(track_id.to_string()));
+    }
+    let n = config.sample_count(project.tempo)?;
+    let mut doc = AraDocument::new(MusicalContext::from_project(project));
+    let window_start_sec = config.start_beat * 60.0 / project.tempo;
+    for clip in project.clips.iter().filter(|c| c.track_id == track_id) {
+        let buf = clip_window(clip, project.tempo, config, n);
+        doc.add_source(&clip.id, config.sample_rate, buf)
+            .map_err(|e| BounceError::BadRange(e.to_string()))?;
+        if let Some(region_id) = doc
+            .add_region_for_clip(clip, &clip.id)
+            .map_err(|e| BounceError::BadRange(e.to_string()))?
+        {
+            let entry = doc
+                .regions()
+                .iter()
+                .find(|e| e.id == region_id)
+                .expect("just-added region");
+            let offset = entry.region.start_sec - window_start_sec;
+            doc.set_source_offset(&region_id, offset);
+        }
+    }
+    Ok(doc)
+}
+
+/// Active span of one clip inside a full-window buffer: `(first, one_past,
+/// region_time_of_first)` where times are seconds from the clip start.
+/// `None` when the clip does not overlap the window.
+fn clip_span_frames(
+    clip: &Clip,
+    tempo: f64,
+    config: &BounceConfig,
+    n: usize,
+) -> Option<(usize, usize, f64)> {
+    let sr = config.sample_rate as f64;
+    let beats_per_sec = tempo / 60.0;
+    let clip_end = clip.start_beats + clip.length_beats;
+    let mut first: Option<usize> = None;
+    let mut last = 0usize;
+    for i in 0..n {
+        let beat = config.start_beat + (i as f64 / sr) * beats_per_sec;
+        if beat >= clip.start_beats && beat < clip_end {
+            if first.is_none() {
+                first = Some(i);
+            }
+            last = i;
+        } else if first.is_some() {
+            break;
+        }
+    }
+    let i0 = first?;
+    let t0 = (config.start_beat + (i0 as f64 / sr) * beats_per_sec - clip.start_beats) / beats_per_sec;
+    Some((i0, last + 1, t0))
+}
+
+/// Render one clip's window buffer through its ARA effect when the document
+/// maps the clip to a region; otherwise the buffer passes through
+/// untouched. An effect with no region in the document is ignored — the
+/// document (not the effect map) decides what is placed, so unplaced edits
+/// can never color a bounce.
+fn apply_ara_to_clip(
+    buf: &mut [f32],
+    clip: &Clip,
+    tempo: f64,
+    config: &BounceConfig,
+    ara: &AraDocument,
+    effect: &MockAraEffect,
+) {
+    let Some(entry) = ara.regions_for_clip(&clip.id).into_iter().next() else {
+        return;
+    };
+    let Some((i0, i1, t0)) = clip_span_frames(clip, tempo, config, buf.len()) else {
+        return;
+    };
+    let rendered = effect.render(&buf[i0..i1], config.sample_rate, entry.region.start_sec + t0);
+    buf[i0..i1].copy_from_slice(&rendered);
+}
+
+/// Render one track's stem with ARA effects applied per clip (same gains,
+/// windows, and looping as [`render_track`]; per-track stems still ignore
+/// mute/solo).
+pub fn render_track_with_ara(
+    project: &Project,
+    track_id: &str,
+    config: &BounceConfig,
+    ara: &AraDocument,
+    effects: &HashMap<String, MockAraEffect>,
+) -> Result<Stem> {
+    let track = project
+        .tracks
+        .iter()
+        .find(|t| t.id == track_id)
+        .ok_or_else(|| BounceError::UnknownTrack(track_id.to_string()))?;
+    let n = config.sample_count(project.tempo)?;
+    if n == 0 {
+        return Ok(Stem::silent(&track.name, config.sample_rate, 0));
+    }
+    let gain = track_gain(project, track_id) * track.volume as f32;
+    let mut samples = vec![0.0f32; n];
+    for clip in project.clips.iter().filter(|c| c.track_id == track_id) {
+        let mut buf = clip_window(clip, project.tempo, config, n);
+        if let Some(fx) = effects.get(&clip.id) {
+            apply_ara_to_clip(&mut buf, clip, project.tempo, config, ara, fx);
+        }
+        for (dst, s) in samples.iter_mut().zip(buf.iter()) {
+            *dst += *s;
+        }
+    }
+    for s in &mut samples {
+        *s *= gain;
+    }
+    Ok(Stem {
+        name: track.name.clone(),
+        sample_rate: config.sample_rate,
+        samples,
+        loop_start: 0,
+        loop_end: n as u32,
+    })
+}
+
+/// Render the full mix with ARA effects applied per clip (honors mute and
+/// solo exactly like [`render_mix`]).
+pub fn render_mix_with_ara(
+    project: &Project,
+    config: &BounceConfig,
+    ara: &AraDocument,
+    effects: &HashMap<String, MockAraEffect>,
+) -> Result<Stem> {
+    let n = config.sample_count(project.tempo)?;
+    if n == 0 {
+        return Ok(Stem::silent("mix", config.sample_rate, 0));
+    }
+    let any_solo = project.tracks.iter().any(|t| t.solo);
+    let mut samples = vec![0.0f32; n];
+    for track in &project.tracks {
+        if track.muted || (any_solo && !track.solo) {
+            continue;
+        }
+        let gain = track_gain(project, &track.id) * track.volume as f32;
+        let mut buf = vec![0.0f32; n];
+        for clip in project.clips.iter().filter(|c| c.track_id == track.id) {
+            let mut clip_buf = clip_window(clip, project.tempo, config, n);
+            if let Some(fx) = effects.get(&clip.id) {
+                apply_ara_to_clip(&mut clip_buf, clip, project.tempo, config, ara, fx);
+            }
+            for (dst, s) in buf.iter_mut().zip(clip_buf.iter()) {
+                *dst += *s;
+            }
+        }
+        for (dst, src) in samples.iter_mut().zip(buf.iter()) {
+            *dst += *src * gain;
+        }
+    }
+    Ok(Stem {
+        name: "mix".to_string(),
+        sample_rate: config.sample_rate,
+        samples,
+        loop_start: 0,
+        loop_end: n as u32,
+    })
 }
 
 /// Metronome click: a fast-decaying pulse struck on each beat line.
@@ -567,6 +757,90 @@ mod tests {
         assert!(BounceConfig::new(8000, -1.0, 4.0).is_err());
         assert!(decode_wav(b"nope").is_err());
         assert!(decode_wav(&encode_wav(&Stem::silent("x", 8000, 8))).is_ok());
+    }
+
+    #[test]
+    fn ara_region_gain_transforms_the_bounce() {
+        use crate::plugins::ara::MockAraEffect;
+        use std::collections::HashMap;
+        let p = tone_project();
+        let config = cfg();
+        let ara = ara_document_for_track(&p, "trk", &config).expect("document");
+        assert_eq!(ara.source_count(), 1);
+        assert_eq!(ara.region_count(), 1);
+        // No bindings: identical to the plain stem (wiring adds nothing).
+        let plain = render_track(&p, "trk", &config).expect("render");
+        let unbound = render_track_with_ara(&p, "trk", &config, &ara, &HashMap::new())
+            .expect("unbound render");
+        assert_eq!(unbound.samples, plain.samples);
+        // A 0.5 region gain halves the peak through the ARA region.
+        let mut effects = HashMap::new();
+        effects.insert("clip".to_string(), MockAraEffect::new(0.5, 0));
+        let soft = render_track_with_ara(&p, "trk", &config, &ara, &effects).expect("ara render");
+        assert_eq!(soft.samples.len(), plain.samples.len());
+        assert!((soft.peak() - plain.peak() * 0.5).abs() < 0.02, "peak halves");
+        assert_ne!(soft.samples, plain.samples);
+        // Unknown track still errors on the ARA path.
+        assert!(matches!(
+            render_track_with_ara(&p, "nope", &config, &ara, &effects),
+            Err(BounceError::UnknownTrack(_))
+        ));
+        assert!(matches!(
+            ara_document_for_track(&p, "nope", &config),
+            Err(BounceError::UnknownTrack(_))
+        ));
+    }
+
+    #[test]
+    fn ara_note_edit_roundtrip_reaches_the_stem() {
+        use crate::plugins::ara::MockAraEffect;
+        use std::collections::HashMap;
+        let p = tone_project(); // 4-beat tone clip = 2s at 8kHz
+        let config = cfg();
+        let ara = ara_document_for_track(&p, "trk", &config).expect("document");
+        // Analyze the shared source audio over the clip's region: the
+        // 440Hz reference tone measures as MIDI 69 in every note.
+        let entry = ara.regions_for_clip("clip")[0].clone();
+        let source = ara.get_source("clip").expect("source");
+        let audio = source.read_range(
+            entry.source_offset_sec,
+            entry.source_offset_sec + entry.region.len_sec(),
+        );
+        let mut fx =
+            MockAraEffect::analyze(&audio, config.sample_rate, entry.region.start_sec, entry.region.len_sec(), 4)
+                .expect("analyze");
+        assert_eq!(fx.notes.len(), 4);
+        assert!(fx.notes.iter().all(|n| n.pitch_midi == 69));
+        // Edit: mute the first two notes (the first half of the region).
+        fx.set_note_gain("note-0", 0.0);
+        fx.set_note_gain("note-1", 0.0);
+        let mut effects = HashMap::new();
+        effects.insert("clip".to_string(), fx);
+        let stem = render_track_with_ara(&p, "trk", &config, &ara, &effects).expect("ara render");
+        assert_eq!(stem.samples.len(), 16000);
+        assert!(stem.samples[..8000].iter().all(|s| *s == 0.0));
+        assert!(stem.samples[8000..].iter().any(|s| s.abs() > 0.1));
+        // And the mix path applies the same edit while honoring mute.
+        let mix = render_mix_with_ara(&p, &config, &ara, &effects).expect("ara mix");
+        assert!(mix.samples[..8000].iter().all(|s| *s == 0.0));
+        let mut muted = p.clone();
+        muted.tracks[0].muted = true;
+        assert!(render_mix_with_ara(&muted, &config, &ara, &effects).expect("mix").is_silent());
+    }
+
+    #[test]
+    fn ara_effect_without_a_region_never_colors_the_bounce() {
+        use crate::plugins::ara::{MockAraEffect, MusicalContext};
+        use std::collections::HashMap;
+        let p = tone_project();
+        let config = cfg();
+        // Empty document: no regions mapped, so the binding is unplaced.
+        let ara = AraDocument::new(MusicalContext::from_project(&p));
+        let mut effects = HashMap::new();
+        effects.insert("clip".to_string(), MockAraEffect::new(0.0, 0));
+        let plain = render_track(&p, "trk", &config).expect("render");
+        let out = render_track_with_ara(&p, "trk", &config, &ara, &effects).expect("ara render");
+        assert_eq!(out.samples, plain.samples);
     }
 
     #[test]

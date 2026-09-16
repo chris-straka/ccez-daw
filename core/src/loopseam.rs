@@ -194,6 +194,95 @@ pub fn check_stem(stem_path: &str, samples: &[f32], options: &LoopSeamOptions) -
     Some(click_error(stem_path, report))
 }
 
+/// Linear-interpolation resample under a playback-rate `ratio` (> 0):
+/// output length is [`crate::timepitch::resampled_len`] and each output
+/// frame reads source position `i * ratio`. Ratio 1 is bit-stable (every
+/// read lands on an integer source frame); ratio > 1 shortens (fitting a
+/// loop up to a faster tempo), ratio < 1 lengthens. Empty in = empty out.
+pub fn resample_linear(samples: &[f32], ratio: f64) -> Result<Vec<f32>, String> {
+    if !(ratio > 0.0 && ratio.is_finite()) {
+        return Err(format!("time ratio {ratio} must be finite and > 0"));
+    }
+    if samples.is_empty() {
+        return Ok(Vec::new());
+    }
+    let n = samples.len();
+    let out_len = crate::timepitch::resampled_len(n, ratio)?;
+    let mut out = Vec::with_capacity(out_len.max(1));
+    for i in 0..out_len.max(1) {
+        let pos = i as f64 * ratio;
+        let i0 = pos.floor() as usize;
+        let frac = (pos - i0 as f64) as f32;
+        let a = samples[i0.min(n - 1)];
+        let b = samples[(i0 + 1).min(n - 1)];
+        out.push(a + frac * (b - a));
+    }
+    out.truncate(out_len);
+    Ok(out)
+}
+
+/// Seam conform: short raised-cosine edge fade (same construction as the
+/// export renderer) pulling both loop edges toward zero so the boundary
+/// step closes. `fade_frames` clamps to `[1, n/2]`; buffers shorter than 2
+/// frames are untouched. Deterministic and idempotent in effect (a second
+/// pass keeps an already-quiet seam quiet).
+pub fn conform_loop_seam(samples: &mut [f32], fade_frames: usize) {
+    let n = samples.len();
+    if n < 2 {
+        return;
+    }
+    let f = fade_frames.clamp(1, n / 2).max(1);
+    let smooth = |x: f32| x * x * (3.0 - 2.0 * x);
+    for t in 0..f {
+        let g = smooth(t as f32 / f as f32);
+        samples[t] *= g;
+        samples[n - 1 - t] *= g;
+    }
+}
+
+/// Auto-fit report: the resample factor applied, the fitted length, the
+/// seam judged against the click threshold, and whether the conform fade
+/// ran to close the seam.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LoopFit {
+    /// `target_tempo / source_tempo` (> 0).
+    pub ratio: f64,
+    /// Output frame count (`resampled_len` of the input).
+    pub out_frames: usize,
+    /// Seam of the (possibly conformed) output against `threshold`.
+    pub seam: SeamReport,
+    /// True when [`conform_loop_seam`] ran (output clicked before conform).
+    pub conformed: bool,
+}
+
+/// Auto-fit an audio loop recorded at `source_tempo` BPM to `target_tempo`
+/// BPM: resample by `target / source` (same ratio convention as
+/// [`crate::timepitch`], so the sample path and the MIDI path agree), then
+/// judge the fitted seam against `threshold`. When the fitted loop clicks,
+/// a short edge-fade conform closes the seam and the returned report is the
+/// post-conform seam — the output always conforms to the threshold unless
+/// the buffer is empty (silent, like [`check_stem`]) or the threshold is
+/// non-positive (rule disabled: fit only, never conform).
+pub fn auto_fit_loop_to_tempo(
+    samples: &[f32],
+    source_tempo: f64,
+    target_tempo: f64,
+    threshold: f32,
+) -> Result<(Vec<f32>, LoopFit), String> {
+    let ratio = crate::timepitch::loop_fit_ratio(source_tempo, target_tempo)?;
+    let mut out = resample_linear(samples, ratio)?;
+    let mut seam = analyze_seam(&out, threshold);
+    let mut conformed = false;
+    if threshold > 0.0 && !out.is_empty() && seam.is_click() {
+        let fade = (out.len() / 64).clamp(1, out.len() / 2).max(1);
+        conform_loop_seam(&mut out, fade);
+        seam = analyze_seam(&out, threshold);
+        conformed = true;
+    }
+    let out_frames = out.len();
+    Ok((out, LoopFit { ratio, out_frames, seam, conformed }))
+}
+
 /// Waiver entries that name no stem in `stem_paths` are stale (a renamed
 /// stem would silently lose its gate), so they fail loudly.
 pub fn stale_waiver_errors(waivers: &HashMap<String, String>, stem_paths: &HashSet<String>) -> Vec<String> {
@@ -310,6 +399,61 @@ mod tests {
         assert!(parse_waivers(r#"{"waivers": []}"#).expect("empty ok").is_empty());
         assert!(parse_waivers(r#"{"waivers": [{"path": "s.wav", "reason": "  "}]}"#).is_err());
         assert!(parse_waivers(r#"{"nope": []}"#).is_err());
+    }
+
+    #[test]
+    fn resample_ratio_one_is_bit_stable_and_rejects_bad_ratio() {
+        let clean = clean_loop(512, 8.0);
+        assert_eq!(resample_linear(&clean, 1.0).unwrap(), clean);
+        assert_eq!(
+            resample_linear(&clean, 2.0).unwrap().len(),
+            crate::timepitch::resampled_len(512, 2.0).unwrap()
+        );
+        assert!(resample_linear(&clean, 0.0).is_err());
+        assert!(resample_linear(&clean, f64::INFINITY).is_err());
+        assert!(resample_linear(&[], 2.0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn conform_closes_a_click_and_keeps_clean_quiet() {
+        let mut clicked = clean_loop(8000, 220.0);
+        inject_click(&mut clicked, 9, 32, 0.3);
+        assert!(analyze_seam(&clicked, DEFAULT_CLICK_THRESHOLD).is_click());
+        conform_loop_seam(&mut clicked, 128);
+        assert!(
+            !analyze_seam(&clicked, DEFAULT_CLICK_THRESHOLD).is_click(),
+            "step={}",
+            analyze_seam(&clicked, DEFAULT_CLICK_THRESHOLD).step
+        );
+        let mut clean = clean_loop(8000, 220.0);
+        conform_loop_seam(&mut clean, 128);
+        assert!(!analyze_seam(&clean, DEFAULT_CLICK_THRESHOLD).is_click());
+    }
+
+    #[test]
+    fn auto_fit_same_tempo_passes_through_and_bad_tempo_errors() {
+        let clean = clean_loop(8000, 220.0);
+        let (out, fit) =
+            auto_fit_loop_to_tempo(&clean, 120.0, 120.0, DEFAULT_CLICK_THRESHOLD).unwrap();
+        assert!((fit.ratio - 1.0).abs() < 1e-12);
+        assert_eq!(out.len(), fit.out_frames);
+        assert!(!fit.conformed, "clean loop at ratio 1 must not need conform");
+        assert!(!fit.seam.is_click());
+        assert!(auto_fit_loop_to_tempo(&clean, 0.0, 120.0, DEFAULT_CLICK_THRESHOLD).is_err());
+        assert!(auto_fit_loop_to_tempo(&clean, 120.0, f64::NAN, DEFAULT_CLICK_THRESHOLD).is_err());
+    }
+
+    #[test]
+    fn auto_fit_conforms_a_fitted_click_to_threshold() {
+        let mut clicked = clean_loop(8000, 220.0);
+        inject_click(&mut clicked, 11, 32, 0.3);
+        let (out, fit) =
+            auto_fit_loop_to_tempo(&clicked, 120.0, 140.0, DEFAULT_CLICK_THRESHOLD).unwrap();
+        assert!((fit.ratio - 140.0 / 120.0).abs() < 1e-12);
+        assert_eq!(out.len(), crate::timepitch::resampled_len(8000, fit.ratio).unwrap());
+        assert!(fit.conformed, "fitted click must trigger the conform fade");
+        assert!(!fit.seam.is_click(), "post-conform seam must meet threshold");
+        assert!(check_stem("stems/a.wav", &out, &LoopSeamOptions::default()).is_none());
     }
 
     #[test]

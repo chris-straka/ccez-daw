@@ -137,7 +137,8 @@ pub struct Project {
 }
 
 /// One entry of the event-sourced op log. `target` is a node id, track id,
-/// clip id, or param address (`node:param`); `value_json` carries the payload.
+/// clip id, automation lane id, or param address (`node:param`);
+/// `value_json` carries the payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OpKind {
     TrackAdded,
@@ -146,6 +147,11 @@ pub enum OpKind {
     ParamSet,
     TempoSet,
     UndoMarker,
+    /// Upsert one automation point. `target` is the lane id; payload is
+    /// `{"beat": <n>, "value": <n>}`. When the lane does not exist yet the
+    /// payload must also carry `"node"` and `"param"` (the `node:param`
+    /// address) and the lane is created. Replays deterministically.
+    AutomationPointSet,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

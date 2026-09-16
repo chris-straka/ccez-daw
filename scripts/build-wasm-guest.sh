@@ -1,5 +1,6 @@
 #!/bin/sh
-# Build the wasmdevices delay guest and stage it for tests.
+# Build the WASM guests (wasmdevices delay + devices gain/kernel-delay/
+# soft-clip) and stage them for tests.
 #
 # Usage: scripts/build-wasm-guest.sh
 #

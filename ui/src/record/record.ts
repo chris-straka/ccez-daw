@@ -1,4 +1,5 @@
-import type { Clip, ClipKind, EngineState } from "../generated/project";
+import type { Clip, ClipKind, EngineState, Op, OpKind } from "../generated/project";
+import { OpSchema } from "../generated/project";
 
 /**
  * Agent 7 (record workflow): punch in/out, count-in/metronome, software
@@ -246,4 +247,157 @@ export function punchOverlap(
   const start = Math.max(passStartBeats, window.start_beats);
   const end = Math.min(passEndBeats, window.end_beats);
   return start + EPS < end ? [start, end] : null;
+}
+
+/**
+ * UI-local arm set, as a plain sorted id list (the shape a Solid signal
+ * holds). Mirrors the Rust `ArmState`: arming is a control-room switch,
+ * not project state, so it never touches the frozen v0 schema. Lists stay
+ * sorted for deterministic take-commit order.
+ */
+export function armTrack(armed: string[], trackId: string): string[] {
+  return armed.includes(trackId) ? [...armed] : [...armed, trackId].sort();
+}
+
+export function disarmTrack(armed: string[], trackId: string): string[] {
+  return armed.filter((id) => id !== trackId);
+}
+
+export function toggleArm(armed: string[], trackId: string): string[] {
+  return armed.includes(trackId)
+    ? disarmTrack(armed, trackId)
+    : armTrack(armed, trackId);
+}
+
+export function isArmed(armed: string[], trackId: string): boolean {
+  return armed.includes(trackId);
+}
+
+/**
+ * Punch range snapped to a timeline section boundary:
+ * `[sectionStart, sectionStart + sectionLength)`. Mirror of the Rust
+ * `punch_range_for_section` — the panel's "use section" button turns the
+ * launcher's named beat ranges (verse, chorus, ...) into an auto-punch
+ * window. Throws RecordError.
+ */
+export function punchRangeForSection(
+  sectionStartBeats: number,
+  sectionLengthBeats: number,
+): PunchRange {
+  if (!Number.isFinite(sectionLengthBeats) || !(sectionLengthBeats > 0)) {
+    throw new RecordError(
+      "bad-punch-range",
+      `section length must be positive finite, got ${sectionLengthBeats}`,
+    );
+  }
+  return validatePunch(sectionStartBeats, sectionStartBeats + sectionLengthBeats);
+}
+
+/**
+ * Input half of the record path (TypeScript mirror of
+ * `core/src/audio/input.rs`). The two sides must agree on: the null-input
+ * fallback convention (no device selected = deterministic null source, so
+ * headless/CI records without hardware and never panics), the
+ * peak/RMS monitoring math, and the take convention (takes are ordinary
+ * audio clips applied through the frozen `ClipAdded` op).
+ */
+
+/** One selectable input source. `null` selection = the null input. */
+export interface InputDeviceInfo {
+  id: string;
+  name: string;
+}
+
+/**
+ * Devices the panel may offer. `undefined`/`null` (backend unreachable or
+ * headless) is the normal empty case, never an error — the panel falls
+ * back to the null input.
+ */
+export function availableInputDevices(
+  devices: InputDeviceInfo[] | undefined | null,
+): InputDeviceInfo[] {
+  return devices ? [...devices] : [];
+}
+
+/**
+ * Select an input device, or `null` for the null (headless-safe) input.
+ * Unknown ids select nothing: the panel keeps the current device instead
+ * of pointing at hardware that is not there.
+ */
+export function selectInputDevice(
+  current: string | null,
+  devices: InputDeviceInfo[],
+  deviceId: string | null,
+): string | null {
+  if (deviceId === null) return null;
+  return devices.some((d) => d.id === deviceId) ? deviceId : current;
+}
+
+export interface MonitorLevels {
+  peak: number;
+  rms: number;
+}
+
+/**
+ * Live input levels for one block (or one whole take): peak amplitude and
+ * RMS energy. Must agree with the Rust `monitor_levels`: `0` for empty
+ * input, otherwise peak = max |sample|, rms = sqrt(mean(s^2)).
+ */
+export function monitorLevels(samples: ArrayLike<number>): MonitorLevels {
+  if (samples.length === 0) return { peak: 0, rms: 0 };
+  let peak = 0;
+  let sumSq = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i] ?? 0;
+    const a = Math.abs(s);
+    if (a > peak) peak = a;
+    sumSq += s * s;
+  }
+  return { peak, rms: Math.sqrt(sumSq / samples.length) };
+}
+
+/** Meter text the record panel shows for the live input. */
+export function formatLevels(levels: MonitorLevels): string {
+  return `peak ${levels.peak.toFixed(2)} rms ${levels.rms.toFixed(2)}`;
+}
+
+/**
+ * One armed track's in-progress take on the UI side: accumulates drained
+ * capture blocks while punching and reports live levels for the meter.
+ * Mirrors the Rust `TakeCapture` (frames/levels pair).
+ */
+export class TakeBuffer {
+  private samples: number[] = [];
+
+  push(block: ArrayLike<number>): void {
+    for (let i = 0; i < block.length; i++) this.samples.push(block[i] ?? 0);
+  }
+
+  frames(): number {
+    return this.samples.length;
+  }
+
+  levels(): MonitorLevels {
+    return monitorLevels(this.samples);
+  }
+
+  clear(): void {
+    this.samples = [];
+  }
+}
+
+/**
+ * Commit one punched take as an ordinary frozen `ClipAdded` op: `seq: 0`
+ * is a placeholder the engine replaces, `target` names the take clip and
+ * `value_json` carries the full clip — the same shape `compCommitOp`
+ * uses, so a take undoes/redoes like any other op.
+ */
+export function takeCommitOp(actor: string, take: Clip): Op {
+  return OpSchema.parse({
+    seq: 0,
+    actor,
+    kind: "ClipAdded" as OpKind,
+    target: take.id,
+    value_json: JSON.stringify(take),
+  });
 }

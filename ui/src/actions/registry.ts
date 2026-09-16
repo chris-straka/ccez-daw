@@ -55,6 +55,45 @@ function ipcAction(id: string, title: string, command: string): ActionDef {
   return { id, title, ipc: command, kind: "ipc", run: (args) => invokeIpc(command, args) };
 }
 
+/**
+ * Shape one `AutomationPointSet` op from palette/vim/scripting args:
+ * `{ lane, beat, value, node?, param?, laneExists?, actor? }`. Mirrors
+ * `ui/src/automation/edit.ts` `pointSetOp` without importing the view
+ * layer: existing lanes carry just beat+value; lane creation (`laneExists:
+ * false`, the default when `node`+`param` are given) also carries the
+ * `node:param` address, per `contracts/op-log-format.md`.
+ */
+function buildAutomationPointOp(args: Record<string, unknown>): Record<string, unknown> {
+  const lane = args.lane;
+  if (typeof lane !== "string" || lane.length === 0) {
+    throw new Error("automation.point_set needs a non-empty lane id");
+  }
+  const beat = args.beat;
+  const value = args.value;
+  if (typeof beat !== "number" || !Number.isFinite(beat) || beat < 0) {
+    throw new Error(`automation.point_set beat ${String(beat)} must be finite and >= 0`);
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`automation.point_set value ${String(value)} must be finite`);
+  }
+  const node = args.node;
+  const param = args.param;
+  const laneExists = args.laneExists ?? !(typeof node === "string" && typeof param === "string");
+  const payload: Record<string, number | string> = { beat, value };
+  if (!laneExists) {
+    if (typeof node !== "string" || !node || typeof param !== "string" || !param) {
+      throw new Error("automation.point_set needs node+param to create a lane");
+    }
+    payload.node = node;
+    payload.param = param;
+  } else if (typeof node === "string" && node && typeof param === "string" && param) {
+    payload.node = node;
+    payload.param = param;
+  }
+  const actor = typeof args.actor === "string" && args.actor ? args.actor : "ui";
+  return { seq: 0, actor, kind: "AutomationPointSet", target: lane, value_json: JSON.stringify(payload) };
+}
+
 function localAction(id: string, title: string): ActionDef {
   return { id, title, ipc: "local", kind: "local", run: (args) => runLocal(id, args) };
 }
@@ -95,10 +134,37 @@ export const ACTIONS: ActionDef[] = [
   localAction("view.focusArrangement", "View: Focus Arrangement"),
   localAction("view.focusPianoRoll", "View: Focus Piano Roll"),
   localAction("view.focusMixer", "View: Focus Mixer"),
+  localAction("view.focusSession", "View: Focus Session"),
   localAction("section.goto.chorus", "Section: Go To Chorus"),
   localAction("section.goto.verse", "Section: Go To Verse"),
   localAction("mixer.muteSelected", "Mixer: Mute Selected Strip"),
   localAction("mixer.soloSelected", "Mixer: Solo Selected Strip"),
+  // --- IPC-backed (additive post-v0 coverage; still frozen IPC surface) ---
+  // `automation.point_set` builds one `AutomationPointSet` op (the single
+  // additive `OpKind` past the v0 freeze) and sends it through the frozen
+  // `op_apply`, so it is undoable and survives restart like every other op.
+  {
+    id: "automation.point_set",
+    title: "Automation: Set Point",
+    ipc: "op_apply",
+    kind: "ipc",
+    run: (args) => invokeIpc("op_apply", { op: buildAutomationPointOp(args) }),
+  },
+  // --- UI-local (post-v0 feature coverage; additive, still `— (local)`) ---
+  // Session launch/jam-record (`ui/src/timeline/launch.ts`), comp commit
+  // (`ui/src/comp/comp.ts`), groove apply (`ui/src/groove/model.ts`),
+  // branch merge (`ui/src/branch/branch.ts`), record punch
+  // (`ui/src/record/record.ts`), and Link session join are pure
+  // computations or ordinary-op builders over the frozen v0 model — no new
+  // IPC — so they ride here as local actions. Unregistered handlers resolve
+  // to descriptors (see `runLocal`); Track K wires real behavior.
+  localAction("session.launch", "Session: Launch Slot / Scene"),
+  localAction("session.jam_record", "Session: Record Jam to Timeline"),
+  localAction("comp.commit", "Comp: Commit Composite Take"),
+  localAction("groove.apply", "Groove: Apply Template to Clip"),
+  localAction("branch.merge", "Branch: Merge Into Target"),
+  localAction("record.punch", "Record: Punch In / Out"),
+  localAction("link.join", "Link: Join Session"),
   // --- UI-local (native menu gaps; additive, still `— (local)`) ---
   // Dispatched by `src-tauri/src/menu.rs` via the `menu-action` event with
   // the same ids the palette uses, so menu and palette stay in sync.

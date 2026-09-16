@@ -20,13 +20,13 @@ describe("v0 MCP tool list", () => {
 
 describe("GA-5 game-audio tool rows (additive)", () => {
   test("four game-audio tools appended after the frozen six", () => {
-    expect(TOOLS.map((t) => t.name).slice(6)).toEqual([
+    expect(TOOLS.map((t) => t.name).slice(6, 10)).toEqual([
       "gameaudio_list_cues",
       "gameaudio_audition",
       "gameaudio_trigger_sfx",
       "gameaudio_export",
     ]);
-    for (const t of TOOLS.slice(6)) {
+    for (const t of TOOLS.slice(6, 10)) {
       expect(t.action.startsWith("gameaudio.")).toBe(true);
     }
   });

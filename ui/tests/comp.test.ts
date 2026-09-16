@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { ClipSchema } from "../src/generated/project";
 import type { Clip } from "../src/generated/project";
-import { CompError, RetroBuffer, buildComp, takesForRegion } from "../src/comp/comp";
+import {
+  CompError,
+  RetroBuffer,
+  auditionTake,
+  buildComp,
+  compCommitOp,
+  takesForRegion,
+} from "../src/comp/comp";
 
 function take(id: string, start: number, len: number): Clip {
   return {
@@ -82,6 +89,46 @@ describe("Track E comping + retrospective capture", () => {
     expect(found.map((c) => c.id)).toEqual(["take_1", "take_2"]);
     expect(takesForRegion(takes, "trk_vox", 0, 4)).toHaveLength(1);
     expect(takesForRegion(takes, "trk_other", 0, 8)).toHaveLength(0);
+  });
+
+  test("audition selects a take and rejects strangers", () => {
+    const takes = [take("take_1", 0, 4), take("take_2", 0, 4)];
+    expect(auditionTake(takes, "trk_vox", "take_2").id).toBe("take_2");
+    expect(() => auditionTake(takes, "trk_vox", "take_9")).toThrow(CompError);
+    try {
+      auditionTake(takes, "trk_vox", "take_9");
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect((e as CompError).failure).toBe("unknown-take");
+    }
+    const other: Clip = { ...take("take_x", 0, 4), track_id: "trk_other" };
+    try {
+      auditionTake([...takes, other], "trk_vox", "take_x");
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect((e as CompError).failure).toBe("wrong-track");
+    }
+  });
+
+  test("comp commit is a frozen ClipAdded op carrying the composite", () => {
+    const takes = [take("take_1", 0, 4), take("take_2", 0, 4)];
+    const comp = buildComp(
+      "clip_comp",
+      "trk_vox",
+      "Vox comp",
+      [
+        { take_id: "take_2", start_beats: 0, end_beats: 2 },
+        { take_id: "take_1", start_beats: 2, end_beats: 4 },
+      ],
+      takes,
+    );
+    const op = compCommitOp("ui", comp);
+    expect(op.kind).toBe("ClipAdded");
+    expect(op.seq).toBe(0);
+    expect(op.target).toBe("clip_comp");
+    const payload = JSON.parse(op.value_json) as Clip;
+    expect(payload).toEqual(comp);
+    expect(() => ClipSchema.parse(payload)).not.toThrow();
   });
 
   test("retrospective capture materializes the played window as a clip", () => {

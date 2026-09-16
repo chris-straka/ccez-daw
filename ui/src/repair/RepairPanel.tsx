@@ -79,19 +79,12 @@ export default function RepairPanel(props: {
     }
   }
 
-  const row: Record<string, string> = {
-    display: "flex",
-    gap: "8px",
-    "align-items": "center",
-    "font-size": "12px",
-  };
-
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
-      <div style={{ color: "#aaa", "font-size": "12px" }}>
+    <div class="session-view">
+      <div class="view-label">
         Repair — {props.clipName ?? "demo phrase"} (in-timeline)
       </div>
-      <div style={row}>
+      <div class="form-row">
         <label>
           Pitch (st)
           <input
@@ -118,7 +111,7 @@ export default function RepairPanel(props: {
         </label>
         <button onClick={applyPitchTime}>Apply pitch/time</button>
       </div>
-      <div style={row}>
+      <div class="form-row">
         <label>
           Warp shift (beats)
           <input
@@ -131,7 +124,7 @@ export default function RepairPanel(props: {
         </label>
         <button onClick={applyWarp}>Apply warp</button>
       </div>
-      <div style={row}>
+      <div class="form-row">
         <label>
           <input
             type="checkbox"
@@ -163,7 +156,7 @@ export default function RepairPanel(props: {
         <button onClick={applyCleanup}>Apply cleanup</button>
       </div>
       <Show when={message()}>
-        <div style={{ color: "#8af", "font-size": "12px" }}>{message()}</div>
+        <div class="meter-readout">{message()}</div>
       </Show>
     </div>
   );

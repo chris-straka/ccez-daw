@@ -19,33 +19,28 @@ import {
 export default function TimelineView(props: { project: Project | null }) {
   const doc = sampleTimelineDoc();
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
+    <div class="session-view">
       <Show
         when={props.project}
-        fallback={<div style={{ color: "#888" }}>No project open.</div>}
+        fallback={<div class="session-dim">No project open.</div>}
       >
         {/* Linear: one lane per track, clips positioned by start_beats. */}
         <div>
-          <div style={{ color: "#aaa", "font-size": "12px", margin: "0 0 4px 0" }}>
+          <div class="view-label">
             Linear
           </div>
           <For each={props.project?.tracks ?? []}>
             {(track) => (
-              <div style={{ display: "flex", gap: "4px", "align-items": "center" }}>
-                <span style={{ width: "64px", color: "#aaa", "font-size": "12px" }}>
+              <div class="lane">
+                <span class="lane-name">
                   {track.name}
                 </span>
                 <For each={clipsSortedOnTrack(props.project!, track.id)}>
                   {(clip) => (
                     <span
                       title={`${clip.name} @ ${clip.start_beats} (${clip.length_beats} beats)`}
-                      style={{
-                        border: "1px solid #6af",
-                        "border-radius": "4px",
-                        padding: "2px 6px",
-                        "font-size": "12px",
-                        "margin-left": `${clip.start_beats * 4}px`,
-                      }}
+                      class={`clip-chip ${clip.kind === "Audio" ? "clip-audio" : "clip-midi"}`}
+                      style={{ "margin-left": `${clip.start_beats * 4}px` }}
                     >
                       {clip.name}
                     </span>
@@ -57,13 +52,13 @@ export default function TimelineView(props: { project: Project | null }) {
         </div>
         {/* Launcher: rows are sections, columns are tracks. */}
         <div>
-          <div style={{ color: "#aaa", "font-size": "12px", margin: "0 0 4px 0" }}>
+          <div class="view-label">
             Launcher
           </div>
           <For each={doc.sections}>
             {(section) => (
-              <div style={{ display: "flex", gap: "4px", "align-items": "center" }}>
-                <span style={{ width: "64px", color: "#aaa", "font-size": "12px" }}>
+              <div class="lane">
+                <span class="lane-name">
                   {section.name} {section.start_beats}&ndash;
                   {sectionEnd(section)}
                 </span>
@@ -75,13 +70,7 @@ export default function TimelineView(props: { project: Project | null }) {
                   {(slot) => (
                     <span
                       title={`${slot.track_id}: ${slot.clip_ids.join(", ") || "silent"}`}
-                      style={{
-                        border: "1px solid #4a4",
-                        "border-radius": "4px",
-                        padding: "2px 6px",
-                        "font-size": "12px",
-                        "min-width": "48px",
-                      }}
+                      class={`slot-chip ${slot.clip_ids.length > 0 ? "filled" : "silent"}`}
                     >
                       {slot.clip_ids.join(", ") || "—"}
                     </span>

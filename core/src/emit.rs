@@ -71,6 +71,8 @@ pub const ENUMS: &[EnumDef] = &[
             "ParamSet",
             "TempoSet",
             "UndoMarker",
+            // Automation editing (additive): upsert one lane point.
+            "AutomationPointSet",
         ],
     },
     // Track J (additive): browser library kinds. Existing entries untouched.

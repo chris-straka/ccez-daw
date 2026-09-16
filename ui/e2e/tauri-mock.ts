@@ -15,10 +15,21 @@ import type { Page } from "@playwright/test";
  * file must not close over Node state inside `installInBrowser`.
  */
 
+export interface CannedClip {
+  id: string;
+  name: string;
+  track_id: string;
+  start_beats: number;
+  length_beats: number;
+  kind: string;
+  source: string;
+}
+
 /** Canned backend state served to `invoke` by command name. */
 export interface CannedBackend {
   projectName: string;
   tracks: Array<{ id: string; name: string }>;
+  clips?: CannedClip[];
 }
 
 export function defaultCanned(): CannedBackend {
@@ -68,7 +79,7 @@ export function installInBrowser(canned: CannedBackend): void {
         clip_ids: [],
         device_ids: [],
       })),
-      clips: [],
+      clips: (canned.clips ?? []).map((c) => ({ ...c })),
       devices: [],
       routing: [],
       automation: [],

@@ -20,8 +20,21 @@
 //!   Structure the flat `Track.device_ids` order cannot express lives in
 //!   the [`Rack`](rack::Rack) sidecar (the Track G `VcaGroup` precedent:
 //!   UI-local data riding *alongside* the project, never in it).
+//! - [`midifx`]: native MIDI FX (arpeggiator, chord generator,
+//!   velocity/humanize). Note transforms over [`MidiClip`](crate::midi::MidiClip),
+//!   param'd by the same frozen-`Node` class convention; audio-transparent
+//!   in the rack renderer, applied in chain order via `apply_midi_chain`.
+//! - [`sampler`]: the Simpler-style sampler model. The device `Node`
+//!   holds play params (`transpose`, `gain`, `attack`, `release`,
+//!   `cutoff`); the audio lives in a [`SampleBank`](sampler::SampleBank)
+//!   beside the project, and [`DrumRack`](sampler::DrumRack) maps 16
+//!   drum pads to `(track, note)` strike targets.
 //! - [`wasm`]: the devices-to-WASM seam. Named, refused, documented —
 //!   untrusted DSP runs behind a sandbox boundary when it lands.
+//! - [`presets`]: the curated native preset library. Named param maps per
+//!   device class, stamped through the existing param/op paths (undoable),
+//!   frozen to [`DevicePreset`](rack::DevicePreset) JSON, and surfaced in
+//!   the browser search as preset [`LibraryItem`](crate::library::LibraryItem)s.
 //!
 //! Reads the frozen `Node` / `Param` / `Track` types only and registers
 //! nothing in `emit.rs`, so the typegen drift gate is unaffected. The
@@ -31,10 +44,22 @@
 
 pub mod class;
 pub mod kernel;
+pub mod midifx;
+pub mod presets;
 pub mod rack;
+pub mod sampler;
 pub mod wasm;
 
 pub use class::{DeviceClass, DEVICE_CLASS_PARAM};
 pub use kernel::DeviceError;
 pub use rack::{Macro, MacroBinding, Rack, RackError, RackNode, RackState, Split};
+pub use midifx::{apply_midi_chain, arp_pattern, arp_render};
+pub use presets::{apply_preset, find_preset, native_presets, preset_library_items, preset_op_payloads, to_device_preset, NativePreset, NATIVE_PRESETS};
+pub use sampler::{DrumPad, DrumRack, SampleBank, SampleBuffer, DRUM_PAD_COUNT};
 pub use wasm::{WasmError, WasmNote, load_wasm_module};
+#[cfg(feature = "wasm-runtime")]
+pub use wasm::{
+    WasmClip, WasmGain, WasmKDelay, WASM_CLIP_CODE, WASM_CLIP_DEFAULT, WASM_CLIP_MAX,
+    WASM_GAIN_CODE, WASM_GAIN_MAX, WASM_KDELAY_CODE_DELAY, WASM_KDELAY_CODE_FEEDBACK,
+    WASM_KDELAY_MAX_DELAY,
+};

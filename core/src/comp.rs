@@ -19,7 +19,7 @@
 //! the transport was merely *playing* can be materialized into a clip with
 //! [`RetroBuffer::to_clip`]. Empty window = `None`, never an empty clip.
 
-use crate::model::{Clip, ClipKind};
+use crate::model::{Clip, ClipKind, Op, OpKind};
 
 /// Float tolerance for section-boundary comparisons, in beats.
 const EPS: f64 = 1e-9;
@@ -186,6 +186,39 @@ pub fn build_comp(
         kind: kind.expect("checked"),
         source,
     })
+}
+
+/// Pick the take to audition (monitor) for a comp section: the take must
+/// exist and sit on `track_id`. Pure selection — auditioning never touches
+/// the project; the caller routes the returned take to the monitor path and
+/// records the choice as [`CompSection`]s for [`build_comp`].
+pub fn audition_take<'a>(takes: &'a [Clip], track_id: &str, take_id: &str) -> Result<&'a Clip> {
+    let take = takes
+        .iter()
+        .find(|c| c.id == take_id)
+        .ok_or_else(|| CompError::UnknownTake(take_id.to_string()))?;
+    if take.track_id != track_id {
+        return Err(CompError::WrongTrack {
+            take: take.id.clone(),
+            want: track_id.to_string(),
+        });
+    }
+    Ok(take)
+}
+
+/// Commit a composite as one frozen `ClipAdded` op: `seq` is 0 as a
+/// placeholder (the engine assigns the real sequence in `Engine::apply`),
+/// `target` names the comp clip, and `value_json` carries the full clip.
+/// The composite is an ordinary clip from here on — later nudges are frozen
+/// `ClipMoved` ops and the commit itself undoes/redoes like any op.
+pub fn comp_commit_op(actor: &str, comp: &Clip) -> Op {
+    Op {
+        seq: 0,
+        actor: actor.to_string(),
+        kind: OpKind::ClipAdded,
+        target: comp.id.clone(),
+        value_json: serde_json::to_string(comp).expect("comp clip serializes"),
+    }
 }
 
 /// One retrospectively captured event: opaque payload `data` (note JSON,
@@ -435,5 +468,98 @@ mod tests {
         small.push(2.0, "c");
         assert_eq!(small.len(), 2);
         assert_eq!(small.retrieve(0.0)[0].data, "b");
+    }
+
+    #[test]
+    fn audition_take_selects_take_and_rejects_strangers() {
+        let mut takes = vec![take("take_1", 0.0, 4.0), take("take_2", 0.0, 4.0)];
+        takes.push(Clip {
+            id: "take_other".to_string(),
+            track_id: "trk_other".to_string(),
+            name: "other".to_string(),
+            start_beats: 0.0,
+            length_beats: 4.0,
+            kind: ClipKind::Audio,
+            source: "take:take_other".to_string(),
+        });
+        // Switching takes just selects: auditioning never mutates.
+        assert_eq!(
+            audition_take(&takes, "trk_vox", "take_2").expect("audition").id,
+            "take_2"
+        );
+        assert!(matches!(
+            audition_take(&takes, "trk_vox", "take_9"),
+            Err(CompError::UnknownTake(_))
+        ));
+        assert!(matches!(
+            audition_take(&takes, "trk_vox", "take_other"),
+            Err(CompError::WrongTrack { .. })
+        ));
+    }
+
+    #[test]
+    fn comp_commit_goes_through_engine_apply_and_undoes() {
+        use crate::engine::Engine;
+        use crate::model::OpKind;
+
+        let dir = std::env::temp_dir().join(format!(
+            "ccez-comp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut engine =
+            Engine::create(&dir, vox_project(vec![])).expect("create engine");
+        for t in [take("take_1", 0.0, 4.0), take("take_2", 0.0, 4.0)] {
+            engine
+                .apply(
+                    "ui",
+                    OpKind::ClipAdded,
+                    &t.id,
+                    &serde_json::to_string(&t).expect("serialize"),
+                )
+                .expect("record take");
+        }
+        let takes: Vec<Clip> = engine.project().clips.clone();
+        let sections = vec![
+            CompSection::new("take_2", 0.0, 2.0),
+            CompSection::new("take_1", 2.0, 4.0),
+        ];
+        let comp =
+            build_comp("clip_comp", "trk_vox", "Vox comp", &sections, &takes)
+                .expect("valid comp");
+
+        // Commit is one frozen ClipAdded op through op_apply (seq assigned
+        // by the engine, undoable like every other op).
+        let op = comp_commit_op("ui", &comp);
+        assert_eq!(op.kind, OpKind::ClipAdded);
+        assert_eq!(op.seq, 0);
+        engine
+            .apply("ui", op.kind, &op.target, &op.value_json)
+            .expect("commit comp");
+        assert!(engine.project().clips.iter().any(|c| c.id == "clip_comp"));
+        engine.undo().expect("undo commit");
+        assert!(!engine.project().clips.iter().any(|c| c.id == "clip_comp"));
+        engine.redo().expect("redo commit");
+        assert!(engine.project().clips.iter().any(|c| c.id == "clip_comp"));
+
+        // The composite is an ordinary clip: nudge it with ClipMoved.
+        engine
+            .apply("ui", OpKind::ClipMoved, "clip_comp", "{\"startBeats\": 4}")
+            .expect("nudge comp");
+        assert_eq!(
+            engine
+                .project()
+                .clips
+                .iter()
+                .find(|c| c.id == "clip_comp")
+                .expect("comp")
+                .start_beats,
+            4.0
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

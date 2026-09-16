@@ -1,6 +1,7 @@
 import type { Clip, Op } from "../generated/project";
 import { checkOpBudget, validateScriptSource } from "./sandbox";
 import {
+  automationPointSetOp,
   clipAddedOp,
   clipMovedOp,
   paramSetOp,
@@ -22,6 +23,22 @@ export interface ScriptApi {
   moveClip(clipId: string, startBeats: number): void;
   setParam(node: string, param: string, value: number): void;
   setTempo(tempo: number): void;
+  /**
+   * Upsert one automation point (`AutomationPointSet` op through
+   * `op_apply`). Pass `node`+`param` when the lane may not exist yet
+   * (`laneExists: false` creates it); updates need just the lane id.
+   * Session/comp/groove/branch/punch flows need no new script surface:
+   * they commit ordinary clips via `addClip`/`moveClip` (comp, jam-record,
+   * punch takes, grooved clips) or read state via the host.
+   */
+  setAutomationPoint(
+    laneId: string,
+    beat: number,
+    value: number,
+    node?: string,
+    param?: string,
+    laneExists?: boolean,
+  ): void;
   readonly pendingOps: readonly Op[];
 }
 
@@ -48,6 +65,8 @@ function createCollectorApi(scriptName: string): ScriptApi & { ops: Op[] } {
     moveClip: (clipId, startBeats) => push(clipMovedOp(actor, clipId, startBeats)),
     setParam: (node, param, value) => push(paramSetOp(actor, node, param, value)),
     setTempo: (tempo) => push(tempoSetOp(actor, tempo)),
+    setAutomationPoint: (laneId, beat, value, node?, param?, laneExists = false) =>
+      push(automationPointSetOp(actor, laneId, beat, value, node, param, laneExists)),
     pendingOps: ops,
     ops,
   };
@@ -60,8 +79,15 @@ export async function compileScript(scriptName: string, source: string): Promise
   // `new Function` scopes the body to exactly the api keys below: no
   // closure over host modules, no imports, no Tauri invoke. The body may
   // use top-level await (wrapped in an async function).
-  const keys = ["addTrack", "addClip", "moveClip", "setParam", "setTempo"];
-  const values = [api.addTrack, api.addClip, api.moveClip, api.setParam, api.setTempo];
+  const keys = ["addTrack", "addClip", "moveClip", "setParam", "setTempo", "setAutomationPoint"];
+  const values = [
+    api.addTrack,
+    api.addClip,
+    api.moveClip,
+    api.setParam,
+    api.setTempo,
+    api.setAutomationPoint,
+  ];
   const fn = new Function(...keys, `"use strict";\n${source}`);
   await (fn as (...a: unknown[]) => unknown)(...values);
   return [...api.ops];
@@ -91,5 +117,5 @@ export async function runScript(
  * scripts always funnel through `op_apply`-shaped runners instead.
  */
 export function describeScriptApi(): string[] {
-  return ["addTrack", "addClip", "moveClip", "setParam", "setTempo"];
+  return ["addTrack", "addClip", "moveClip", "setParam", "setTempo", "setAutomationPoint"];
 }

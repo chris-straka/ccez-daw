@@ -38,44 +38,34 @@ export default function FilmstripLane(props: {
   }
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
-      <div style={{ color: "#aaa", "font-size": "12px" }}>Video filmstrip</div>
-      <Show when={props.doc.clips.length > 0} fallback={<div style={{ color: "#888" }}>No video clips.</div>}>
+    <div class="session-view" style={{ gap: "4px" }}>
+      <div class="view-label">Video filmstrip</div>
+      <Show when={props.doc.clips.length > 0} fallback={<div class="session-dim">No video clips.</div>}>
         <For each={props.doc.clips}>
           {(clip) => (
-            <div style={{ display: "flex", gap: "4px", "align-items": "center" }}>
-              <span style={{ width: "64px", color: "#aaa", "font-size": "12px" }}>{clip.name}</span>
+            <div class="lane">
+              <span class="lane-name">{clip.name}</span>
               <div
                 title={`${clip.name} @ ${clip.start_beats} (offset ${clip.offset_beats.toFixed(2)} beats)`}
                 onPointerDown={(e) => onPointerDown(e, clip)}
+                class={`filmstrip-cell${dragging() === clip.id ? " dragging" : ""}`}
                 style={{
-                  display: "flex",
-                  gap: "2px",
-                  cursor: "ew-resize",
-                  border: dragging() === clip.id ? "1px solid #fa4" : "1px solid #84c",
-                  "border-radius": "4px",
-                  padding: "2px",
                   "margin-left": `${clip.start_beats * pxPerBeat()}px`,
                   width: `${clip.length_beats * pxPerBeat()}px`,
-                  overflow: "hidden",
-                  opacity: dragging() === clip.id ? "0.85" : "1",
                 }}
               >
                 <For each={Array.from({ length: FILMSTRIP_THUMBS })}>
                   {(_, i) => (
                     <span
+                      class="filmstrip-thumb"
                       style={{
-                        flex: "1",
-                        height: "22px",
-                        "border-radius": "2px",
-                        background: `linear-gradient(${120 + i() * 8}deg, #2a2a4a, #4a2a5a)`,
-                        "min-width": "4px",
+                        background: `linear-gradient(${120 + i() * 8}deg, #1c2733, #33475e)`,
                       }}
                     />
                   )}
                 </For>
               </div>
-              <span style={{ color: "#666", "font-size": "11px" }}>off {clip.offset_beats.toFixed(2)}</span>
+              <span class="mixer-foot daw-numeric">off {clip.offset_beats.toFixed(2)}</span>
             </div>
           )}
         </For>

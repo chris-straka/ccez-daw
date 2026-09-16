@@ -126,13 +126,22 @@ impl RenderGraph {
         // A delay of d drops the producer's first d frames into the line
         // and pulls d leading zeros — exactly the mix-point alignment the
         // graph computed.
+        //
+        // Realtime note: the delay-table key needs owned strings, so borrow
+        // the producer's audio *before* moving its id into the key. That is
+        // one `String` alloc per edge instead of two (`id` is hoisted and
+        // cloned once per edge; `producer` is moved, never cloned). The
+        // remaining per-edge alloc disappears only with interned node ids —
+        // tracked in docs/notes/rt-perf.md as follow-up RT-4.
         let mut input = vec![0.0f32; frames];
+        let id_owned = id.to_string();
         for producer in self.producers_of(id) {
+            let buf = buffers.get(producer.as_str());
             let delay = edge_delays
-                .get(&(producer.clone(), id.to_string()))
+                .get(&(producer, id_owned.clone()))
                 .copied()
                 .unwrap_or(0) as usize;
-            if let Some(buf) = buffers.get(&producer) {
+            if let Some(buf) = buf {
                 for t in 0..frames {
                     if t >= delay {
                         input[t] += buf[t - delay];

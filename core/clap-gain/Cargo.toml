@@ -1,0 +1,15 @@
+[package]
+name = "ccez-clap-gain"
+version = "0.1.0"
+edition = "2021"
+description = "Test-only CLAP gain fixture for the ccez-daw plugin sandbox (never shipped, never a workspace member)"
+
+[lib]
+crate-type = ["cdylib"]
+name = "ccez_clap_gain"
+
+[workspace]
+
+[dependencies]
+clack-plugin = "0.2"
+clack-extensions = { version = "0.2", features = ["clack-plugin", "audio-ports", "latency", "params"] }

@@ -77,10 +77,21 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "ga", mode: "normal", context: "all", action: "view.focusArrangement" },
   { keys: "gp", mode: "normal", context: "all", action: "view.focusPianoRoll" },
   { keys: "gm", mode: "normal", context: "all", action: "view.focusMixer" },
+  { keys: "gs", mode: "normal", context: "all", action: "view.focusSession" },
 
   // --- mixer view (context-scoped; inert in other views) ---
   { keys: "m", mode: "normal", context: "mixer", action: "mixer.muteSelected" },
   { keys: "M", mode: "normal", context: "mixer", action: "mixer.soloSelected" },
+
+  // --- post-v0 feature coverage (single-key, all-mode-distinct) ---
+  // Programmatic actions (`automation.point_set`, `groove.apply`,
+  // `branch.merge`) stay palette/MCP-only: they need lane/clip/branch args
+  // no key can supply.
+  { keys: "S", mode: "normal", context: "all", action: "session.launch" },
+  { keys: "J", mode: "normal", context: "all", action: "session.jam_record" },
+  { keys: "C", mode: "normal", context: "all", action: "comp.commit" },
+  { keys: "r", mode: "normal", context: "all", action: "record.punch" },
+  { keys: "L", mode: "normal", context: "all", action: "link.join" },
 ];
 
 /** Remap overrides: action id -> replacement key sequence. */

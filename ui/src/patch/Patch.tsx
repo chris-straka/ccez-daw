@@ -2,11 +2,13 @@ import { For, Show } from "solid-js";
 import type { EdgeKind, Project } from "../generated/project";
 import { cablePoints, layoutPatch } from "./layout";
 
+/** Cable colors follow the theme: teal audio, steel-blue MIDI, amber
+ *  modulation, burnt-orange sidechain; cycles fall back to danger red. */
 const KIND_COLORS: Record<EdgeKind, string> = {
-  Audio: "#6af",
-  Midi: "#4d4",
-  Modulation: "#da6",
-  Sidechain: "#a6d",
+  Audio: "#3fc1a5",
+  Midi: "#6f9fd8",
+  Modulation: "#f5a623",
+  Sidechain: "#c96f4a",
 };
 
 /**
@@ -25,17 +27,17 @@ export default function PatchView(props: {
   onSelectEdge?: (edgeId: string | null) => void;
 }) {
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
+    <div class="session-view">
       <Show
         when={props.project}
-        fallback={<div style={{ color: "#888" }}>No project open.</div>}
+        fallback={<div class="session-dim">No project open.</div>}
       >
         {(project) => {
           const layout = () => layoutPatch(project());
           return (
             <div>
               <Show when={layout().cycle.length > 0}>
-                <div style={{ color: "#f88", "font-size": "12px" }}>
+                <div class="meter-note" style={{ "font-size": "12px" }}>
                   Audio cycle: {layout().cycle.join(", ")} — remove a cable to render.
                 </div>
               </Show>
@@ -83,19 +85,19 @@ export default function PatchView(props: {
                         width={node.w}
                         height={node.h}
                         rx="4"
-                        fill={node.inCycle ? "#422" : "#222"}
-                        stroke={node.inCycle ? "#f88" : "#666"}
+                        fill={node.inCycle ? "#2a1215" : "#1a212b"}
+                        stroke={node.inCycle ? "#e5534b" : "rgba(255,255,255,0.14)"}
                       >
                         <title>{`${node.id} (${node.role}, layer ${node.layer})`}</title>
                       </rect>
-                      <text x={node.x + 8} y={node.y + 21} fill="#eee" font-size="12">
+                      <text x={node.x + 8} y={node.y + 21} fill="#ece7dd" font-size="12">
                         {node.id}
                       </text>
                     </g>
                   )}
                 </For>
               </svg>
-              <div style={{ color: "#888", "font-size": "11px" }}>
+              <div class="mixer-foot">
                 <For each={Object.entries(KIND_COLORS)}>
                   {([kind, color]) => <span style={{ color, "margin-right": "8px" }}>— {kind}</span>}
                 </For>

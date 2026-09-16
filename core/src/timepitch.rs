@@ -224,6 +224,77 @@ pub fn resampled_len(frames: usize, ratio: f64) -> Result<usize, String> {
     Ok(((frames as f64) / ratio).ceil() as usize)
 }
 
+/// Playback-rate ratio that auto-fits a loop recorded at `source_tempo` BPM
+/// to `target_tempo` BPM: `target / source`. Faster target = ratio > 1 =
+/// fewer frames (same convention as [`time_scale_clip`] and
+/// [`resampled_len`], so the MIDI path and the sample path agree).
+/// Both tempos must be finite and > 0.
+pub fn loop_fit_ratio(source_tempo: f64, target_tempo: f64) -> Result<f64, String> {
+    if !(source_tempo > 0.0 && source_tempo.is_finite()) {
+        return Err(format!("source tempo {source_tempo} must be finite and > 0"));
+    }
+    if !(target_tempo > 0.0 && target_tempo.is_finite()) {
+        return Err(format!("target tempo {target_tempo} must be finite and > 0"));
+    }
+    Ok(target_tempo / source_tempo)
+}
+
+/// Fit a MIDI loop recorded at `source_tempo` to `target_tempo`: scale time
+/// by [`loop_fit_ratio`]. Lengths and onsets divide by the ratio, so a
+/// 4-beat loop keeps its beats while its seconds follow the new tempo.
+/// Invertible: fitting back with swapped tempos restores the clip.
+pub fn fit_midi_loop_to_tempo(
+    clip: &MidiClip,
+    source_tempo: f64,
+    target_tempo: f64,
+) -> Result<MidiClip, String> {
+    time_scale_clip(clip, loop_fit_ratio(source_tempo, target_tempo)?)
+}
+
+impl WarpMap {
+    /// Serialize the marker map to the canonical JSON form
+    /// (`{"markers": [{"at_beats", "shift_beats"}]}`). Markers keep their
+    /// sorted order; an empty map round-trips to the identity.
+    pub fn to_json(&self) -> String {
+        let entries: Vec<serde_json::Value> = self
+            .markers
+            .iter()
+            .map(|m| serde_json::json!({ "at_beats": m.at_beats, "shift_beats": m.shift_beats }))
+            .collect();
+        serde_json::to_string(&serde_json::json!({ "markers": entries }))
+            .expect("warp map serializes")
+    }
+
+    /// Parse [`WarpMap::to_json`] output back into a map (sorted, validated).
+    /// Unknown shapes, non-numeric pins, and non-finite values are errors —
+    /// a warp file that misspells a key must fail loudly, never load flat.
+    pub fn from_json(json: &str) -> Result<Self, String> {
+        let value: serde_json::Value =
+            serde_json::from_str(json).map_err(|e| format!("invalid warp map: {e}"))?;
+        let list = value
+            .get("markers")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| {
+                "invalid warp map: want { \"markers\": [{ \"at_beats\", \"shift_beats\" }] }"
+                    .to_string()
+            })?;
+        let mut markers = Vec::with_capacity(list.len());
+        for entry in list {
+            let at = entry.get("at_beats").and_then(|v| v.as_f64()).ok_or_else(|| {
+                "invalid warp map: every marker needs a numeric \"at_beats\"".to_string()
+            })?;
+            let shift = entry
+                .get("shift_beats")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| {
+                    "invalid warp map: every marker needs a numeric \"shift_beats\"".to_string()
+                })?;
+            markers.push(WarpMarker { at_beats: at, shift_beats: shift });
+        }
+        WarpMap::new(markers)
+    }
+}
+
 /// Build a small demo clip for tests: C–E–G quarter notes from beat 0.
 pub fn sample_phrase() -> MidiClip {
     let mut clip = MidiClip::new(4.0);
@@ -283,5 +354,50 @@ mod tests {
         assert_eq!(resampled_len(100, 2.0).unwrap(), 50);
         assert_eq!(resampled_len(100, 3.0).unwrap(), 34);
         assert!(resampled_len(100, 0.0).is_err());
+    }
+
+    #[test]
+    fn loop_fit_ratio_follows_tempo() {
+        let r = loop_fit_ratio(120.0, 140.0).unwrap();
+        assert!((r - 140.0 / 120.0).abs() < 1e-12);
+        assert!(loop_fit_ratio(0.0, 120.0).is_err());
+        assert!(loop_fit_ratio(120.0, -5.0).is_err());
+        assert!(loop_fit_ratio(f64::INFINITY, 120.0).is_err());
+    }
+
+    #[test]
+    fn midi_loop_fit_scales_and_inverts() {
+        let clip = sample_phrase();
+        let fitted = fit_midi_loop_to_tempo(&clip, 120.0, 140.0).unwrap();
+        let r = 140.0 / 120.0;
+        assert!((fitted.length_beats - 4.0 / r).abs() < 1e-9);
+        let back = fit_midi_loop_to_tempo(&fitted, 140.0, 120.0).unwrap();
+        for (a, b) in back.notes.iter().zip(clip.notes.iter()) {
+            assert!((a.start_beats - b.start_beats).abs() < 1e-9);
+            assert!((a.len_beats - b.len_beats).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn warp_map_json_round_trip() {
+        let id = WarpMap::new(vec![]).unwrap();
+        assert_eq!(WarpMap::from_json(&id.to_json()).unwrap(), id);
+        let map = WarpMap::new(vec![
+            WarpMarker { at_beats: 2.0, shift_beats: -0.25 },
+            WarpMarker { at_beats: 0.0, shift_beats: 0.1 },
+        ])
+        .unwrap();
+        // Constructor sorts: JSON carries the sorted order.
+        assert!(map.markers[0].at_beats <= map.markers[1].at_beats);
+        let back = WarpMap::from_json(&map.to_json()).unwrap();
+        assert_eq!(back, map);
+        // Warped onsets survive the serialization round-trip.
+        let clip = sample_phrase();
+        assert_eq!(
+            apply_warp_to_midi(&clip, &back),
+            apply_warp_to_midi(&clip, &map)
+        );
+        assert!(WarpMap::from_json(r#"{"nope": []}"#).is_err());
+        assert!(WarpMap::from_json(r#"{"markers": [{"at_beats": 0.0}]}"#).is_err());
     }
 }

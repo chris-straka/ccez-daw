@@ -9,26 +9,37 @@
 //! - Every call is one JSON line down, one JSON line back
 //!   ([`WorkerRequest`](crate::plugins::worker::WorkerRequest) /
 //!   [`WorkerResponse`](crate::plugins::worker::WorkerResponse)).
-//! - The host detects death three ways: the write fails (broken pipe),
-//!   the read hits EOF, or [`alive`](SandboxedPlugin::alive) sees the
-//!   child reaped. All three surface as [`SandboxError::Crashed`] — and
-//!   the last known-good [`PluginState`](crate::plugins::host::PluginState)
-//!   is already sitting in the host, untouched by the crash.
+//! - The host detects death four ways: the write fails (broken pipe),
+//!   the read hits EOF, [`alive`](SandboxedPlugin::alive) sees the child
+//!   reaped, or the watchdog deadline fires on a mute child. All four
+//!   surface as [`SandboxError::Crashed`] — and the last known-good
+//!   [`PluginState`](crate::plugins::host::PluginState) is already
+//!   sitting in the host, untouched by the crash.
 //! - [`recover`](SandboxedPlugin::recover) respawns the child, replays
 //!   `Init` + `SetState(last_good)`, and hands audio back. The session
 //!   never went down; only that insert dropped samples while dead.
 //!
-//! Honest v1 limit: reads block. A worker that *hangs* (alive but mute)
-//! stalls the calling thread — hang detection (deadline + kill) is the
-//! phase-2 follow-up. A worker that *dies* — the segfault case this track
-//! owns — is detected on the very next call.
+//! Hang note: every round-trip carries a watchdog deadline
+//! ([`DEFAULT_WORKER_TIMEOUT`], tunable per plugin via
+//! [`set_timeout`](SandboxedPlugin::set_timeout)). A worker that is
+//! *alive but mute* past the deadline is killed and reports `Crashed`,
+//! exactly like the segfault case. The
+//! [`ping`](SandboxedPlugin::ping) heartbeat is the no-side-effect poll
+//! to run between renders.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
 
-use super::host::{PluginDescriptor, PluginState};
+use super::host::{PluginDescriptor, PluginKind, PluginState};
 use super::worker::{WorkerRequest, WorkerResponse};
+
+/// Default watchdog deadline per worker round-trip. Blocks are
+/// millisecond-scale, so ten seconds is generous on loaded CI while still
+/// turning a mute worker into a detected crash instead of a stuck session.
+pub const DEFAULT_WORKER_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SandboxError {
@@ -71,6 +82,7 @@ pub struct SandboxedPlugin {
     stdin: Option<ChildStdin>,
     stdout: Option<BufReader<ChildStdout>>,
     last_good: Option<PluginState>,
+    timeout: Duration,
 }
 
 impl SandboxedPlugin {
@@ -89,6 +101,7 @@ impl SandboxedPlugin {
             stdin: None,
             stdout: None,
             last_good: None,
+            timeout: DEFAULT_WORKER_TIMEOUT,
         };
         this.respawn()?;
         let state = this.snapshot()?;
@@ -120,12 +133,90 @@ impl SandboxedPlugin {
         self.call(&WorkerRequest::Init {
             sample_rate: self.sample_rate,
         })?;
+        // Real bundles load inside the worker: the `Init` handshake is
+        // identical for every backend, then a Clap/Vst3/Au/Wasm descriptor
+        // adds one `LoadClap` / `LoadVst3` / `LoadAu` / `LoadWasm`
+        // round-trip. Recovery replays the same two steps, so host and
+        // recovery code never branch on plugin kind.
+        if self.descriptor.kind == PluginKind::Clap {
+            let path = self.descriptor.path.clone().ok_or_else(|| {
+                SandboxError::Protocol("clap descriptor has no bundle path".to_string())
+            })?;
+            self.call(&WorkerRequest::LoadClap {
+                path,
+                plugin_id: self.descriptor.plugin_uid.clone(),
+            })?;
+        }
+        if self.descriptor.kind == PluginKind::Vst3 {
+            let path = self.descriptor.path.clone().ok_or_else(|| {
+                SandboxError::Protocol("vst3 descriptor has no bundle path".to_string())
+            })?;
+            self.call(&WorkerRequest::LoadVst3 {
+                path,
+                class_id: self.descriptor.plugin_uid.clone(),
+            })?;
+        }
+        if self.descriptor.kind == PluginKind::Au {
+            let desc = self.descriptor.au_desc.clone().ok_or_else(|| {
+                SandboxError::Protocol("au descriptor has no component codes".to_string())
+            })?;
+            self.call(&WorkerRequest::LoadAu {
+                component_type: desc.component_type,
+                component_subtype: desc.component_subtype,
+                manufacturer: desc.manufacturer,
+            })?;
+        }
+        if self.descriptor.kind == PluginKind::Wasm {
+            let path = self.descriptor.path.clone().ok_or_else(|| {
+                SandboxError::Protocol("wasm descriptor has no module path".to_string())
+            })?;
+            #[cfg(feature = "wasm-runtime")]
+            self.call(&WorkerRequest::LoadWasm { path })?;
+            // Without the feature there is no wasmtime to hand the module
+            // to: refuse before spawning anything half-loaded, the same
+            // clean error the worker itself would answer.
+            #[cfg(not(feature = "wasm-runtime"))]
+            {
+                let _ = path;
+                return Err(SandboxError::Protocol(
+                    "wasm devices need the wasm-runtime feature".to_string(),
+                ));
+            }
+        }
         Ok(())
+    }
+
+    /// Watchdog deadline for one round-trip. Tests shorten it to prove
+    /// hang detection without waiting out the production default.
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    /// Heartbeat: ask the worker for an immediate no-op reply. A healthy
+    /// worker answers well inside [`Self::timeout`]; a hung one trips the
+    /// watchdog and reports `Crashed`, exactly like a segfault — and
+    /// [`recover`](SandboxedPlugin::recover) brings it back the same way.
+    pub fn ping(&mut self) -> Result<()> {
+        self.call(&WorkerRequest::Ping)?;
+        Ok(())
+    }
+
+    /// Test hook: the live worker's pid (a suspended pid is the
+    /// alive-but-mute stand-in; see the hang-detection test).
+    #[cfg(test)]
+    pub(crate) fn child_pid(&self) -> Option<u32> {
+        self.child.as_ref().map(|c| c.id())
     }
 
     /// One synchronous round-trip. Any transport failure is inspected:
     /// a dead child becomes `Crashed` (the case this module owns); a live
-    /// child answering garbage becomes `Protocol`.
+    /// child answering garbage becomes `Protocol`; a live child answering
+    /// nothing before the watchdog deadline becomes `Crashed` too (the
+    /// hang case this module now owns as well).
     fn call(&mut self, req: &WorkerRequest) -> Result<WorkerResponse> {
         let mut line = serde_json::to_string(req)
             .map_err(|e| SandboxError::Protocol(format!("request serializes: {e}")))?;
@@ -140,11 +231,32 @@ impl SandboxedPlugin {
         if let Err(e) = written {
             return Err(self.death_of(format!("write failed: {e}")));
         }
-        let mut answer = String::new();
-        let read: std::result::Result<Option<usize>, String> = match self.stdout.as_mut() {
-            Some(s) => s.read_line(&mut answer).map(Some).map_err(|e| e.to_string()),
-            None => Ok(None),
+        // The read moves to a scoped thread so the watchdog can fire:
+        // pipes have no portable read deadline, but `recv_timeout` does.
+        // The reader is moved back on success; on timeout the thread is
+        // left to drain EOF after the kill below and then exit.
+        let reader = match self.stdout.take() {
+            Some(s) => s,
+            None => return Err(self.death_of("no worker stdout".to_string())),
         };
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut reader = reader;
+            let mut answer = String::new();
+            let read = reader.read_line(&mut answer).map(Some).map_err(|e| e.to_string());
+            let _ = tx.send((reader, read, answer));
+        });
+        let timeout = self.timeout;
+        let (reader, read, answer) = match rx.recv_timeout(timeout) {
+            Ok(triple) => triple,
+            Err(_) => {
+                return Err(self.timeout_of(format!(
+                    "worker timed out after {}ms",
+                    timeout.as_millis()
+                )));
+            }
+        };
+        self.stdout = Some(reader);
         match read {
             Ok(Some(0)) | Ok(None) => Err(self.death_of("EOF on worker stdout".to_string())),
             Ok(Some(_)) => {
@@ -169,14 +281,18 @@ impl SandboxedPlugin {
 
     /// Reap-check the child and convert *this* failure into `Crashed`.
     /// Never panics on an already-dead child: double-kills are routine
-    /// (kill a crashed plugin, then recover it).
+    /// (kill a crashed plugin, then recover it). Kills first so a
+    /// *stopped* (suspended, alive-but-mute) child cannot block `wait`.
     fn death_of(&mut self, context: String) -> SandboxError {
         let exit = self
             .child
             .as_mut()
             .and_then(|c| c.try_wait().ok().flatten())
             .map(|s| s.to_string());
-        let _ = self.child.as_mut().map(|c| c.wait());
+        if let Some(child) = self.child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
         self.child = None;
         self.stdin = None;
         self.stdout = None;
@@ -184,6 +300,21 @@ impl SandboxedPlugin {
             Some(s) => format!("{context} (exited: {s})"),
             None => context,
         })
+    }
+
+    /// The watchdog path: the child is alive (or unprovably dead) but
+    /// mute, so kill it outright and report `Crashed` — `recover()` then
+    /// respawns and replays `last_good` exactly like the segfault case.
+    fn timeout_of(&mut self, context: String) -> SandboxError {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        self.stdin = None;
+        // `stdout` already moved into the timed-out reader thread, which
+        // drains EOF from the killed pipe and exits on its own.
+        self.stdout = None;
+        SandboxError::Crashed(context)
     }
 
     /// `true` while the child is unreaped. Kills nothing; reaps an exited
@@ -225,6 +356,16 @@ impl SandboxedPlugin {
         let state = self.snapshot()?;
         self.last_good = Some(state);
         Ok(())
+    }
+
+    /// Query the worker's processing latency in samples at the current
+    /// rate (feeds [`LatencyMap`](super::latency::LatencyMap); 0 = the
+    /// mock's honest answer for memory-free gain). Pure probe: it neither
+    /// reads nor writes `last_good`.
+    pub fn latency_samples(&mut self) -> Result<u32> {
+        let resp = self.call(&WorkerRequest::GetLatency)?;
+        resp.latency_samples
+            .ok_or_else(|| SandboxError::Protocol("worker omitted latency".to_string()))
     }
 
     /// Pull the worker's current state; caches it as `last_good`.
@@ -346,11 +487,92 @@ mod tests {
     }
 
     #[test]
+    fn failed_load_wasm_leaves_mock_running() {
+        // The `LoadWasm` failure contract, shared with Clap/Vst3/Au: a
+        // refused load reports `Protocol` and the previous backend keeps
+        // rendering. This holds on every build — without `wasm-runtime`
+        // the worker refuses for the missing feature, with it for the
+        // missing file — so the mock below survives either way.
+        let mut p = sandbox();
+        let err = p
+            .call(&WorkerRequest::LoadWasm {
+                path: "/nonexistent/ghost.wasm".to_string(),
+            })
+            .expect_err("bad module must fail");
+        assert!(matches!(err, SandboxError::Protocol(_)), "got {err:?}");
+        assert!(p.alive());
+        assert_eq!(p.process(&[1.0]).expect("mock survives"), vec![1.0]);
+    }
+
+    #[test]
+    fn latency_probe_reports_zero_for_mock_gain() {
+        let mut p = sandbox();
+        // Memory-free gain is honestly zero-latency; the probe must not
+        // disturb rendering or the recovery snapshot.
+        assert_eq!(p.latency_samples().expect("latency"), 0);
+        assert_eq!(p.process(&[1.0]).expect("process"), vec![1.0]);
+        p.kill().expect("kill");
+        let err = p.latency_samples().expect_err("dead probe must fail");
+        assert!(matches!(err, SandboxError::Crashed(_)), "got {err:?}");
+        p.recover().expect("recover");
+        assert_eq!(p.latency_samples().expect("latency again"), 0);
+    }
+
+    #[test]
     fn recover_is_idempotent_on_a_live_worker() {
         let mut p = sandbox();
         p.set_param("gain", 3.0).expect("gain");
         let a = p.recover().expect("recover live");
         assert_eq!(a.params.get("gain"), Some(&3.0));
         assert!(p.alive());
+    }
+
+    #[test]
+    fn heartbeat_answers_on_a_live_worker() {
+        let mut p = sandbox();
+        p.ping().expect("ping");
+        assert!(p.alive());
+        // The probe disturbs neither rendering nor the recovery snapshot.
+        assert_eq!(p.process(&[1.0]).expect("process"), vec![1.0]);
+        p.set_param("gain", 2.0).expect("gain");
+        p.ping().expect("ping again");
+        assert_eq!(p.process(&[1.0]).expect("renders"), vec![2.0]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn muted_worker_trips_the_watchdog_and_recovers() {
+        use std::time::{Duration, Instant};
+        let mut p = sandbox();
+        p.set_timeout(Duration::from_millis(300));
+        p.ping().expect("healthy ping");
+        p.set_param("gain", 0.5).expect("gain");
+        let pid = p.child_pid().expect("worker pid");
+        // Suspend the child: still unreaped (`alive`) but answering
+        // nothing — the alive-but-mute stand-in for a deadlocked plugin.
+        let status = std::process::Command::new("kill")
+            .args(["-STOP", &pid.to_string()])
+            .status()
+            .expect("kill -STOP launches");
+        assert!(status.success());
+        assert!(p.alive(), "a stopped child is still unreaped");
+        // The watchdog fires near the deadline instead of blocking forever.
+        let started = Instant::now();
+        let err = p.process(&[1.0]).expect_err("mute worker must fail");
+        assert!(
+            matches!(err, SandboxError::Crashed(_)),
+            "mute must read as Crashed, got {err:?}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "watchdog must fire, not block"
+        );
+        assert!(!p.alive());
+        // Recovery respawns a fresh worker and replays last-known-good gain.
+        let back = p.recover().expect("recover");
+        assert_eq!(back.params.get("gain"), Some(&0.5));
+        assert!(p.alive());
+        p.ping().expect("ping after recover");
+        assert_eq!(p.process(&[1.0]).expect("renders"), vec![0.5]);
     }
 }

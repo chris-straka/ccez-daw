@@ -1,12 +1,14 @@
 import type { MidiClip } from "../pianoroll/model";
 import { accidentalGlyph, ledgerLines, type Clef } from "./pitch";
 import {
+  beatForX,
   displayDuration,
   hasStem,
   layoutClip,
   pageHeight,
   pageSystems,
   stemDown,
+  stepForY,
   systemTop,
   type NotationLayoutOpts,
 } from "./layout";
@@ -66,6 +68,27 @@ export default function ScoreView(props: {
     props.onSelect?.(cur);
   }
 
+  function createAt(e: MouseEvent, svg: SVGSVGElement): void {
+    const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const x = ((e as MouseEvent).clientX - rect.left) * (layout.pageWidth / rect.width);
+    const y = ((e as MouseEvent).clientY - rect.top) * (height / rect.height);
+    const rowH = layout.staffHeight + layout.systemGap;
+    const system = Math.min(systems - 1, Math.max(0, Math.round((y - layout.topMargin) / rowH)));
+    const top = systemTop(system, layout);
+    const measureInSystem = Math.min(
+      layout.measuresPerSystem - 1,
+      Math.max(0, Math.floor((x - layout.marginLeft) / layout.measureWidth)),
+    );
+    const step = stepForY(y, top, layout);
+    const beat =
+      system * layout.measuresPerSystem * layout.beatsPerMeasure +
+      beatForX(x, measureInSystem, layout);
+    // The printed page shows one treble staff per system; the shell commits
+    // through `createNoteAtStep` (same ids as the piano roll).
+    props.onCreate?.({ step, clef: "treble", beat: Math.max(0, beat) });
+  }
+
   return (
     <div class="ccez-score">
       <style>{`@media print { .ccez-score .screen-hint { display: none; } .ccez-score svg { max-width: 100%; height: auto; } }`}</style>
@@ -76,6 +99,7 @@ export default function ScoreView(props: {
         height={height}
         viewBox={`0 0 ${layout.pageWidth} ${height}`}
         style={{ background: "#fff", display: "block", width: "100%", height: "auto" }}
+        onClick={(e: MouseEvent) => createAt(e, e.currentTarget as SVGSVGElement)}
       >
         {Array.from({ length: systems }, (_, s) => (
           <g>
@@ -150,8 +174,9 @@ export default function ScoreView(props: {
           );
         })}
       </svg>
-      <p class="screen-hint" style={{ color: "#666", "font-size": "12px" }}>
-        Click a note to select (shift-click adds); print via browser print — vector SVG stays sharp.
+      <p class="screen-hint session-dim">
+        Click empty staff to add a note; click a note to select (shift-click adds); print via
+        browser print — vector SVG stays sharp.
       </p>
     </div>
   );

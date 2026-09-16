@@ -22,7 +22,7 @@ export const EngineStateSchema = z.enum(["Stopped", "Playing", "Recording"]);
 export type EngineState = z.infer<typeof EngineStateSchema>;
 
 /** Op-log entry discriminator (event-sourced project document). */
-export const OpKindSchema = z.enum(["TrackAdded", "ClipAdded", "ClipMoved", "ParamSet", "TempoSet", "UndoMarker"]);
+export const OpKindSchema = z.enum(["TrackAdded", "ClipAdded", "ClipMoved", "ParamSet", "TempoSet", "UndoMarker", "AutomationPointSet"]);
 export type OpKind = z.infer<typeof OpKindSchema>;
 
 /** Browsable library discriminator: one palette indexes all four. */

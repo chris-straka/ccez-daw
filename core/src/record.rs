@@ -24,7 +24,9 @@
 //! hardware send/return loop, that is a different track, not a flag on this
 //! one.
 
-use crate::model::{Clip, ClipKind, EngineState};
+use std::collections::BTreeSet;
+
+use crate::model::{Clip, ClipKind, EngineState, Op, OpKind};
 
 /// Float tolerance for beat comparisons, in beats (same as `comp::EPS`).
 const EPS: f64 = 1e-9;
@@ -304,6 +306,87 @@ pub fn punch_overlap(
     }
 }
 
+/// UI-local arm set: which tracks capture when the transport punches.
+///
+/// Kept outside the frozen v0 model on purpose (no schema change, no new
+/// `OpKind`): arming is a control-room switch, not project state. The panel
+/// owns one of these; takes still land as ordinary `ClipAdded` ops below.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ArmState {
+    armed: BTreeSet<String>,
+}
+
+impl ArmState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn arm(&mut self, track_id: &str) {
+        self.armed.insert(track_id.to_string());
+    }
+
+    pub fn disarm(&mut self, track_id: &str) {
+        self.armed.remove(track_id);
+    }
+
+    /// Flip one track's switch; returns whether it is armed afterwards.
+    pub fn toggle(&mut self, track_id: &str) -> bool {
+        if self.armed.remove(track_id) {
+            false
+        } else {
+            self.armed.insert(track_id.to_string());
+            true
+        }
+    }
+
+    pub fn is_armed(&self, track_id: &str) -> bool {
+        self.armed.contains(track_id)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.armed.is_empty()
+    }
+
+    /// Armed track ids, sorted (deterministic take-commit order).
+    pub fn armed(&self) -> Vec<String> {
+        self.armed.iter().cloned().collect()
+    }
+}
+
+/// Punch range snapped to a timeline section boundary:
+/// `[section_start, section_start + section_length)`. This is how the
+/// record panel's "use section" button turns the launcher's named beat
+/// ranges (verse, chorus, ...) into an auto-punch window.
+pub fn punch_range_for_section(
+    section_start_beats: f64,
+    section_length_beats: f64,
+) -> Result<PunchRange> {
+    if !section_length_beats.is_finite() || !(section_length_beats > 0.0) {
+        return Err(RecordError::BadPunchRange(format!(
+            "section length must be positive finite, got {section_length_beats}"
+        )));
+    }
+    validate_punch(
+        section_start_beats,
+        section_start_beats + section_length_beats,
+    )
+}
+
+/// Commit one punched take as an ordinary frozen `ClipAdded` op: `seq: 0`
+/// is a placeholder the engine replaces, `target` names the take clip and
+/// `value_json` carries the full clip — the same shape
+/// [`crate::comp::comp_commit_op`] uses, so a take undoes/redoes like any
+/// other op.
+pub fn take_commit_op(actor: &str, take: &Clip) -> Op {
+    Op {
+        seq: 0,
+        actor: actor.to_string(),
+        kind: OpKind::ClipAdded,
+        target: take.id.clone(),
+        value_json: serde_json::to_string(take).expect("take clip serializes"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,5 +486,72 @@ mod tests {
         assert!(validate_punch(4.0, 4.0).is_err());
         assert!(validate_punch(-1.0, 4.0).is_err());
         assert!(assign_take_lanes(&[]).is_err());
+    }
+
+    #[test]
+    fn arm_state_tracks_switches() {
+        let mut arms = ArmState::new();
+        assert!(arms.is_empty());
+        assert!(!arms.is_armed("trk_vox"));
+
+        arms.arm("trk_vox");
+        arms.arm("trk_gtr");
+        assert!(arms.is_armed("trk_vox"));
+        // Sorted: deterministic take-commit order.
+        assert_eq!(arms.armed(), vec!["trk_gtr".to_string(), "trk_vox".to_string()]);
+
+        assert!(!arms.toggle("trk_vox"));
+        assert!(!arms.is_armed("trk_vox"));
+        assert!(arms.toggle("trk_vox"));
+        arms.disarm("trk_gtr");
+        arms.disarm("trk_vox");
+        assert!(arms.is_empty());
+    }
+
+    #[test]
+    fn section_punch_snaps_to_boundaries() {
+        // Chorus at [16, 32): the "use section" button lands exactly here.
+        assert_eq!(
+            punch_range_for_section(16.0, 16.0).unwrap(),
+            PunchRange { start_beats: 16.0, end_beats: 32.0 }
+        );
+        assert!(punch_range_for_section(0.0, 0.0).is_err());
+        assert!(punch_range_for_section(0.0, -4.0).is_err());
+        assert!(punch_range_for_section(-16.0, 16.0).is_err());
+        assert!(punch_range_for_section(0.0, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn take_commit_is_an_undoable_clip_added_op() {
+        use crate::engine::Engine;
+        use crate::model::{OpKind, Project};
+
+        let dir = std::env::temp_dir().join(format!(
+            "ccez-record-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut engine = Engine::create(&dir, Project::sample()).expect("create engine");
+
+        // One auto-punched pass on the Music track becomes a take clip.
+        let punch = validate_punch(4.0, 8.0).unwrap();
+        let take = punch_take_clip("take_music_p1", "trk_music", "Music p1", ClipKind::Audio, &punch);
+        let op = take_commit_op("ui", &take);
+        assert_eq!(op.kind, OpKind::ClipAdded);
+        assert_eq!(op.seq, 0);
+        assert_eq!(op.target, "take_music_p1");
+
+        engine
+            .apply("ui", op.kind, &op.target, &op.value_json)
+            .expect("commit take");
+        assert!(engine.project().clips.iter().any(|c| c.id == "take_music_p1"));
+        engine.undo().expect("undo take");
+        assert!(!engine.project().clips.iter().any(|c| c.id == "take_music_p1"));
+        engine.redo().expect("redo take");
+        assert!(engine.project().clips.iter().any(|c| c.id == "take_music_p1"));
     }
 }

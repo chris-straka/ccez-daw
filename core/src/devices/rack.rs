@@ -39,9 +39,11 @@ use crate::plugins::chain::{apply_wet_dry, is_oversampled, wet_dry};
 use super::class::{classify, DeviceClass, DEVICE_CLASS_PARAM};
 use super::kernel::{
     delay_process, distortion_process, gain_process, highpass_process, lowpass_process,
-    CUTOFF_PARAM, DELAY_SAMPLES_PARAM, DRIVE_PARAM, FEEDBACK_PARAM, GAIN_PARAM,
-    DelayState, HighpassState, LowpassState,
+    sampler_note_off, sampler_note_on, sampler_process, ATTACK_PARAM, CUTOFF_PARAM,
+    DELAY_SAMPLES_PARAM, DRIVE_PARAM, FEEDBACK_PARAM, GAIN_PARAM, RELEASE_PARAM,
+    TRANSPOSE_PARAM, DelayState, HighpassState, LowpassState, SamplerState,
 };
+use super::sampler::SampleBank;
 use super::DeviceError;
 
 /// Oversampling factor applied behind the chain's `oversampling` flag.
@@ -227,6 +229,10 @@ fn class_name(class: DeviceClass) -> &'static str {
         DeviceClass::Delay => "delay",
         DeviceClass::Distortion => "distortion",
         DeviceClass::Container => "container",
+        DeviceClass::Sampler => "sampler",
+        DeviceClass::Arpeggiator => "arpeggiator",
+        DeviceClass::Chord => "chord",
+        DeviceClass::Humanize => "humanize",
         DeviceClass::Foreign => "foreign",
     }
 }
@@ -239,6 +245,10 @@ fn parse_class(name: &str) -> Result<DeviceClass> {
         "delay" => Ok(DeviceClass::Delay),
         "distortion" => Ok(DeviceClass::Distortion),
         "container" => Ok(DeviceClass::Container),
+        "sampler" => Ok(DeviceClass::Sampler),
+        "arpeggiator" => Ok(DeviceClass::Arpeggiator),
+        "chord" => Ok(DeviceClass::Chord),
+        "humanize" => Ok(DeviceClass::Humanize),
         _ => Err(RackError::BadRack(format!("unknown preset class `{name}`"))),
     }
 }
@@ -251,6 +261,29 @@ enum DeviceState {
     Lowpass(LowpassState),
     Highpass(HighpassState),
     Delay(DelayState),
+    Sampler(SamplerState),
+}
+
+/// Open a sampler voice: restarts its read position and attack envelope.
+/// Voices are per-device-id (one voice per sampler, the Simpler
+/// mono-voice rule); untriggered voices render silence. A `note_on` on a
+/// device that later reclassifies to a non-sampler errors loudly on the
+/// next render (the state-mismatch rule), never silently retunes.
+pub fn trigger_sampler_voice(state: &mut RackState, device_id: &str) {
+    let entry = state
+        .states
+        .entry(device_id.to_string())
+        .or_insert_with(|| DeviceState::Sampler(SamplerState::default()));
+    if let DeviceState::Sampler(s) = entry {
+        sampler_note_on(s);
+    }
+}
+
+/// Close a sampler voice: the release ramp starts from the current level.
+pub fn release_sampler_voice(state: &mut RackState, device_id: &str) {
+    if let Some(DeviceState::Sampler(s)) = state.states.get_mut(device_id) {
+        sampler_note_off(s);
+    }
 }
 
 /// Cross-block DSP memory for one rendered track. Opaque to tests except
@@ -289,6 +322,7 @@ fn render_leaf(
     node: &Node,
     params: &[crate::model::Param],
     state: &mut RackState,
+    bank: &SampleBank,
     input: &[f32],
     sample_rate: f64,
 ) -> Result<Vec<f32>> {
@@ -370,9 +404,44 @@ fn render_leaf(
                 distortion_process(k, input, &mut wet)?;
             }
         }
+        DeviceClass::Sampler => {
+            // An instrument, not an insert: the voice *is* the wet signal
+            // (fully-wet defaults mean a chain-head sampler replaces
+            // silence with its voice; wet/dry still mixes like any leaf).
+            // Missing or empty buffers render silence — a setup gap, the
+            // same tolerance as foreign pass-through.
+            let entry = state
+                .states
+                .entry(node.id.clone())
+                .or_insert_with(|| DeviceState::Sampler(SamplerState::default()));
+            let DeviceState::Sampler(s) = entry else {
+                return Err(RackError::BadRack(format!(
+                    "state mismatch for `{}` (class changed mid-session?)",
+                    node.id
+                )));
+            };
+            let sample: &[f32] = bank
+                .get(&node.id)
+                .map(|b| b.frames.as_slice())
+                .unwrap_or(&[]);
+            let transpose = param_of(params, TRANSPOSE_PARAM, 0.0);
+            let gain = param_of(params, GAIN_PARAM, 1.0) as f32;
+            let attack = param_of(params, ATTACK_PARAM, 0.005);
+            let release = param_of(params, RELEASE_PARAM, 0.05);
+            let cutoff = param_of(params, CUTOFF_PARAM, 20000.0);
+            sampler_process(
+                sample, transpose, gain, attack, release, cutoff, sample_rate, s, &mut wet,
+            )?;
+        }
         DeviceClass::Container => {
             // A container rendered flat (not expanded via the rack map —
             // e.g. an empty entry) is unity: structure defaults to sound.
+            wet.copy_from_slice(input);
+        }
+        // MIDI FX shape notes before the instrument, never samples after
+        // it: on the audio path they pass through (see
+        // `devices::midifx::apply_midi_chain` for the note path).
+        DeviceClass::Arpeggiator | DeviceClass::Chord | DeviceClass::Humanize => {
             wet.copy_from_slice(input);
         }
         DeviceClass::Foreign => {
@@ -418,6 +487,7 @@ fn process_oversampled2(
 struct RenderCtx<'a> {
     nodes: BTreeMap<&'a str, &'a Node>,
     rack: &'a Rack,
+    bank: &'a SampleBank,
     sample_rate: f64,
 }
 
@@ -472,7 +542,7 @@ fn render_item(
                 None => match node {
                     Some(leaf) => {
                         let params = resolved_params(leaf, ctx.rack);
-                        render_leaf(leaf, &params, state, input, ctx.sample_rate)
+                        render_leaf(leaf, &params, state, ctx.bank, input, ctx.sample_rate)
                     }
                     None => Ok(input.to_vec()),
                 },
@@ -528,6 +598,23 @@ pub fn render_rack(
     input: &[f32],
     sample_rate: f64,
 ) -> Result<Vec<f32>> {
+    render_rack_with_bank(project, rack, &SampleBank::new(), state, track_id, input, sample_rate)
+}
+
+/// Render one track's device chain with sampler voices fed from `bank`:
+/// each sampler device id reads its buffer from the bank (missing =
+/// silence). Triggers arrive via [`trigger_sampler_voice`] /
+/// [`release_sampler_voice`] — offline renders strike the voice first,
+/// then render silence-fed blocks through it.
+pub fn render_rack_with_bank(
+    project: &Project,
+    rack: &Rack,
+    bank: &SampleBank,
+    state: &mut RackState,
+    track_id: &str,
+    input: &[f32],
+    sample_rate: f64,
+) -> Result<Vec<f32>> {
     if !sample_rate.is_finite() || sample_rate <= 0.0 {
         return Err(RackError::BadRack(format!("sample rate must be positive, got {sample_rate}")));
     }
@@ -539,6 +626,7 @@ pub fn render_rack(
     let ctx = RenderCtx {
         nodes: project.devices.iter().map(|d| (d.id.as_str(), d)).collect(),
         rack,
+        bank,
         sample_rate,
     };
     let items: Vec<RackNode> = track.device_ids.iter().map(|id| RackNode::Device(id.clone())).collect();
@@ -796,6 +884,57 @@ mod tests {
         let mut state = RackState::default();
         let out = render_rack(&p, &rack, &mut state, "trk", &[1.0], 44100.0).expect("render");
         assert_eq!(out, vec![6.0]);
+    }
+
+    #[test]
+    fn sampler_preset_round_trips() {
+        let node = instantiate(DeviceClass::Sampler, "s", "Keys");
+        let preset = DevicePreset::capture(&node).expect("capture");
+        assert_eq!(preset.class, "sampler");
+        let restored = preset.instantiate("s2").expect("instantiate");
+        assert_eq!(restored.params, node.params);
+        assert_eq!(classify(&restored), DeviceClass::Sampler);
+        assert!(DevicePreset::from_json(&preset.to_json().expect("json")).is_ok());
+    }
+
+    #[test]
+    fn sampler_renders_triggered_voice_and_silence_without_bank() {
+        use super::super::sampler::{SampleBank, SampleBuffer};
+        let mut p = Project::new("p", "Sampler");
+        p.tracks.push(track("trk", &["s1"]));
+        p.devices.push(instantiate(DeviceClass::Sampler, "s1", "Voice"));
+        let mut bank = SampleBank::new();
+        bank.insert("s1", SampleBuffer::new(44100.0, vec![1.0; 8192]).expect("buf"));
+        // Untriggered: silence (the gate starts closed).
+        let mut state = RackState::default();
+        let out = render_rack_with_bank(&p, &Rack::new(), &bank, &mut state, "trk", &[0.0; 8], 44100.0)
+            .expect("render");
+        assert_eq!(out, vec![0.0; 8]);
+        // Triggered: the voice speaks (attack is 5 ms, so frame 0 ramps
+        // in but the block average is well above silence).
+        trigger_sampler_voice(&mut state, "s1");
+        let out = render_rack_with_bank(&p, &Rack::new(), &bank, &mut state, "trk", &[0.0; 2205], 44100.0)
+            .expect("render");
+        assert!(out[2204] > 0.9, "voice must sustain, got {}", out[2204]);
+        // Released with a 50 ms envelope: the tail drains to silence.
+        release_sampler_voice(&mut state, "s1");
+        let out = render_rack_with_bank(&p, &Rack::new(), &bank, &mut state, "trk", &[0.0; 4410], 44100.0)
+            .expect("render");
+        assert!(out[4409].abs() < 1e-4, "release tail {}", out[4409]);
+        // No bank entry: silence, not an error.
+        let mut state = RackState::default();
+        trigger_sampler_voice(&mut state, "s1");
+        let out = render_rack_with_bank(
+            &p, &Rack::new(), &SampleBank::new(), &mut state, "trk", &[0.0; 8], 44100.0,
+        )
+        .expect("render");
+        assert_eq!(out, vec![0.0; 8]);
+        // The plain renderer (no bank) treats samplers as silent voices.
+        let mut state = RackState::default();
+        trigger_sampler_voice(&mut state, "s1");
+        let out = render_rack(&p, &Rack::new(), &mut state, "trk", &[0.0; 8], 44100.0)
+            .expect("render");
+        assert_eq!(out, vec![0.0; 8]);
     }
 
     #[test]

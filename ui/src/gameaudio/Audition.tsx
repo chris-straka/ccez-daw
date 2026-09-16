@@ -113,6 +113,9 @@ export default function Audition(props: {
     }
   }
 
+  /** Canvas palette mirrors theme.css tokens (canvas cannot read CSS vars per-frame cheaply). */
+  const PAL = { bg: "#0d1117", idle: "#2a333e", gain: "#3fc1a5", text: "#9aa3ad", accent: "#f5a623" };
+
   function draw() {
     const el = canvas;
     if (el) {
@@ -122,20 +125,20 @@ export default function Audition(props: {
         const gains = previewGains(cue(), trans.from, trans.to, trans.atBeat, trans.fadeBeats, t.beat);
         const W = el.width;
         const H = el.height;
-        ctx.fillStyle = "#111";
+        ctx.fillStyle = PAL.bg;
         ctx.fillRect(0, 0, W, H);
         const layers = cue().layers;
         const bw = layers.length > 0 ? W / layers.length : W;
         layers.forEach((layer, i) => {
           const g = (gains[layer.id] ?? 0) * layer.volume;
           const h = Math.max(0, Math.min(1, g)) * (H - 28);
-          ctx.fillStyle = g > 0.01 ? "#4af" : "#333";
+          ctx.fillStyle = g > 0.01 ? PAL.gain : PAL.idle;
           ctx.fillRect(i * bw + 6, H - 14 - h, bw - 12, h);
-          ctx.fillStyle = "#ccc";
+          ctx.fillStyle = PAL.text;
           ctx.font = "10px system-ui";
           ctx.fillText(`${layer.id} ${(gains[layer.id] ?? 0).toFixed(2)}`, i * bw + 6, H - 2);
         });
-        ctx.fillStyle = "#8cf";
+        ctx.fillStyle = PAL.accent;
         ctx.font = "11px system-ui";
         ctx.fillText(
           `beat ${t.beat.toFixed(2)} (${beatsToSeconds(t.beat, t.tempo).toFixed(2)}s) ${t.playing ? "▶" : "■"} ${stateName()}`,
@@ -166,13 +169,13 @@ export default function Audition(props: {
   const atBeat = () => snapshotAt(entries(), defaultSnapshot(), transport().beat);
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
-      <canvas ref={canvas} width={480} height={140} style={{ border: "1px solid #555", width: "100%" }} />
-      <div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" }}>
+    <div class="session-view">
+      <canvas ref={canvas} width={480} height={140} class="audition-canvas" style={{ width: "100%" }} />
+      <div class="session-controls">
         <button onClick={() => setTransport((t) => ({ ...t, playing: !t.playing }))}>
           {transport().playing ? "Pause" : "Play"}
         </button>
-        <label style={{ "font-size": "12px" }}>
+        <label class="mixer-label" style={{ "min-width": "140px" }}>
           tempo
           <input
             type="range"
@@ -182,20 +185,21 @@ export default function Audition(props: {
             value={transport().tempo}
             onInput={(e) => setTransport((t) => ({ ...t, tempo: Number(e.target.value) }))}
           />
-          {transport().tempo.toFixed(0)} BPM
+          <span class="mixer-values daw-numeric">{transport().tempo.toFixed(0)} BPM</span>
         </label>
-        <span style={{ "font-size": "12px", color: "#8cf" }}>
+        <span class="meter-readout daw-numeric">
           beat {transport().beat.toFixed(2)} = {beatsToSeconds(transport().beat, transport().tempo).toFixed(2)}s
           {" · "}audible: {audible().join(", ") || "(silent)"}
           {" · "}timeline @ beat: {atBeat().state}
         </span>
       </div>
-      <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap", "align-items": "center" }}>
-        <span style={{ "font-size": "12px", color: "#aaa" }}>State:</span>
+      <div class="session-controls">
+        <span class="session-dim">State:</span>
         <For each={["explore", "combat", "menu"]}>
           {(s) => (
             <button
-              style={{ background: stateName() === s ? "#4af" : undefined }}
+              class="state-btn"
+              classList={{ active: stateName() === s }}
               onClick={() => postState(s)}
             >
               {s}
@@ -204,10 +208,10 @@ export default function Audition(props: {
         </For>
         <button onClick={pinEntry}>Pin snapshot @ beat</button>
       </div>
-      <div style={{ display: "flex", gap: "12px", "flex-wrap": "wrap" }}>
+      <div class="session-controls">
         <For each={declared()}>
           {(p) => (
-            <label style={{ display: "block", "font-size": "12px", "min-width": "140px" }}>
+            <label class="mixer-label" style={{ "min-width": "140px" }}>
               {p.label} ({p.id}{p.unit ? `, ${p.unit}` : ""})
               <input
                 type="range"
@@ -217,6 +221,7 @@ export default function Audition(props: {
                 value={values()[p.id] ?? p.default}
                 onInput={(e) => setValues((v) => ({ ...v, [p.id]: Number(e.target.value) }))}
               />
+              <span class="mixer-values daw-numeric">
               {(values()[p.id] ?? p.default).toFixed(2)}
               {" → "}
               {(() => {
@@ -228,32 +233,33 @@ export default function Audition(props: {
               {" (default "}
               {valueFor(p, { state: stateName(), values: [] }).toFixed(2)}
               {")"}
+              </span>
             </label>
           )}
         </For>
       </div>
-      <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap", "align-items": "center" }}>
-        <span style={{ "font-size": "12px", color: "#aaa" }}>Fire:</span>
+      <div class="session-controls">
+        <span class="session-dim">Fire:</span>
         <For each={bank().events}>
           {(e) => <button onClick={() => fire(e.id)}>{e.id}</button>}
         </For>
       </div>
-      <div style={{ "font-size": "12px" }}>
-        <div style={{ color: "#aaa" }}>
+      <div class="session-dim">
+        <div>
           Timeline ({entries().length} pinned; evaluated live, never stored as ops):
         </div>
         <For each={entries()}>
           {(e) => (
-            <div>
+            <div class="daw-numeric">
               <button onClick={() => jumpTo(e)}>jump</button> beat {e.beat.toFixed(2)} — {e.snapshot.state}
             </div>
           )}
         </For>
       </div>
-      <div style={{ "font-size": "11px", color: "#888", "max-height": "120px", overflow: "auto" }}>
-        <For each={log()}>{(line) => <div>{line}</div>}</For>
+      <div class="mixer-foot audition-log">
+        <For each={log()}>{(line) => <div class="daw-numeric">{line}</div>}</For>
       </div>
-      <div style={{ "font-size": "11px", color: "#666" }}>
+      <div class="mixer-foot">
         Recent voices: {fires().map((f) => `${f.event_id}@${f.clip_id}`).join(", ") || "—"}
       </div>
     </div>

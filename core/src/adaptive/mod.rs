@@ -20,7 +20,12 @@
 //! degrades those kinds to a clean [`Degraded::Yes`] cut so a sparse
 //! transition graph can never glitch, and reports the fallback explicitly.
 
+pub mod audition;
 pub mod engine;
 pub mod reseq;
 
+pub use audition::{
+    audible_layers, effective_transition, layer_mix, render_audition, rms as audition_rms,
+    AuditionConfig, AuditionTransition,
+};
 pub use engine::{AdaptiveEngine, Degraded, LayerOverride};

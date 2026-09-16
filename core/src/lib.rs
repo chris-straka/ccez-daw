@@ -35,6 +35,7 @@ pub mod timepitch;
 pub mod plugins;
 pub mod record;
 pub mod remotenodes;
+pub mod launcher;
 pub mod timeline;
 pub mod video;
 pub mod wasmdevices;

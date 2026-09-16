@@ -76,6 +76,36 @@ export function paramSetOp(actor: string, node: string, param: string, value: nu
   return makeOp(actor, "ParamSet", `${node}:${param}`, value);
 }
 
+/**
+ * Build an `AutomationPointSet` op (the one additive `OpKind` past the v0
+ * freeze): upsert one `(beat, value)` point on `laneId`. Lane creation
+ * (`laneExists: false`) also carries the `node:param` address, per
+ * `contracts/op-log-format.md`; updates carry just beat+value.
+ */
+export function automationPointSetOp(
+  actor: string,
+  laneId: string,
+  beat: number,
+  value: number,
+  node?: string,
+  param?: string,
+  laneExists = false,
+): Op {
+  requireFiniteNumber(beat, "beat");
+  if (beat < 0) throw new Error(`beat must be >= 0, got ${beat}`);
+  requireFiniteNumber(value, "automation value");
+  const payload: Record<string, number | string> = { beat, value };
+  if (!laneExists) {
+    if (!node || !param) throw new Error("new lanes need a node:param address");
+    payload.node = node;
+    payload.param = param;
+  } else if (node && param) {
+    payload.node = node;
+    payload.param = param;
+  }
+  return makeOp(actor, "AutomationPointSet", laneId, payload);
+}
+
 /** Build a `TempoSet` op (BPM, must be positive and finite). */
 export function tempoSetOp(actor: string, tempo: number): Op {
   requireFiniteNumber(tempo, "tempo");
