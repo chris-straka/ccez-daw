@@ -24,6 +24,10 @@
 //!   velocity/humanize). Note transforms over [`MidiClip`](crate::midi::MidiClip),
 //!   param'd by the same frozen-`Node` class convention; audio-transparent
 //!   in the rack renderer, applied in chain order via `apply_midi_chain`.
+//! - `Spatial` (`DeviceClass::Spatial`, code 11): first-order ambisonic
+//!   placement. DSP lives in [`crate::spatial`] (encode `WXYZ`, HRTF-free
+//!   stereo decode); the rack insert holds the mono `(L+R)` projection and
+//!   the mixer monitor path renders the full stereo pair.
 //! - [`sampler`]: the Simpler-style sampler model. The device `Node`
 //!   holds play params (`transpose`, `gain`, `attack`, `release`,
 //!   `cutoff`); the audio lives in a [`SampleBank`](sampler::SampleBank)

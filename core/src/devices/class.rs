@@ -17,6 +17,7 @@ use super::kernel::{
     ATTACK_PARAM, CUTOFF_PARAM, DELAY_SAMPLES_PARAM, DRIVE_PARAM, FEEDBACK_PARAM, GAIN_PARAM,
     RELEASE_PARAM, TRANSPOSE_PARAM,
 };
+use crate::spatial::{AZIMUTH_PARAM, ELEVATION_PARAM};
 use super::midifx::{
     ARP_GATE_PARAM, ARP_MODE_PARAM, ARP_OCTAVES_PARAM, ARP_RATE_PARAM, ARP_SEED_PARAM,
     CHORD_INVERSION_PARAM, CHORD_TYPE_PARAM, CHORD_VOICING_PARAM, HUM_SEED_PARAM, HUM_TIMING_PARAM,
@@ -39,6 +40,7 @@ pub const CLASS_SAMPLER: f64 = 7.0;
 pub const CLASS_ARPEGGIATOR: f64 = 8.0;
 pub const CLASS_CHORD: f64 = 9.0;
 pub const CLASS_HUMANIZE: f64 = 10.0;
+pub const CLASS_SPATIAL: f64 = 11.0;
 
 /// What DSP a device node carries. `Container` holds structure (children
 /// live in the [`crate::devices::Rack`] sidecar), not samples. `Foreign`
@@ -55,6 +57,7 @@ pub enum DeviceClass {
     Arpeggiator,
     Chord,
     Humanize,
+    Spatial,
     Foreign,
 }
 
@@ -71,6 +74,7 @@ impl DeviceClass {
             Self::Arpeggiator => CLASS_ARPEGGIATOR,
             Self::Chord => CLASS_CHORD,
             Self::Humanize => CLASS_HUMANIZE,
+            Self::Spatial => CLASS_SPATIAL,
             Self::Foreign => 0.0,
         }
     }
@@ -96,6 +100,8 @@ impl DeviceClass {
             Self::Chord
         } else if code == CLASS_HUMANIZE {
             Self::Humanize
+        } else if code == CLASS_SPATIAL {
+            Self::Spatial
         } else {
             Self::Foreign
         }
@@ -171,6 +177,11 @@ pub fn default_params(class: DeviceClass) -> Vec<Param> {
             param(HUM_VELOCITY_PARAM, "Velocity", 8.0, 0.0, 64.0, ""),
             param(HUM_SEED_PARAM, "Seed", 0.0, 0.0, 4294967295.0, ""),
         ],
+        DeviceClass::Spatial => vec![
+            param(AZIMUTH_PARAM, "Azimuth", 0.0, -180.0, 180.0, "deg"),
+            param(ELEVATION_PARAM, "Elevation", 0.0, -90.0, 90.0, "deg"),
+            param(GAIN_PARAM, "Gain", 1.0, 0.0, 4.0, "x"),
+        ],
         DeviceClass::Container => vec![],
         DeviceClass::Foreign => vec![],
     }
@@ -222,6 +233,7 @@ mod tests {
             DeviceClass::Distortion,
             DeviceClass::Container,
             DeviceClass::Sampler,
+            DeviceClass::Spatial,
         ] {
             let node = instantiate(class, "d", "D");
             assert_eq!(classify(&node), class, "{class:?}");

@@ -24,6 +24,7 @@ export const DEVICE_CLASS_CODES = {
   arpeggiator: 8,
   chord: 9,
   humanize: 10,
+  spatial: 11,
 } as const;
 
 export type DeviceClassName = keyof typeof DEVICE_CLASS_CODES;
@@ -75,6 +76,9 @@ export function deviceParamOps(
 
 /** Sampler param ids. Mirrors `core/src/devices/kernel.rs`. */
 export const SAMPLER_PARAMS = ["transpose", "gain", "attack", "release", "cutoff"] as const;
+
+/** Spatial param ids. Mirrors `core/src/spatial.rs` (+ shared `gain`). */
+export const SPATIAL_PARAMS = ["azimuth", "elevation", "gain"] as const;
 
 /** MIDI FX param ids. Mirrors `core/src/devices/midifx.rs`. */
 export const ARP_PARAMS = ["arp_mode", "arp_rate", "arp_gate", "arp_octaves", "arp_seed"] as const;

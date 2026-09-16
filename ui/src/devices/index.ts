@@ -13,6 +13,7 @@ export {
   DRUM_PAD_COUNT,
   HUM_PARAMS,
   SAMPLER_PARAMS,
+  SPATIAL_PARAMS,
   bindPadDevice,
   clampToNode,
   defaultDrumRack,

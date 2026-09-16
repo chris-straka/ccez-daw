@@ -233,6 +233,7 @@ fn class_name(class: DeviceClass) -> &'static str {
         DeviceClass::Arpeggiator => "arpeggiator",
         DeviceClass::Chord => "chord",
         DeviceClass::Humanize => "humanize",
+        DeviceClass::Spatial => "spatial",
         DeviceClass::Foreign => "foreign",
     }
 }
@@ -249,6 +250,7 @@ fn parse_class(name: &str) -> Result<DeviceClass> {
         "arpeggiator" => Ok(DeviceClass::Arpeggiator),
         "chord" => Ok(DeviceClass::Chord),
         "humanize" => Ok(DeviceClass::Humanize),
+        "spatial" => Ok(DeviceClass::Spatial),
         _ => Err(RackError::BadRack(format!("unknown preset class `{name}`"))),
     }
 }
@@ -443,6 +445,21 @@ fn render_leaf(
         // `devices::midifx::apply_midi_chain` for the note path).
         DeviceClass::Arpeggiator | DeviceClass::Chord | DeviceClass::Humanize => {
             wet.copy_from_slice(input);
+        }
+        DeviceClass::Spatial => {
+            // Ambisonic placement heard through a mono insert: the field's
+            // `(L+R)` projection (`gain * (1 + front/2)`), so front-center
+            // passes hot and rear renders quiet while sides pass unity.
+            // The full WXYZ lives in the mixer monitor path
+            // (`crate::mixer::spatial_monitor_stereo`). Linear gain needs no
+            // oversampling (nothing above Nyquist is created).
+            let az = param_of(params, crate::spatial::AZIMUTH_PARAM, 0.0);
+            let el = param_of(params, crate::spatial::ELEVATION_PARAM, 0.0);
+            let g = param_of(params, GAIN_PARAM, 1.0);
+            let m = crate::spatial::insert_gain(az, el, g);
+            for (o, i) in wet.iter_mut().zip(input.iter()) {
+                *o = *i * m;
+            }
         }
         DeviceClass::Foreign => {
             wet.copy_from_slice(input);
@@ -963,5 +980,26 @@ mod tests {
         assert!(Rack::from_json("{bad").is_err());
         let mut m = Macro::new("m", "M", 0.0, vec![]).expect("macro");
         assert!(m.set_value(2.0).is_err());
+    }
+
+    #[test]
+    fn spatial_insert_holds_the_mono_field_projection() {
+        use crate::spatial::AZIMUTH_PARAM;
+        let mut p = Project::new("p", "Rack");
+        p.tracks.push(track("trk", &["sp"]));
+        let mut sp = instantiate(DeviceClass::Spatial, "sp", "Place");
+        set_param_value(&mut sp, AZIMUTH_PARAM, 0.0).expect("tune");
+        p.devices.push(sp);
+        let mut state = RackState::default();
+        // Front-center: the (L+R) projection passes 1.5x (fully-wet default).
+        let out = render_rack(&p, &Rack::new(), &mut state, "trk", &[1.0, 0.5], 44100.0)
+            .expect("render");
+        assert_eq!(out, vec![1.5, 0.75]);
+        // Rear: the same insert renders quiet (0.5x).
+        let sp = p.devices.iter_mut().find(|d| d.id == "sp").expect("sp");
+        set_param_value(sp, AZIMUTH_PARAM, 180.0).expect("tune");
+        let out = render_rack(&p, &Rack::new(), &mut state, "trk", &[1.0, 0.5], 44100.0)
+            .expect("render");
+        assert_eq!(out, vec![0.5, 0.25]);
     }
 }
