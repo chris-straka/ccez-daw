@@ -67,8 +67,8 @@ export default function BrowserPalette(props: {
                 onClick={() => pick(item)}
                 style={{ display: "flex", gap: "6px", width: "100%", "text-align": "left", border: "none", background: "transparent" }}
               >
-                <span class="mixer-values session-dim" style={{ "min-width": "52px" }}>
-                  [{item.kind}]
+                <span class={`kind-chip kind-${item.kind.toLowerCase()}`}>
+                  {item.kind}
                 </span>
                 <span style={{ flex: 1 }}>{item.name}</span>
                 <span class="mixer-values session-dim daw-numeric">

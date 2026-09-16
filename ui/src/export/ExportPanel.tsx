@@ -279,72 +279,70 @@ export default function ExportPanel(props: {
 
       <div>
         <div class="view-label">Offline bounce</div>
-        <div class="session-controls">
-          <label class="mixer-label">
-            start (beats)
+        <div class="export-grid">
+          <label class="export-field">
+            <span>start (beats)</span>
             <input
               data-testid="export-bounce-start"
+              class="daw-numeric"
               type="number"
               min="0"
               step="0.5"
               value={startBeat()}
               onInput={(e) => setStartBeat(Number(e.target.value))}
-              style={{ width: "72px" }}
             />
           </label>
-          <label class="mixer-label">
-            length (beats)
+          <label class="export-field">
+            <span>length (beats)</span>
             <input
               data-testid="export-bounce-length"
+              class="daw-numeric"
               type="number"
               min="0"
               step="0.5"
               value={lengthBeats()}
               onInput={(e) => setLengthBeats(Number(e.target.value))}
-              style={{ width: "72px" }}
             />
           </label>
-          <label class="mixer-label">
-            sample rate (Hz)
+          <label class="export-field">
+            <span>sample rate (Hz)</span>
             <input
               data-testid="export-bounce-rate"
+              class="daw-numeric"
               type="number"
               min="1"
               step="100"
               value={sampleRate()}
               onInput={(e) => setSampleRate(Number(e.target.value))}
-              style={{ width: "80px" }}
             />
           </label>
-          <span data-testid="export-bounce-summary" class="session-dim daw-numeric">
-            {bounceSummary()}
-          </span>
-        </div>
-        <div class="session-controls">
-          <label class="mixer-label">
-            measured LUFS
+          <label class="export-field">
+            <span>measured LUFS</span>
             <input
               data-testid="export-measured-lufs"
+              class="daw-numeric"
               type="number"
               step="0.5"
               placeholder="e.g. -22"
               value={measuredLufs() ?? ""}
               onInput={(e) => setMeasuredLufs(e.target.value === "" ? null : Number(e.target.value))}
-              style={{ width: "72px" }}
             />
           </label>
-          <label class="mixer-label">
-            measured true peak (linear)
+          <label class="export-field">
+            <span>measured true peak</span>
             <input
               data-testid="export-measured-peak"
+              class="daw-numeric"
               type="number"
               step="0.01"
               placeholder="e.g. 0.25"
               value={measuredPeak() ?? ""}
               onInput={(e) => setMeasuredPeak(e.target.value === "" ? null : Number(e.target.value))}
-              style={{ width: "72px" }}
             />
           </label>
+          <span data-testid="export-bounce-summary" class="session-dim daw-numeric export-summary">
+            {bounceSummary()}
+          </span>
         </div>
         <MeterBridge
           onNormalize={onNormalize}

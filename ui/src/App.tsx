@@ -11,6 +11,7 @@ import {
   engine_play,
   engine_set_tempo,
   engine_stop,
+  op_apply,
   op_redo,
   op_undo,
   project_get,
@@ -18,6 +19,8 @@ import {
   project_open,
   project_save,
 } from "./tauri/commands";
+import { Mixer } from "./mixer";
+import { TimelineView } from "./timeline";
 import { PianoTab } from "./pianoroll";
 import SessionView from "./timeline/SessionView";
 import RecordPanel from "./record/RecordPanel";
@@ -117,6 +120,27 @@ export default function App() {
     setError(null);
   }
 
+  async function patchTrack(
+    trackId: string,
+    field: "volume" | "pan" | "muted" | "solo",
+    value: number | boolean,
+  ) {
+    try {
+      await op_apply({
+        op: {
+          seq: 0,
+          actor: "ui",
+          kind: "ParamSet",
+          target: `${trackId}:${field}`,
+          value_json: JSON.stringify(value),
+        },
+      });
+      await refresh();
+    } catch (e) {
+      setError(`mixer edit refused: ${String(e)}`);
+    }
+  }
+
   async function runAction(id: string) {
     const a = findAction(id);
     if (!a) return;
@@ -164,72 +188,79 @@ export default function App() {
   return (
     <main class="daw-shell">
       <header class="transport-bar">
-        <strong class="transport-brand">ccez-daw v0</strong>
-        <button
-          class="transport-play"
-          classList={{ playing: playing() }}
-          onClick={play}
-        >
-          {playing() ? "■ Stop" : "▶ Play"}
-        </button>
-        <button onClick={stop}>Stop</button>
-        <span class={`engine-badge${playing() ? " playing" : ""}`}>
-          {engine()}
-        </span>
-        <span class={`vim-badge ${vimMode()}`}>
-          -- {vimMode().toUpperCase()} --
-        </span>
-        <span class="transport-readout daw-numeric">cursor {cursor()}</span>
-        <button data-testid="undo-btn" onClick={() => void undo()} title="Undo (op_undo)">Undo</button>
-        <button data-testid="redo-btn" onClick={() => void redo()} title="Redo (op_redo)">Redo</button>
-        <label class="transport-readout">
-          Tempo{" "}
+        <strong class="transport-brand">ccez-daw</strong>
+        <div class="tb-group" role="group" aria-label="Transport">
+          <button
+            class="transport-play"
+            classList={{ playing: playing() }}
+            onClick={play}
+          >
+            {playing() ? "■" : "▶"}
+          </button>
+          <button onClick={stop} title="Stop">■</button>
+          <span class={`engine-badge${playing() ? " playing" : ""}`}>
+            {engine()}
+          </span>
+        </div>
+        <div class="tb-group" role="group" aria-label="Edit">
+          <button data-testid="undo-btn" onClick={() => void undo()} title="Undo (op_undo)">↩</button>
+          <button data-testid="redo-btn" onClick={() => void redo()} title="Redo (op_redo)">↪</button>
+          <span class={`vim-badge ${vimMode()}`}>
+            {vimMode().toUpperCase()}
+          </span>
+          <span class="transport-readout daw-numeric">{cursor()}</span>
+        </div>
+        <div class="tb-group" role="group" aria-label="Tempo">
           <input
             data-testid="tempo-input"
+            class="tb-number daw-numeric"
             type="number"
             min={1}
+            aria-label="Tempo BPM"
             value={tempoDraft()}
             onInput={(e) => setTempoDraft(e.currentTarget.value)}
-            style={{ width: "64px" }}
           />
+          <span class="transport-readout">BPM</span>
           <button data-testid="tempo-set" onClick={() => void applyTempo()}>
             Set
           </button>
-        </label>
-        <button onClick={() => setPaletteOpen((v) => !v)}>
-          Palette (Ctrl+K)
+        </div>
+        <button class="tb-palette" onClick={() => setPaletteOpen((v) => !v)} title="Command palette (Ctrl+K)">
+          ⌘K
         </button>
         <span class="transport-spacer" />
-        <input
-          data-testid="project-name"
-          placeholder="name"
-          aria-label="New project name"
-          value={projectName()}
-          onInput={(e) => setProjectName(e.currentTarget.value)}
-          style={{ width: "110px" }}
-        />
-        <button data-testid="project-new" onClick={() => void newProject()}>
-          New
-        </button>
-        <input
-          data-testid="project-path"
-          placeholder="/path/to/project"
-          aria-label="Project file path"
-          value={savePath()}
-          onInput={(e) => setSavePath(e.currentTarget.value)}
-          style={{ width: "150px" }}
-        />
-        <button data-testid="project-open" onClick={() => void open()}>
-          Open
-        </button>
-        <button data-testid="project-save" onClick={() => void save()}>
-          Save
-        </button>
         <Show when={project()}>
-          <span class="transport-readout daw-numeric">
+          <span class="transport-readout daw-numeric tb-project">
             {project()?.name} @ {project()?.tempo} BPM
           </span>
         </Show>
+        <div class="tb-group" role="group" aria-label="Project">
+          <input
+            data-testid="project-name"
+            class="tb-text"
+            placeholder="name"
+            aria-label="New project name"
+            value={projectName()}
+            onInput={(e) => setProjectName(e.currentTarget.value)}
+          />
+          <button data-testid="project-new" onClick={() => void newProject()}>
+            New
+          </button>
+          <input
+            data-testid="project-path"
+            class="tb-path"
+            placeholder="/path/to/project"
+            aria-label="Project file path"
+            value={savePath()}
+            onInput={(e) => setSavePath(e.currentTarget.value)}
+          />
+          <button data-testid="project-open" onClick={() => void open()}>
+            Open
+          </button>
+          <button data-testid="project-save" onClick={() => void save()}>
+            Save
+          </button>
+        </div>
         <Show when={error()}>
           <span class="transport-error">{error()}</span>
         </Show>
@@ -259,13 +290,7 @@ export default function App() {
           <div class="workspace-view">
             <Show when={workspaceTab() === "Timeline"}>
               <Panel title="Timeline">
-                <For each={project()?.tracks ?? []}>
-                  {(t) => (
-                    <div class="track-row daw-numeric">
-                      {t.name} — vol {t.volume} pan {t.pan}
-                    </div>
-                  )}
-                </For>
+                <TimelineView project={project()} />
               </Panel>
             </Show>
             <Show when={workspaceTab() === "Session"}>
@@ -307,9 +332,9 @@ export default function App() {
         </div>
         <div class="daw-column">
           <Panel title="Mixer">
-            <For each={project()?.tracks ?? []}>
-              {(t) => <div class="track-row">{t.name}</div>}
-            </For>
+            <Show when={project()} fallback={<div class="session-dim">No project open.</div>}>
+              {(p) => <Mixer project={p()} onPatch={(id, field, value) => void patchTrack(id, field, value)} />}
+            </Show>
           </Panel>
           <Panel title="Branches">
             <BranchPanel project={project()} />

@@ -61,12 +61,58 @@ body {
 
 .transport-bar {
   display: flex;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 7px 12px;
   align-items: center;
   background: var(--daw-surface);
   border-bottom: 1px solid var(--daw-border);
   flex: none;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Grouped control clusters: transport, edit, tempo, project. */
+.tb-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: none;
+  padding: 0 8px;
+  border-left: 1px solid var(--daw-border);
+}
+
+.tb-group:first-of-type {
+  border-left: none;
+  padding-left: 0;
+}
+
+.tb-group button {
+  min-width: 30px;
+  text-align: center;
+}
+
+.tb-number {
+  width: 56px;
+}
+
+.tb-text {
+  width: 96px;
+}
+
+.tb-path {
+  width: 130px;
+}
+
+.tb-palette {
+  flex: none;
+  color: var(--daw-text-dim);
+}
+
+.tb-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
 }
 
 .transport-brand {
@@ -678,6 +724,31 @@ body {
   fill: var(--daw-accent);
 }
 
+/* Export form: label/input pairs in a tight grid. */
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px 10px;
+  align-items: end;
+}
+
+.export-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--daw-text-dim);
+}
+
+.export-field input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.export-summary {
+  grid-column: 1 / -1;
+}
+
 /* Compact labeled control rows (repair, editors). */
 .form-row {
   display: flex;
@@ -840,6 +911,29 @@ img.filmstrip-thumb {
   color: var(--daw-text-faint);
 }
 
+/* ---- drum pads: 4-across grid that fits the right column ---- */
+
+.pad-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.pad-grid button {
+  min-width: 0;
+  padding: 6px 2px;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pad-grid button.active {
+  border-color: var(--daw-accent);
+  color: var(--daw-accent);
+}
+
 /* ---- browser / lists ---- */
 
 .browser-search {
@@ -876,6 +970,34 @@ img.filmstrip-thumb {
 .browser-row.selected {
   background: rgba(245, 166, 35, 0.12);
   color: var(--daw-text);
+}
+
+/* Kind chips: signal color per library kind. */
+.kind-chip {
+  font-family: var(--daw-mono);
+  font-size: 10px;
+  min-width: 48px;
+  text-align: center;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--daw-border);
+  color: var(--daw-text-dim);
+  flex: none;
+}
+
+.kind-sample {
+  color: var(--daw-audio);
+  border-color: rgba(63, 193, 165, 0.5);
+}
+
+.kind-preset {
+  color: var(--daw-accent);
+  border-color: rgba(245, 166, 35, 0.5);
+}
+
+.kind-plugin {
+  color: var(--daw-midi);
+  border-color: rgba(111, 159, 216, 0.5);
 }
 
 /* ---- focus: this is a keyboard-first app, focus is always visible ---- */

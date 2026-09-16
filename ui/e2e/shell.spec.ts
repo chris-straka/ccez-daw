@@ -46,7 +46,10 @@ test("every workspace tab opens its panel", async ({ page }) => {
 
 test("timeline shows the canned project", async ({ page }) => {
   await expect(page.getByText("e2e-fixture @ 120 BPM")).toBeVisible();
-  await expect(page.getByText("Drums — vol 0.8 pan 0")).toBeVisible();
+  // TimelineView lanes show track names with clip blocks (vol/pan live in
+  // the mixer now, not the lane row; the default canned project has tracks
+  // but no clips, so the lane name is the invoke-path proof).
+  await expect(page.getByText("Drums", { exact: true }).first()).toBeVisible();
   const calls = await ipcCalls(page);
   expect(calls.map((c) => c.cmd)).toContain("project_get");
 });
