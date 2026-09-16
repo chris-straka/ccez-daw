@@ -4,9 +4,29 @@ A fully featured desktop DAW as a Tauri 2 app (Rust backend + SolidJS/TypeScript
 frontend), with native plugin support (CLAP + VST3 + AU), an MCP server,
 vim-style keybindings, and AI-assisted editing.
 
-Track 0 scaffold. The approved plan lives at
+The approved plan lives at
 `.agents/plans/2026-09-12-tauri-daw.md`. Frozen v0 contracts live in
-[`contracts/`](./contracts/README.md).
+[`contracts/`](./contracts/README.md) (one additive extension since the
+freeze: the `AutomationPointSet` op — see `contracts/op-log-format.md`).
+
+## What it does
+
+- **Play & record** — realtime cpal transport (null-device fallback for
+  headless/CI), audio input capture, punch in/out, count-in, comp takes,
+  groove pool.
+- **Write & arrange** — timeline + Session View clip launcher with jam
+  recording, piano roll, score notation, automation lanes, branch
+  compare/merge, all event-sourced through the op log (infinite undo).
+- **Sound** — native sampler, drum rack, filter/delay/distortion kernels,
+  arpeggiator, chord generator, humanizer, 58 curated presets, WASM guest
+  devices (sample-identical to native kernels), Link-style tempo sync.
+- **Mix & finish** — mixer with snapshots and reference tracks,
+  loudness-normalized bounce, batch + game-audio export, metering bridge.
+- **Hosts everything** — sandboxed CLAP/VST3/AU loading with latency
+  compensation, plugin scan lists, crash recovery with watchdog, ARA
+  document model wired to bounce.
+- **Shell** — command palette, vim keybindings, shortcut editor, one action
+  registry driving palette/vim/scripting/menu/MCP alike, dark studio theme.
 
 ## Layout
 
@@ -15,8 +35,8 @@ Track 0 scaffold. The approved plan lives at
   shapes) plus the Rust→TS typegen step.
 - `ui/` — SolidJS + TypeScript (strict) + Vite + Bun frontend. Never hand-writes
   contract types; imports them from `ui/src/generated/`.
-- `mcp/` — Bun/TS MCP server stub on the official MCP TS SDK. Tools mirror the
-  action registry.
+- `mcp/` — Bun/TS MCP server on the official MCP TS SDK. Tools mirror the
+  action registry (every feature since v0 has palette/vim/menu/MCP parity).
 - `contracts/` — frozen v0 human-readable contracts (IPC table, op-log format,
   action registry, MCP tool list).
 

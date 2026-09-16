@@ -1,12 +1,17 @@
 import { For, Show, createSignal } from "solid-js";
-import { FILMSTRIP_THUMBS, applyOffsetDrag, type VideoClip, type VideoDoc } from "./model";
+import { applyOffsetDrag, type VideoClip, type VideoDoc } from "./model";
+import { cellsForClip, type ClipThumbMap } from "./thumbnails";
 
 /**
  * Agent 2: filmstrip lane — one row per video clip on the beat ruler.
  *
- * Thumbnails are CSS placeholder cells (no decoder in the UI shell); a
- * real build swaps the cell background for `blob:` URLs from a thumbnail
- * service. Offset drag is a horizontal pointer drag: 4px = 1 beat, same
+ * Thumbnails are real JPEG cells: the host extracts a `ThumbStrip` per
+ * media file with core (`extract_strip`: ffmpeg decode + tiny-codec JPEG),
+ * converts each real frame path to a `blob:`/asset URL, and passes the
+ * cells in via `thumbs` (see `./thumbnails`). Slots without media —
+ * `take:<key>` sources, missing strips, placeholder frames — render the
+ * CSS placeholder cell in the same slot, so layout never shifts.
+ * Offset drag is a horizontal pointer drag: 4px = 1 beat, same
  * scale as the Track E linear lane (`margin-left: start*4px`), calling
  * back with the new `offset_beats` so the host owns the store.
  */
@@ -14,6 +19,8 @@ export default function FilmstripLane(props: {
   doc: VideoDoc;
   pxPerBeat?: number;
   onOffsetChange?: (clipId: string, offsetBeats: number) => void;
+  /** Clip id -> per-slot thumbnail cells (host-owned `blob:`/asset URLs). */
+  thumbs?: ClipThumbMap;
 }) {
   const pxPerBeat = () => props.pxPerBeat ?? 4;
   const [dragging, setDragging] = createSignal<string | null>(null);
@@ -54,15 +61,24 @@ export default function FilmstripLane(props: {
                   width: `${clip.length_beats * pxPerBeat()}px`,
                 }}
               >
-                <For each={Array.from({ length: FILMSTRIP_THUMBS })}>
-                  {(_, i) => (
-                    <span
-                      class="filmstrip-thumb"
-                      style={{
-                        background: `linear-gradient(${120 + i() * 8}deg, #1c2733, #33475e)`,
-                      }}
-                    />
-                  )}
+                <For each={cellsForClip(clip, props.thumbs)}>
+                  {(cell) =>
+                    cell.placeholder || !cell.url ? (
+                      <span
+                        class="filmstrip-thumb"
+                        style={{
+                          background: `linear-gradient(${120 + cell.index * 8}deg, #1c2733, #33475e)`,
+                        }}
+                      />
+                    ) : (
+                      <img
+                        class="filmstrip-thumb"
+                        src={cell.url}
+                        alt=""
+                        draggable={false}
+                      />
+                    )
+                  }
                 </For>
               </div>
               <span class="mixer-foot daw-numeric">off {clip.offset_beats.toFixed(2)}</span>

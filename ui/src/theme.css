@@ -710,6 +710,12 @@ body {
   min-width: 4px;
 }
 
+img.filmstrip-thumb {
+  object-fit: cover;
+  border: 0;
+  padding: 0;
+}
+
 .video-empty {
   background: #000;
   color: var(--daw-text-faint);

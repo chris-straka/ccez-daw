@@ -47,7 +47,7 @@ pub struct NativePreset {
     pub params: &'static [(&'static str, f64)],
 }
 
-/// The curated library: 28 entries covering all nine DSP classes
+/// The curated library: 58 entries covering all nine DSP classes
 /// (everything except `Container` structure and `Foreign` pass-through,
 /// which have no musical params to curate).
 pub static NATIVE_PRESETS: &[NativePreset] = &[
@@ -319,6 +319,311 @@ pub static NATIVE_PRESETS: &[NativePreset] = &[
         description: "Played-not-programmed piano feel: gentle timing drift and dynamic touch",
         tags: &["humanize", "keys", "piano", "feel", "timing", "velocity"],
         params: &[("hum_timing", 0.015), ("hum_velocity", 10.0), ("hum_seed", 3.0)],
+    },
+    // -- gain: more comp/mix starting points ---------------------------------
+    NativePreset {
+        id: "gain_bass_glue",
+        class: DeviceClass::Gain,
+        name: "Bass Glue",
+        description: "Mix-glue level for bass: tucked just under unity so the low end sits without pumping",
+        tags: &["gain", "bass", "glue", "mix", "level"],
+        params: &[("gain", 0.8)],
+    },
+    NativePreset {
+        id: "gain_drum_crush",
+        class: DeviceClass::Gain,
+        name: "Drum Crush Bus",
+        description: "Crush-bus makeup level: hot smashed-room tone meant to tuck under the dry drums",
+        tags: &["gain", "drums", "crush", "bus", "parallel", "comp"],
+        params: &[("gain", 3.0)],
+    },
+    NativePreset {
+        id: "gain_ambient_wash",
+        class: DeviceClass::Gain,
+        name: "Ambient Wash Bed",
+        description: "Reverb-wash bed level: quiet bloom that fills gaps without masking the lead",
+        tags: &["gain", "ambient", "wash", "bed", "mix", "level"],
+        params: &[("gain", 0.4)],
+    },
+    // -- lowpass: more filter sweeps -----------------------------------------
+    NativePreset {
+        id: "lp_dark_drone",
+        class: DeviceClass::Lowpass,
+        name: "Dark Drone",
+        description: "Sub-drone filter: only the lowest rumble survives for dark ambient beds",
+        tags: &["filter", "lowpass", "drone", "dark", "ambient", "sub"],
+        params: &[("cutoff", 200.0)],
+    },
+    NativePreset {
+        id: "lp_airy_open",
+        class: DeviceClass::Lowpass,
+        name: "Airy Open Top",
+        description: "Wide-open air filter: full brightness kept, just the harshest edge shaved off",
+        tags: &["filter", "lowpass", "airy", "open", "bright", "mix"],
+        params: &[("cutoff", 12000.0)],
+    },
+    NativePreset {
+        id: "lp_riser_open",
+        class: DeviceClass::Lowpass,
+        name: "Riser Opener",
+        description: "Build-riser starting point: mid-open filter ready to automate wide for the drop",
+        tags: &["filter", "lowpass", "riser", "build", "automation", "drop"],
+        params: &[("cutoff", 5000.0)],
+    },
+    // -- highpass: more cleanup / air ----------------------------------------
+    NativePreset {
+        id: "hp_sub_cleanup",
+        class: DeviceClass::Highpass,
+        name: "Sub Cleanup",
+        description: "Gentle sub-sonic trim: inaudible mud gone, kick weight fully kept",
+        tags: &["filter", "highpass", "sub", "cleanup", "kick", "mix"],
+        params: &[("cutoff", 60.0)],
+    },
+    NativePreset {
+        id: "hp_hihat_sheen",
+        class: DeviceClass::Highpass,
+        name: "Hi-Hat Sheen",
+        description: "Hat-and-air keeper: only sizzle survives for crisp top loops and shakers",
+        tags: &["filter", "highpass", "hihat", "sheen", "air", "crisp"],
+        params: &[("cutoff", 8000.0)],
+    },
+    NativePreset {
+        id: "hp_dj_rolloff",
+        class: DeviceClass::Highpass,
+        name: "DJ Rolloff",
+        description: "DJ-style low rolloff: bass thinned for transitions, mids and highs intact",
+        tags: &["filter", "highpass", "dj", "transition", "rolloff", "mix"],
+        params: &[("cutoff", 150.0)],
+    },
+    // -- delay: more groove echoes -------------------------------------------
+    NativePreset {
+        id: "dly_ambient_wash",
+        class: DeviceClass::Delay,
+        name: "Ambient Wash Echo",
+        description: "Washed-out ambient echo: long repeats that melt guitars into pads",
+        tags: &["delay", "ambient", "wash", "echo", "guitar", "pad"],
+        params: &[("delay_samples", 24000.0), ("feedback", 0.6)],
+    },
+    NativePreset {
+        id: "dly_rhythmic_8th",
+        class: DeviceClass::Delay,
+        name: "Rhythmic 8th Tap",
+        description: "Straight-8th rhythmic tap: repeats that lock to the groove for keys and plucks",
+        tags: &["delay", "rhythmic", "groove", "keys", "pluck", "echo"],
+        params: &[("delay_samples", 6000.0), ("feedback", 0.35)],
+    },
+    NativePreset {
+        id: "dly_dub_feedback",
+        class: DeviceClass::Delay,
+        name: "Dub Feedback Throw",
+        description: "Dub-throw echo: hot feedback for one-shot sends that spiral into space",
+        tags: &["delay", "dub", "feedback", "throw", "reggae", "echo"],
+        params: &[("delay_samples", 18000.0), ("feedback", 0.7)],
+    },
+    // -- distortion: more grit -------------------------------------------------
+    NativePreset {
+        id: "dist_tape_sat",
+        class: DeviceClass::Distortion,
+        name: "Tape Saturation",
+        description: "Soft tape-style saturation: gentle glue and harmonics for the whole mix bus",
+        tags: &["distortion", "tape", "saturation", "glue", "mix", "warm"],
+        params: &[("drive", 1.2)],
+    },
+    NativePreset {
+        id: "dist_punk_crunch",
+        class: DeviceClass::Distortion,
+        name: "Punk Crunch",
+        description: "Punk-rock crunch: rhythm guitars chewed into aggressive midrange bark",
+        tags: &["distortion", "punk", "crunch", "guitar", "rock", "drive"],
+        params: &[("drive", 4.5)],
+    },
+    NativePreset {
+        id: "dist_doom_sustain",
+        class: DeviceClass::Distortion,
+        name: "Doom Sustain",
+        description: "Doom-metal sustain: heavy sagging drive for slow riffs that ring forever",
+        tags: &["distortion", "doom", "metal", "sustain", "heavy", "riff"],
+        params: &[("drive", 6.0)],
+    },
+    // -- sampler: more starter kits --------------------------------------------
+    // Teaching note: a frozen node holds play params only — the audio
+    // itself lives beside the project. Each kit below is the envelope /
+    // tone half of a starter kit; pair it with a builtin or recorded-take
+    // sample buffer loaded onto the same device id.
+    NativePreset {
+        id: "smp_boom_808",
+        class: DeviceClass::Sampler,
+        name: "Boom 808 Kit",
+        description: "Boom-808 kit starting point: dropped an octave, long tail, dark tone — pair with a builtin or take 808 sample",
+        tags: &["sampler", "808", "bass", "kit", "boom", "starter"],
+        params: &[
+            ("transpose", -12.0),
+            ("gain", 1.2),
+            ("attack", 0.004),
+            ("release", 0.4),
+            ("cutoff", 900.0),
+        ],
+    },
+    NativePreset {
+        id: "smp_snare_crack",
+        class: DeviceClass::Sampler,
+        name: "Snare Crack Kit",
+        description: "Cracking snare starting point: instant attack, tight tail, open tone — pair with a builtin or take snare sample",
+        tags: &["sampler", "snare", "drums", "kit", "crack", "starter"],
+        params: &[
+            ("transpose", 0.0),
+            ("gain", 1.1),
+            ("attack", 0.001),
+            ("release", 0.12),
+            ("cutoff", 12000.0),
+        ],
+    },
+    NativePreset {
+        id: "smp_hihat_tight",
+        class: DeviceClass::Sampler,
+        name: "Tight Hat Kit",
+        description: "Tight closed-hat starting point: pitched up, short tick, bright tone — pair with a builtin or take hat sample",
+        tags: &["sampler", "hihat", "hat", "drums", "kit", "tight"],
+        params: &[
+            ("transpose", 6.0),
+            ("gain", 0.7),
+            ("attack", 0.001),
+            ("release", 0.05),
+            ("cutoff", 15000.0),
+        ],
+    },
+    NativePreset {
+        id: "smp_vocal_chop",
+        class: DeviceClass::Sampler,
+        name: "Vocal Chop Kit",
+        description: "Chopped-vocal starting point: soft attack, medium tail, smoothed tone — pair with a builtin or take vocal sample",
+        tags: &["sampler", "vocal", "chop", "kit", "starter", "sliced"],
+        params: &[
+            ("transpose", 0.0),
+            ("gain", 0.9),
+            ("attack", 0.01),
+            ("release", 0.5),
+            ("cutoff", 6000.0),
+        ],
+    },
+    // -- arpeggiator: more rhythmic patterns -----------------------------------
+    NativePreset {
+        id: "arp_updown_runner",
+        class: DeviceClass::Arpeggiator,
+        name: "Up-Down Runner 16ths",
+        description: "Endless up-down 16th runner over two octaves for trance gates and synth runs",
+        tags: &["arp", "arpeggiator", "updown", "16ths", "trance", "pattern"],
+        params: &[
+            ("arp_mode", 2.0),
+            ("arp_rate", 0.25),
+            ("arp_gate", 0.7),
+            ("arp_octaves", 2.0),
+            ("arp_seed", 0.0),
+        ],
+    },
+    NativePreset {
+        id: "arp_slow_bloom",
+        class: DeviceClass::Arpeggiator,
+        name: "Slow Bloom Whole",
+        description: "Slow-blooming whole-note arp: rising pads that open one note per bar",
+        tags: &["arp", "arpeggiator", "slow", "bloom", "pad", "ambient"],
+        params: &[
+            ("arp_mode", 0.0),
+            ("arp_rate", 1.0),
+            ("arp_gate", 0.9),
+            ("arp_octaves", 1.0),
+            ("arp_seed", 0.0),
+        ],
+    },
+    NativePreset {
+        id: "arp_gallop_dotted",
+        class: DeviceClass::Arpeggiator,
+        name: "Gallop Dotted 8ths",
+        description: "Galloping dotted-8th up-down arp: locked groove for synthwave leads",
+        tags: &["arp", "arpeggiator", "gallop", "dotted", "synthwave", "lead"],
+        params: &[
+            ("arp_mode", 2.0),
+            ("arp_rate", 0.75),
+            ("arp_gate", 0.5),
+            ("arp_octaves", 1.0),
+            ("arp_seed", 0.0),
+        ],
+    },
+    NativePreset {
+        id: "arp_stardust",
+        class: DeviceClass::Arpeggiator,
+        name: "Stardust Scatter 8ths",
+        description: "Scattered generative 8th-note arp over two octaves: twinkle that never repeats its bar",
+        tags: &["arp", "arpeggiator", "random", "generative", "twinkle", "pattern"],
+        params: &[
+            ("arp_mode", 3.0),
+            ("arp_rate", 0.5),
+            ("arp_gate", 0.5),
+            ("arp_octaves", 2.0),
+            ("arp_seed", 11.0),
+        ],
+    },
+    // -- chord: progression-flavored chord sets ----------------------------------
+    // Teaching note: the chord device voices one held root (type /
+    // inversion / voicing only — no key param), so each progression
+    // starting point below is the voicing color for that degree: stamp
+    // the ii shape, then the V, then the I across your clips in any key.
+    NativePreset {
+        id: "chd_ii_v_i_major",
+        class: DeviceClass::Chord,
+        name: "ii-V-I Bright Major",
+        description: "Bright ii-V-I major color in C: first-inversion close major for the I (transpose the clips for other keys)",
+        tags: &["chord", "major", "two-five-one", "progression", "jazz", "pop"],
+        params: &[("chord_type", 0.0), ("chord_inversion", 1.0), ("chord_voicing", 0.0)],
+    },
+    NativePreset {
+        id: "chd_ii_v_i_minor",
+        class: DeviceClass::Chord,
+        name: "ii-V-i Smoky Minor",
+        description: "Smoky ii-V-i minor color in A minor: open minor with the fifth up top for the i (transpose the clips for other keys)",
+        tags: &["chord", "minor", "two-five-one", "progression", "jazz", "lofi"],
+        params: &[("chord_type", 1.0), ("chord_inversion", 1.0), ("chord_voicing", 2.0)],
+    },
+    NativePreset {
+        id: "chd_dim_passing",
+        class: DeviceClass::Chord,
+        name: "Dim Passing Chord",
+        description: "Diminished passing color in G: close dim7 that walks between verse chords in any key",
+        tags: &["chord", "dim", "passing", "progression", "jazz", "walk"],
+        params: &[("chord_type", 2.0), ("chord_inversion", 0.0), ("chord_voicing", 1.0)],
+    },
+    NativePreset {
+        id: "chd_gospel_shout",
+        class: DeviceClass::Chord,
+        name: "Gospel Shout Drop-2",
+        description: "Gospel shout color in F: second-inversion major in drop-2 for uplifting turnarounds in any key",
+        tags: &["chord", "major", "gospel", "drop2", "progression", "uplift"],
+        params: &[("chord_type", 0.0), ("chord_inversion", 2.0), ("chord_voicing", 1.0)],
+    },
+    // -- humanize: more groove starting points -----------------------------------
+    NativePreset {
+        id: "hum_tight_pocket",
+        class: DeviceClass::Humanize,
+        name: "Tight Pocket",
+        description: "Near-grid pocket: just enough timing and velocity nudge to dodge the robot feel",
+        tags: &["humanize", "groove", "tight", "pocket", "timing", "pop"],
+        params: &[("hum_timing", 0.004), ("hum_velocity", 3.0), ("hum_seed", 5.0)],
+    },
+    NativePreset {
+        id: "hum_lofi_swing",
+        class: DeviceClass::Humanize,
+        name: "Lofi Swing Dust",
+        description: "Dusty lo-fi swing: swung timing and soft-hit velocities for sleepy boom-bap loops",
+        tags: &["humanize", "groove", "lofi", "swing", "boombap", "dust"],
+        params: &[("hum_timing", 0.02), ("hum_velocity", 12.0), ("hum_seed", 9.0)],
+    },
+    NativePreset {
+        id: "hum_live_drums",
+        class: DeviceClass::Humanize,
+        name: "Live Kit Energy",
+        description: "Live-kit energy: hard timing slop and dynamic hits for rock drum takes",
+        tags: &["humanize", "groove", "drums", "live", "rock", "energy"],
+        params: &[("hum_timing", 0.045), ("hum_velocity", 18.0), ("hum_seed", 17.0)],
     },
 ];
 

@@ -1,5 +1,13 @@
 /** Agent 2 (video track) public surface: sidecar model + sync + views. */
 export type { VideoClip, VideoDoc } from "./model";
+export type { ClipThumbMap, StripFrameLike, ThumbCell } from "./thumbnails";
+export {
+  cellsForClip,
+  isMediaSrc,
+  placeholderCell,
+  placeholderCells,
+  stripToCells,
+} from "./thumbnails";
 export {
   DEFAULT_FPS,
   FILMSTRIP_THUMBS,
