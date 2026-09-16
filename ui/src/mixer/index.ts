@@ -17,3 +17,16 @@ export {
   vcaTrim,
 } from "./model";
 export type { MixerSnapshot, Strip, VcaGroup } from "./model";
+export { default as SpatialPanel } from "./SpatialPanel";
+export {
+  decodeStereo,
+  encodeMono,
+  encodeStereo,
+  insertGain,
+  monitorStereo,
+  spatialDeviceForTrack,
+  spatialParamsOf,
+  trackMonitorStereo,
+  trackSpatialParams,
+} from "./spatial";
+export type { SpatialParams, Stereo, Wxyz } from "./spatial";
