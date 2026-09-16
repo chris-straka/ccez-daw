@@ -1,5 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
 import type { Project } from "../generated/project";
+import SpatialPanel from "./SpatialPanel";
 import {
   captureSnapshot,
   effectiveTrackGain,
@@ -140,6 +141,8 @@ export default function Mixer(props: {
           )}
         </For>
       </div>
+      <div class="view-label">Spatial (Ambisonics monitor)</div>
+      <SpatialPanel project={props.project} />
       <div class="mixer-foot">
         Loudness-matched A/B: compare buffers at equal RMS so louder never wins by default.
         (match gain = rms(A)/rms(B); silence matches at 1.0.)

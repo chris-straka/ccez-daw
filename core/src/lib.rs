@@ -31,6 +31,7 @@ pub mod model;
 pub mod notation;
 pub mod repair;
 pub mod sfx;
+pub mod spatial;
 pub mod timepitch;
 pub mod plugins;
 pub mod record;

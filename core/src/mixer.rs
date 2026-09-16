@@ -428,6 +428,62 @@ pub fn mix_tracks_excluding_reference(project: &Project) -> Vec<String> {
         .collect()
 }
 
+/// First device id on `track_id`'s chain classifying as a `Spatial`
+/// placement node (`device_class` 11), or `None` when the track carries no
+/// ambisonic placement. Errors on unknown tracks. The device itself is an
+/// ordinary frozen [`Node`](crate::model::Node) — spatial params ride its
+/// `azimuth`/`elevation`/`gain` params through `ParamSet` ops, no schema
+/// change (see [`crate::spatial::read_spatial_params`]).
+pub fn spatial_device_for_track(project: &Project, track_id: &str) -> Result<Option<String>> {
+    let track = project
+        .tracks
+        .iter()
+        .find(|t| t.id == track_id)
+        .ok_or_else(|| MixerError::UnknownTrack(track_id.to_string()))?;
+    for dev_id in &track.device_ids {
+        if let Some(node) = project.devices.iter().find(|d| &d.id == dev_id) {
+            if crate::devices::class::classify(node) == crate::devices::class::DeviceClass::Spatial
+            {
+                return Ok(Some(node.id.clone()));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Stereo monitor pair for one mono block through `track_id`'s spatial
+/// placement: FOA-encode at the track's `azimuth`/`elevation`/`gain`, then
+/// the HRTF-free stereo decode ([`crate::spatial`]: virtual-cardioid
+/// monitor, not a binaural HRTF). Tracks without a `Spatial` device monitor
+/// centered (`L == R`, the default front-center placement) — placement is
+/// opt-in, never a mute. Errors on unknown tracks.
+pub fn spatial_monitor_stereo(
+    project: &Project,
+    track_id: &str,
+    mono: &[f32],
+) -> Result<(Vec<f32>, Vec<f32>)> {
+    // Validate the track first (unknown ids error even on empty input).
+    if !project.tracks.iter().any(|t| t.id == track_id) {
+        return Err(MixerError::UnknownTrack(track_id.to_string()));
+    }
+    let params = spatial_device_for_track(project, track_id)?
+        .and_then(|id| project.devices.iter().find(|d| d.id == id))
+        .map(crate::spatial::read_spatial_params)
+        .unwrap_or_default();
+    let az = params.azimuth_deg.to_radians();
+    let el = params.elevation_deg.to_radians();
+    let mut left = vec![0.0f32; mono.len()];
+    let mut right = vec![0.0f32; mono.len()];
+    for (i, &s) in mono.iter().enumerate() {
+        let [l, r] = crate::spatial::decode_stereo(crate::spatial::encode_mono(
+            s, az, el, params.gain,
+        ));
+        left[i] = l;
+        right[i] = r;
+    }
+    Ok((left, right))
+}
+
 /// Cue plan for solo-listening reference `ref_id`: the reference sounds,
 /// everything else is dimmed. Pure data — the UI applies it as mutes.
 /// Errors on unknown ids and on cueing a non-reference track (cueing the
@@ -606,5 +662,75 @@ mod tests {
         assert!(VcaGroup::new("g", "x", vec![], f64::NAN).is_err());
         // ClipKind import is used (keeps the helper honest about model types).
         assert_ne!(ClipKind::Audio, ClipKind::Midi);
+    }
+
+    fn spatial_desk() -> Project {
+        use crate::devices::class::{instantiate, DeviceClass};
+        use crate::devices::class::set_param_value;
+        let (mut p, _) = desk();
+        // Track "drums" gets a Spatial placement at hard-left, unity gain.
+        let mut sp = instantiate(DeviceClass::Spatial, "sp_drums", "Place");
+        set_param_value(&mut sp, "azimuth", 90.0).expect("azimuth");
+        set_param_value(&mut sp, "elevation", 0.0).expect("elevation");
+        set_param_value(&mut sp, "gain", 1.0).expect("gain");
+        p.devices.push(sp);
+        // A non-spatial device on the same chain must not confuse lookup.
+        p.devices.push(instantiate(DeviceClass::Gain, "g_drums", "Trim"));
+        p.tracks
+            .iter_mut()
+            .find(|t| t.id == "drums")
+            .expect("drums")
+            .device_ids = vec!["g_drums".to_string(), "sp_drums".to_string()];
+        p
+    }
+
+    #[test]
+    fn spatial_device_lookup_follows_the_track_chain() {
+        let p = spatial_desk();
+        assert_eq!(
+            spatial_device_for_track(&p, "drums").unwrap(),
+            Some("sp_drums".to_string())
+        );
+        // "bass" carries no placement: None, not an error.
+        assert_eq!(spatial_device_for_track(&p, "bass").unwrap(), None);
+        // Unknown tracks error like every other mixer lookup.
+        assert!(matches!(
+            spatial_device_for_track(&p, "nope"),
+            Err(MixerError::UnknownTrack(_))
+        ));
+    }
+
+    #[test]
+    fn spatial_monitor_places_and_centers() {
+        let p = spatial_desk();
+        let mono = vec![1.0f32; 8];
+        // Hard-left placement: left carries the field, right is silent.
+        let (l, r) = spatial_monitor_stereo(&p, "drums", &mono).unwrap();
+        assert_eq!(l, vec![1.0; 8]);
+        assert_eq!(r, vec![0.0; 8]);
+        // No placement ("bass"): centered dual mono at the front-center
+        // monitor level (0.75), never a mute.
+        let (l, r) = spatial_monitor_stereo(&p, "bass", &mono).unwrap();
+        assert_eq!(l, vec![0.75; 8]);
+        assert_eq!(r, vec![0.75; 8]);
+        // Silence in = silence out; unknown tracks error.
+        let (l, r) = spatial_monitor_stereo(&p, "drums", &[]).unwrap();
+        assert!(l.is_empty() && r.is_empty());
+        assert!(spatial_monitor_stereo(&p, "nope", &mono).is_err());
+    }
+
+    #[test]
+    fn spatial_monitor_gain_scales_through_param_sets() {
+        use crate::devices::class::set_param_value;
+        let mut p = spatial_desk();
+        let sp = p.devices.iter_mut().find(|d| d.id == "sp_drums").expect("sp");
+        // ParamSet path: clamped writes, typo-loud ids (no schema change).
+        set_param_value(sp, "gain", 2.0).expect("gain");
+        assert!(matches!(
+            set_param_value(sp, "azimth", 10.0),
+            Err(crate::devices::kernel::DeviceError::UnknownParam(_))
+        ));
+        let (l, r) = spatial_monitor_stereo(&p, "drums", &[1.0]).unwrap();
+        assert_eq!((l[0], r[0]), (2.0, 0.0));
     }
 }
