@@ -12,6 +12,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("lane click appends an AutomationPointSet op", async ({ page }) => {
+  await page.getByTestId("tab-Automation").click();
   const lane = page.getByTestId("lane-t1:volume");
   await expect(lane).toBeVisible();
   await lane.click({ position: { x: 150, y: 24 } });

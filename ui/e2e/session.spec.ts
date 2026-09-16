@@ -42,6 +42,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("session view launches a clip, a scene, and jam-records", async ({ page }) => {
+  await page.getByTestId("tab-Session").click();
   const session = page.getByTestId("session-view");
   await expect(session, "session panel visible").toBeVisible();
   await expect(page.getByTestId("session-quant")).toBeVisible();

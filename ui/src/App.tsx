@@ -18,6 +18,7 @@ import {
   project_open,
   project_save,
 } from "./tauri/commands";
+import { PianoTab } from "./pianoroll";
 import SessionView from "./timeline/SessionView";
 import RecordPanel from "./record/RecordPanel";
 import CompPanel from "./comp/CompPanel";
@@ -45,6 +46,7 @@ export default function App() {
   const [tempoDraft, setTempoDraft] = createSignal("120");
   const [savePath, setSavePath] = createSignal("");
   const [projectName, setProjectName] = createSignal("");
+  const [workspaceTab, setWorkspaceTab] = createSignal("Timeline");
 
   // Track K: one vim store + remappable keymap for the whole shell.
   const vim = createVimStore();
@@ -126,8 +128,13 @@ export default function App() {
   onMount(() => {
     registerLocalActionHandler("palette.open", () => setPaletteOpen(true));
     registerLocalActionHandler("view.focusSession", () => {
-      document.getElementById("session-view")?.focus({ preventScroll: false });
-      document.getElementById("session-view")?.scrollIntoView({ block: "nearest" });
+      // The session lives on its own workspace tab now: focusing it means
+      // switching there first, then moving DOM focus as before.
+      setWorkspaceTab("Session");
+      queueMicrotask(() => {
+        document.getElementById("session-view")?.focus({ preventScroll: false });
+        document.getElementById("session-view")?.scrollIntoView({ block: "nearest" });
+      });
     });
     registerLocalActionHandler("vim.mode.normal", () => setVimMode("normal"));
     registerLocalActionHandler("vim.mode.insert", () => setVimMode("insert"));
@@ -229,46 +236,80 @@ export default function App() {
       </header>
       <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} onRan={() => void refresh()} />
       <div class="daw-grid">
-        <Panel title="Timeline">
-          <For each={project()?.tracks ?? []}>
-            {(t) => (
-              <div class="track-row daw-numeric">
-                {t.name} — vol {t.volume} pan {t.pan}
-              </div>
-            )}
-          </For>
-        </Panel>
+        <div class="daw-rail">
+          <Panel title="Browser">
+            <BrowserPalette />
+          </Panel>
+        </div>
+        <div class="daw-workspace">
+          <nav class="workspace-tabs" aria-label="Workspace">
+            <For each={["Timeline", "Session", "Piano roll", "Score", "Automation", "Groove", "Record", "Comp"]}>
+              {(tab) => (
+                <button
+                  data-testid={`tab-${tab}`}
+                  classList={{ active: workspaceTab() === tab }}
+                  aria-current={workspaceTab() === tab ? "page" : undefined}
+                  onClick={() => setWorkspaceTab(tab)}
+                >
+                  {tab}
+                </button>
+              )}
+            </For>
+          </nav>
+          <div class="workspace-view">
+            <Show when={workspaceTab() === "Timeline"}>
+              <Panel title="Timeline">
+                <For each={project()?.tracks ?? []}>
+                  {(t) => (
+                    <div class="track-row daw-numeric">
+                      {t.name} — vol {t.volume} pan {t.pan}
+                    </div>
+                  )}
+                </For>
+              </Panel>
+            </Show>
+            <Show when={workspaceTab() === "Session"}>
+              <Panel title="Session">
+                <SessionView project={project()} />
+              </Panel>
+            </Show>
+            <Show when={workspaceTab() === "Piano roll"}>
+              <Panel title="Piano roll">
+                <PianoTab project={project()} />
+              </Panel>
+            </Show>
+            <Show when={workspaceTab() === "Score"}>
+              <Panel title="Score">
+                <ScorePanel project={project()} />
+              </Panel>
+            </Show>
+            <Show when={workspaceTab() === "Automation"}>
+              <Panel title="Automation">
+                <AutomationView project={project()} />
+              </Panel>
+            </Show>
+            <Show when={workspaceTab() === "Groove"}>
+              <Panel title="Groove">
+                <GroovePanel source={null} target={null} />
+              </Panel>
+            </Show>
+            <Show when={workspaceTab() === "Record"}>
+              <Panel title="Record">
+                <RecordPanel project={project()} engineState={engine()} />
+              </Panel>
+            </Show>
+            <Show when={workspaceTab() === "Comp"}>
+              <Panel title="Comp">
+                <CompPanel project={project()} />
+              </Panel>
+            </Show>
+          </div>
+        </div>
         <div class="daw-column">
           <Panel title="Mixer">
             <For each={project()?.tracks ?? []}>
               {(t) => <div class="track-row">{t.name}</div>}
             </For>
-          </Panel>
-          <Panel title="Browser">
-            <BrowserPalette />
-          </Panel>
-          <Panel title="Automation">
-            <AutomationView project={project()} />
-          </Panel>
-          <Panel title="Groove">
-            <GroovePanel source={null} target={null} />
-          </Panel>
-        </div>
-        <div class="daw-column">
-          <Panel title="Piano roll">
-            <div class="session-dim">v0 stub: FL-style mouse editing lands in Track F</div>
-          </Panel>
-          <Panel title="Score">
-            <ScorePanel project={project()} />
-          </Panel>
-          <Panel title="Session">
-            <SessionView project={project()} />
-          </Panel>
-          <Panel title="Record">
-            <RecordPanel project={project()} engineState={engine()} />
-          </Panel>
-          <Panel title="Comp">
-            <CompPanel project={project()} />
           </Panel>
           <Panel title="Branches">
             <BranchPanel project={project()} />
