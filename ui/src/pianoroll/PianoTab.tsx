@@ -74,7 +74,7 @@ export default function PianoTab(props: {
   const current = () => working();
 
   return (
-    <div data-testid="piano-tab" class="session-view">
+    <div data-testid="piano-tab" class="session-view" style={{ height: "100%" }}>
       <Show when={props.project} fallback={<div class="session-dim">No project open.</div>}>
         <div class="session-controls">
           <label>
@@ -103,7 +103,14 @@ export default function PianoTab(props: {
           when={current()}
           fallback={<div class="session-dim">Pick a MIDI clip to edit on the roll.</div>}
         >
-          {(w) => <PianoRoll clip={w().clip} onChange={onChange} />}
+          {(w) => (
+            <div style={{ position: "relative", display: "flex", "flex-direction": "column", flex: "1 1 auto", "min-height": "0" }}>
+              <PianoRoll clip={w().clip} onChange={onChange} />
+              <Show when={w().clip.notes.length === 0}>
+                <div class="piano-empty-hint">Empty clip — click the grid to create notes, drag to move, right-drag to delete.</div>
+              </Show>
+            </div>
+          )}
         </Show>
       </Show>
     </div>

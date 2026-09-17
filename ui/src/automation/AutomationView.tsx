@@ -82,14 +82,13 @@ export default function AutomationView(props: {
                       {track.name}:{param} ({lanePoints(laneId).length} pts)
                     </div>
                     <svg
-                      width="300"
-                      height="48"
                       viewBox="0 0 300 48"
+                      preserveAspectRatio="none"
                       role="img"
                       aria-label={`Automation lane ${laneId}`}
                       data-testid={`lane-${laneId}`}
                       onClick={(e) => onStripClick(e, track.id, param)}
-                      style={{ display: "block", cursor: "crosshair" }}
+                      style={{ display: "block", cursor: "crosshair", width: "100%", height: "48px" }}
                     >
                       <rect x="0" y="0" width="300" height="48" class="lane-canvas" />
                       <polyline points={pathFor(laneId, min, max)} class="lane-curve" />

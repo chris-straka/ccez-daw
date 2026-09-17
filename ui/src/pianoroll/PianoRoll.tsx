@@ -53,8 +53,11 @@ export default function PianoRoll(props: {
     scrollBeats: number;
   } = { notes: [], hover: null, drag: null, scrollBeats: 0 };
 
+  /** Piano-key strip width (CSS px): pitch names live here, the grid starts right of it. */
+  const KEY_W = 64;
+
   const view = (): ViewConfig => ({
-    width: canvas?.clientWidth || 640,
+    width: Math.max(80, (canvas?.clientWidth || 640) - KEY_W),
     height: canvas?.clientHeight || 320,
     beatsVisible: props.beatsVisible ?? 8,
     scrollBeats: frame.scrollBeats,
@@ -71,7 +74,8 @@ export default function PianoRoll(props: {
 
   function pos(e: PointerEvent): { x: number; y: number } {
     const r = canvas!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    // Grid coordinates start right of the key strip; strip clicks never edit.
+    return { x: e.clientX - r.left - KEY_W, y: e.clientY - r.top };
   }
 
   function draw(): void {
@@ -93,7 +97,11 @@ export default function PianoRoll(props: {
     // Canvas palette mirrors theme.css (MIDI notes read steel-blue,
     // selection reads amber, per the studio theme).
     ctx.fillStyle = "#0d1117";
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, w + KEY_W, h);
+    // Everything grid-aligned draws in translated space; the key strip is
+    // painted last, on top, in canvas space.
+    ctx.save();
+    ctx.translate(KEY_W, 0);
     const ppb = pxPerBeat(v);
     const firstLine = Math.floor(v.scrollBeats / snap()) * snap();
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
@@ -157,13 +165,48 @@ export default function PianoRoll(props: {
         }
       }
     }
+    ctx.restore();
+    drawKeyStrip(ctx, v, h);
     raf = requestAnimationFrame(draw);
+  }
+
+  /** Piano-key strip: dark keys shaded, every C labeled (C4 = MIDI 60). */
+  function drawKeyStrip(ctx: CanvasRenderingContext2D, v: ViewConfig, h: number): void {
+    const rh = rowH(v);
+    ctx.fillStyle = "#141a22";
+    ctx.fillRect(0, 0, KEY_W, h);
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.beginPath();
+    ctx.moveTo(KEY_W + 0.5, 0);
+    ctx.lineTo(KEY_W + 0.5, h);
+    ctx.stroke();
+    const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    ctx.font = "10px system-ui";
+    ctx.textBaseline = "middle";
+    for (let p = 0; p < 128; p++) {
+      const y = pitchToY(p, v);
+      if (y + rh < 0 || y > h) continue;
+      const black = [1, 3, 6, 8, 10].includes(p % 12);
+      if (black) {
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.fillRect(0, y, KEY_W, rh + 1);
+      }
+      if (p % 12 === 0) {
+        const octave = Math.floor(p / 12) - 1;
+        ctx.fillStyle = "#9aa3ad";
+        ctx.fillText(`C${octave}`, 8, y + rh / 2);
+      } else if (!black && rh >= 14) {
+        ctx.fillStyle = "#5f6a75";
+        ctx.fillText(NAMES[p % 12], 8, y + rh / 2);
+      }
+    }
   }
 
   function onPointerDown(e: PointerEvent): void {
     if (!canvas) return;
     canvas.setPointerCapture(e.pointerId);
     const { x, y } = pos(e);
+    if (x < 0) return; // key strip: look, don't touch.
     const v = view();
     const beat = snapBeat(xToBeat(x, v), snap());
     const pitch = yToPitch(y, v);
@@ -288,7 +331,7 @@ export default function PianoRoll(props: {
     <canvas
       ref={canvas}
       aria-label="Piano roll"
-      style={{ width: "100%", height: "320px", display: "block", cursor: "crosshair" }}
+      style={{ width: "100%", flex: "1 1 auto", "min-height": "320px", display: "block", cursor: "crosshair" }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
