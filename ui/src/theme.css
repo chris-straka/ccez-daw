@@ -13,8 +13,8 @@
   --daw-surface-2: #1a212b;
   --daw-border: rgba(255, 255, 255, 0.08);
   --daw-text: #ece7dd;
-  --daw-text-dim: #9aa3ad;
-  --daw-text-faint: #5f6a75;
+  --daw-text-dim: #b6bfc9;
+  --daw-text-faint: #8f99a5;
   --daw-accent: #f5a623;
   --daw-accent-ink: #1a1206;
   --daw-audio: #3fc1a5;
@@ -570,6 +570,31 @@ body {
 .mixer-foot {
   font-size: 11px;
   color: var(--daw-text-faint);
+}
+
+/* Collapsed A/B snapshot drawer: strips stay above the fold, the compare
+ * rig opens on demand and keeps its current slot in the summary line. */
+.mixer-ab {
+  border: 1px solid var(--daw-border);
+  border-radius: var(--daw-radius);
+  margin-top: 8px;
+}
+
+.mixer-ab > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--daw-text-dim);
+  padding: 6px 8px;
+  list-style-position: inside;
+}
+
+.mixer-ab > summary:hover {
+  color: var(--daw-text);
+}
+
+.mixer-ab .session-controls {
+  border-bottom: none;
+  margin-bottom: 0;
 }
 
 .mute-btn.on {

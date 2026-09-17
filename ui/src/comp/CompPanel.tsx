@@ -30,7 +30,7 @@ export default function CompPanel(props: {
   const [splitBeats, setSplitBeats] = createSignal(2);
   const [picks, setPicks] = createSignal<string[]>([]);
   const [auditionId, setAuditionId] = createSignal<string | null>(null);
-  const [status, setStatus] = createSignal("comp: no takes selected");
+  const [status, setStatus] = createSignal("");
 
   const apply = (op: Op): Promise<unknown> =>
     props.applyOp ? props.applyOp(op) : op_apply({ op });
@@ -204,12 +204,17 @@ export default function CompPanel(props: {
             Commit comp
           </button>
         </div>
-        <div>
-          <div class="view-label">Takes</div>
-          <Show
-            when={lanes().length > 0}
-            fallback={<div class="session-dim">No takes overlap this region.</div>}
-          >
+        <Show
+          when={lanes().length > 0}
+          fallback={
+            <div class="session-dim">
+              No takes overlap this region — record a take first, then pick
+              one per section to build the comp.
+            </div>
+          }
+        >
+          <div>
+            <div class="view-label">Takes</div>
             <For each={lanes()}>
               {({ take, lane }) => (
                 <div class="lane">
@@ -231,38 +236,40 @@ export default function CompPanel(props: {
                 </div>
               )}
             </For>
-          </Show>
-        </div>
-        <div>
-          <div class="view-label">Sections</div>
-          <For each={sectionRanges()}>
-            {([s, e], i) => (
-              <div class="lane">
-                <span class="lane-name daw-numeric">
-                  {s}&ndash;{e}
-                </span>
-                <select
-                  data-testid={`comp-section-${i()}`}
-                  value={pickFor(i()) ?? ""}
-                  onInput={(ev) => setPick(i(), ev.currentTarget.value)}
-                >
-                  <For each={regionTakes()}>
-                    {(take) => <option value={take.id}>{take.id}</option>}
-                  </For>
-                </select>
-              </div>
-            )}
-          </For>
-        </div>
-        <div
-          data-testid="comp-preview"
-          class={previewText().ok ? "session-launch-note" : "session-dim"}
-        >
-          {previewText().text}
-        </div>
-        <span data-testid="comp-status" class="session-dim">
-          {status()}
-        </span>
+          </div>
+          <div>
+            <div class="view-label">Sections</div>
+            <For each={sectionRanges()}>
+              {([s, e], i) => (
+                <div class="lane">
+                  <span class="lane-name daw-numeric">
+                    {s}&ndash;{e}
+                  </span>
+                  <select
+                    data-testid={`comp-section-${i()}`}
+                    value={pickFor(i()) ?? ""}
+                    onInput={(ev) => setPick(i(), ev.currentTarget.value)}
+                  >
+                    <For each={regionTakes()}>
+                      {(take) => <option value={take.id}>{take.id}</option>}
+                    </For>
+                  </select>
+                </div>
+              )}
+            </For>
+          </div>
+          <div
+            data-testid="comp-preview"
+            class={previewText().ok ? "session-launch-note" : "session-dim"}
+          >
+            {previewText().text}
+          </div>
+        </Show>
+        <Show when={status()}>
+          <span data-testid="comp-status" class="session-dim">
+            {status()}
+          </span>
+        </Show>
       </Show>
     </div>
   );

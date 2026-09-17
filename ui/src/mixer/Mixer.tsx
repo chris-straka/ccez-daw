@@ -71,15 +71,6 @@ export default function Mixer(props: {
 
   return (
     <div class="session-view">
-      <div class="session-controls">
-        <button onClick={() => take("A")}>Capture A</button>
-        <button onClick={() => take("B")}>Capture B</button>
-        <button onClick={() => flip("A")} disabled={!slotA()}>Recall A{ab() === "A" ? " ●" : ""}</button>
-        <button onClick={() => flip("B")} disabled={!slotB()}>Recall B{ab() === "B" ? " ●" : ""}</button>
-        <Show when={note()}>
-          <span class="session-launch-note">{note()}</span>
-        </Show>
-      </div>
       <Show when={refs().length > 0}>
         <div class="mixer-ref">
           REF (never in mix): {refs().join(", ")} — cue solo-listens the reference, mix stays muted.
@@ -141,12 +132,24 @@ export default function Mixer(props: {
           )}
         </For>
       </div>
+      <details class="mixer-ab">
+        <summary>A/B snapshots{ab() === "A" ? " (on A)" : " (on B)"}</summary>
+        <div class="session-controls">
+          <button onClick={() => take("A")}>Capture A</button>
+          <button onClick={() => take("B")}>Capture B</button>
+          <button onClick={() => flip("A")} disabled={!slotA()}>Recall A{ab() === "A" ? " ●" : ""}</button>
+          <button onClick={() => flip("B")} disabled={!slotB()}>Recall B{ab() === "B" ? " ●" : ""}</button>
+          <Show when={note()}>
+            <span class="session-launch-note">{note()}</span>
+          </Show>
+        </div>
+        <div class="mixer-foot">
+          Loudness-matched A/B: compare buffers at equal RMS so louder never wins by default.
+          (match gain = rms(A)/rms(B); silence matches at 1.0.)
+        </div>
+      </details>
       <div class="view-label">Spatial (Ambisonics monitor)</div>
       <SpatialPanel project={props.project} />
-      <div class="mixer-foot">
-        Loudness-matched A/B: compare buffers at equal RMS so louder never wins by default.
-        (match gain = rms(A)/rms(B); silence matches at 1.0.)
-      </div>
     </div>
   );
 }
