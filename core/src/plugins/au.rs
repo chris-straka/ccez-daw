@@ -761,6 +761,7 @@ unsafe impl Send for AuBackend {}
 /// Largest single `AudioUnitRender` call. Bigger worker blocks are
 /// chunked (and must fit `MaximumFramesPerSlice`, set at load);
 /// smaller ones pass through untouched.
+#[cfg(target_os = "macos")]
 const AU_MAX_BLOCK_FRAMES: usize = 1024;
 
 // AudioToolbox constants, pinned to the SDK values inspected in
@@ -1175,6 +1176,7 @@ impl AuBackend {
         }
         #[cfg(not(target_os = "macos"))]
         {
+            let _ = clamped;
             return Err(AuError::UnsupportedPlatform);
         }
         #[cfg(target_os = "macos")]
@@ -1572,6 +1574,7 @@ mod tests {
         // assertion — a leaked or double-freed AU would fault here.
     }
 
+    #[cfg(target_os = "macos")]
     fn apple_delay() -> AuComponentDesc {
         AuComponentDesc::apple(AU_TYPE_EFFECT, fourcc([b'd', b'e', b'l', b'y']))
     }

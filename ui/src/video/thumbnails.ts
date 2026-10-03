@@ -4,8 +4,8 @@ import { FILMSTRIP_THUMBS } from "./model";
  * Filmstrip thumbnail cells: the UI-side end of the core thumbnail seam.
  *
  * Core (`core/src/video.rs`) extracts one JPEG per strip slot with `ffmpeg`
- * (decode) + `tiny-codec` (JPEG encode, q72 4:2:0) and serializes a
- * `ThumbStrip` beside `video.json` (`thumbs/<track>.json`). The video
+ * (decode; JPEG encode by ffmpeg or the native q72 4:2:0 encoder) and
+ * serializes a `ThumbStrip` beside `video.json` (`thumbs/<track>.json`). The video
  * sidecar never crosses the Tauri IPC boundary, so the host converts each
  * real frame's disk `path` into a renderable URL (a `blob:` URL from reading
  * the JPEG bytes, or a Tauri asset URL) and hands the cells to

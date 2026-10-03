@@ -719,22 +719,24 @@ impl DriftMonitor {
 pub enum StripTool {
     /// `ffmpeg` at this binary path.
     Ffmpeg(String),
-    /// `ffmpeg` decoded, `tiny-codec` encoded the JPEGs (binary path shown).
-    TinyCodec(String),
+    /// `ffmpeg` decoded, the native encoder wrote the JPEGs (binary path
+    /// shown). Strips saved before the rename say `TinyCodec`.
+    #[serde(alias = "TinyCodec")]
+    Native(String),
     /// No usable `ffmpeg`: every frame is a layout placeholder.
     Placeholder(String),
 }
 
 /// Who JPEG-encodes strip frames. `ffmpeg` writes the `.jpg` itself;
-/// [`StripJpeg::TinyCodec`] decodes a raw frame with `ffmpeg` and encodes
-/// the JPEG with `tiny-codec` (q72, 4:2:0, optimized Huffman) instead.
+/// [`StripJpeg::Native`] decodes a raw frame with `ffmpeg` and encodes the
+/// JPEG in-process (q72, 4:2:0, optimized Huffman) instead.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum StripJpeg {
     /// `ffmpeg -q:v 4` writes the JPEG (default, historical behavior).
     #[default]
     Ffmpeg,
-    /// Raw frame via `ffmpeg`, JPEG via `tiny-codec`.
-    TinyCodec,
+    /// Raw frame via `ffmpeg`, JPEG via [`thumb_jpeg_native`].
+    Native,
 }
 
 /// One filmstrip cell: a JPEG on disk, or a placeholder the lane renders as
@@ -889,29 +891,28 @@ fn strip_out_dir(req: &ThumbStripRequest) -> Option<PathBuf> {
     }
 }
 
-/// Encode one strip frame with `tiny-codec`: q72, 4:2:0, optimized Huffman
-/// (measured 7–53% smaller than standard tables on stills; thumbnails sit
-/// at the high end of that range). `None` on bad input — never panics, so
+/// Encode one strip frame in-process with `jpeg-encoder`: q72, 4:2:0,
+/// optimized Huffman tables (noticeably smaller than standard tables on
+/// small stills like thumbnails). `None` on bad input — never panics, so
 /// the strip job keeps its always-usable contract.
-pub fn thumb_jpeg_tiny_codec(w: u32, h: u32, rgb: &[u8]) -> Option<Vec<u8>> {
+pub fn thumb_jpeg_native(w: u32, h: u32, rgb: &[u8]) -> Option<Vec<u8>> {
     if w == 0 || h == 0 || rgb.len() != w as usize * h as usize * 3 {
         return None;
     }
-    Some(tiny_jfif::mux::encode_rgb_full(
-        w,
-        h,
-        rgb,
-        72,
-        tiny_jfif::mux::Subsampling::Yuv420,
-        tiny_jfif::mux::HuffmanMode::Optimized,
-    ))
+    let (w16, h16) = (u16::try_from(w).ok()?, u16::try_from(h).ok()?);
+    let mut out = Vec::new();
+    let mut enc = jpeg_encoder::Encoder::new(&mut out, 72);
+    enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_2_2);
+    enc.set_optimized_huffman_tables(true);
+    enc.encode(rgb, w16, h16, jpeg_encoder::ColorType::Rgb).ok()?;
+    Some(out)
 }
 
 /// Extract one frame with `ffmpeg` as raw RGB24 on stdout, then JPEG-encode
-/// it with [`thumb_jpeg_tiny_codec`]. Height is inferred from the byte
+/// it with [`thumb_jpeg_native`]. Height is inferred from the byte
 /// count (`scale=W:-2` fixes an even height on the decode side). Any
 /// failure is `false` (placeholder cell).
-fn grab_frame_tiny(ffmpeg: &str, file: &str, at_seconds: f64, width_px: u32, out: &Path) -> bool {
+fn grab_frame_native(ffmpeg: &str, file: &str, at_seconds: f64, width_px: u32, out: &Path) -> bool {
     let w = width_px.clamp(32, 640);
     let raw = Command::new(ffmpeg)
         .args([
@@ -937,7 +938,7 @@ fn grab_frame_tiny(ffmpeg: &str, file: &str, at_seconds: f64, width_px: u32, out
         return false;
     }
     let h = (raw.stdout.len() / (w as usize * 3)) as u32;
-    let Some(jpeg) = thumb_jpeg_tiny_codec(w, h, &raw.stdout) else {
+    let Some(jpeg) = thumb_jpeg_native(w, h, &raw.stdout) else {
         return false;
     };
     std::fs::write(out, jpeg).is_ok() && out.is_file()
@@ -995,8 +996,8 @@ pub fn extract_strip(req: &ThumbStripRequest) -> ThumbStrip {
         let out = dir.join(format!("{stem}_{index:03}.jpg"));
         let grabbed = match req.jpeg {
             StripJpeg::Ffmpeg => grab_frame(&ffmpeg, &req.file, *at_seconds, req.width_px, &out),
-            StripJpeg::TinyCodec => {
-                grab_frame_tiny(&ffmpeg, &req.file, *at_seconds, req.width_px, &out)
+            StripJpeg::Native => {
+                grab_frame_native(&ffmpeg, &req.file, *at_seconds, req.width_px, &out)
             }
         };
         if grabbed {
@@ -1022,7 +1023,7 @@ pub fn extract_strip(req: &ThumbStripRequest) -> ThumbStrip {
         tool: if any_real {
             match req.jpeg {
                 StripJpeg::Ffmpeg => StripTool::Ffmpeg(ffmpeg),
-                StripJpeg::TinyCodec => StripTool::TinyCodec(ffmpeg),
+                StripJpeg::Native => StripTool::Native(ffmpeg),
             }
         } else {
             StripTool::Placeholder("ffmpeg decoded no frames".into())
@@ -1401,32 +1402,70 @@ mod tests {
         rgb
     }
 
-    #[test]
-    fn tiny_codec_thumb_encodes_synthetic_rgb() {
-        // No ffmpeg needed: the tiny-codec half of the seam stands alone.
-        let (w, h) = (64, 48);
-        let rgb = synthetic_thumb_rgb(w, h);
-        let jpeg = thumb_jpeg_tiny_codec(w, h, &rgb).expect("encodes");
-        assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
-        assert_eq!(&jpeg[jpeg.len() - 2..], &[0xFF, 0xD9]);
-        let (dw, dh, back) = tiny_jfif::demux::decode_jpeg(&jpeg).expect("decodes");
-        assert_eq!((dw, dh), (w, h));
-        let psnr = tiny_jfif::metrics::psnr_luma(w, h, &rgb, &back);
-        assert!(psnr >= 40.0, "thumb luma PSNR {psnr}");
-        // Bad input is None, never a panic (strip-job contract).
-        assert!(thumb_jpeg_tiny_codec(0, h, &[]).is_none());
-        assert!(thumb_jpeg_tiny_codec(w, h, &rgb[..rgb.len() - 1]).is_none());
+    /// Decode a JPEG to `(width, height, rgb24)` for round-trip checks.
+    fn decode_thumb(jpeg: &[u8]) -> (u32, u32, Vec<u8>) {
+        let mut dec = jpeg_decoder::Decoder::new(jpeg);
+        let pixels = dec.decode().expect("decodes");
+        let info = dec.info().expect("has header");
+        assert_eq!(info.pixel_format, jpeg_decoder::PixelFormat::RGB24);
+        (info.width as u32, info.height as u32, pixels)
+    }
+
+    /// BT.601 luma PSNR between two same-size RGB24 buffers.
+    fn psnr_luma(a: &[u8], b: &[u8]) -> f64 {
+        assert_eq!(a.len(), b.len());
+        let luma = |p: &[u8]| 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64;
+        let n = (a.len() / 3) as f64;
+        let mse = a
+            .chunks_exact(3)
+            .zip(b.chunks_exact(3))
+            .map(|(x, y)| (luma(x) - luma(y)).powi(2))
+            .sum::<f64>()
+            / n;
+        if mse == 0.0 {
+            f64::INFINITY
+        } else {
+            10.0 * (255.0 * 255.0 / mse).log10()
+        }
     }
 
     #[test]
-    fn strip_extracts_tiny_codec_frames_when_ffmpeg_exists() {
+    fn native_thumb_encodes_synthetic_rgb() {
+        // No ffmpeg needed: the encoder half of the seam stands alone.
+        let (w, h) = (64, 48);
+        let rgb = synthetic_thumb_rgb(w, h);
+        let jpeg = thumb_jpeg_native(w, h, &rgb).expect("encodes");
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
+        assert_eq!(&jpeg[jpeg.len() - 2..], &[0xFF, 0xD9]);
+        let (dw, dh, back) = decode_thumb(&jpeg);
+        assert_eq!((dw, dh), (w, h));
+        let psnr = psnr_luma(&rgb, &back);
+        assert!(psnr >= 40.0, "thumb luma PSNR {psnr}");
+        // Bad input is None, never a panic (strip-job contract).
+        assert!(thumb_jpeg_native(0, h, &[]).is_none());
+        assert!(thumb_jpeg_native(w, h, &rgb[..rgb.len() - 1]).is_none());
+        let wide = 70_000u32;
+        assert!(thumb_jpeg_native(wide, 1, &vec![0; wide as usize * 3]).is_none());
+    }
+
+    #[test]
+    fn strip_tool_reads_pre_rename_tiny_codec_json() {
+        // Strips written before the encoder swap still load from disk.
+        let old: StripTool = serde_json::from_str(r#"{"TinyCodec":"/usr/bin/ffmpeg"}"#).unwrap();
+        assert_eq!(old, StripTool::Native("/usr/bin/ffmpeg".into()));
+        let new = serde_json::to_string(&StripTool::Native("ff".into())).unwrap();
+        assert_eq!(new, r#"{"Native":"ff"}"#);
+    }
+
+    #[test]
+    fn strip_extracts_native_frames_when_ffmpeg_exists() {
         // Same skip-guarded real-ffmpeg harness as the Ffmpeg-engine test,
-        // but the JPEGs must come from tiny-codec and decode in it too.
+        // but the JPEGs must come from the native encoder.
         if resolve_ffmpeg(None).is_none() {
             eprintln!("SKIP: no ffmpeg on PATH");
             return;
         }
-        let dir = test_dir("real-tiny");
+        let dir = test_dir("real-native");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("pattern.mp4");
@@ -1457,18 +1496,18 @@ mod tests {
             positions_seconds: Some(vec![0.2, 1.8]),
             duration_hint_seconds: None,
             ffmpeg_bin: None,
-            jpeg: StripJpeg::TinyCodec,
+            jpeg: StripJpeg::Native,
             out_dir: Some(dir.join("thumbs")),
         };
         let strip = extract_strip(&req);
         assert!(!strip.is_placeholder(), "tool: {:?}", strip.tool);
-        assert!(matches!(strip.tool, StripTool::TinyCodec(_)));
+        assert!(matches!(strip.tool, StripTool::Native(_)));
         assert_eq!(strip.frames.len(), 2);
         for f in &strip.frames {
             assert!(!f.placeholder);
             let p = f.path.as_ref().expect("real frame needs a path");
             let bytes = std::fs::read(p).expect("thumb readable");
-            let (dw, dh, _) = tiny_jfif::demux::decode_jpeg(&bytes).expect("thumb decodes");
+            let (dw, dh, _) = decode_thumb(&bytes);
             assert_eq!(dw, 64);
             assert_eq!(dh, 48);
         }
