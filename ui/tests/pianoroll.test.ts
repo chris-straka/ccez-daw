@@ -1,15 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import {
+  anchorTop,
   beatToX,
   hitTest,
   notesAt,
+  pitchName,
   pitchToY,
+  rowH,
+  scrollTop,
   snapBeat,
   xToBeat,
   yToPitch,
+  zoomRows,
   type ViewConfig,
 } from "../src/pianoroll/geometry";
-import { decodeClip, encodeClip, type MidiClip } from "../src/pianoroll/model";
+import { decodeClip, encodeClip, midiToFreq, type MidiClip } from "../src/pianoroll/model";
 import { createNote, deleteNote, moveNote, resizeNote, sweepDelete } from "../src/pianoroll/store";
 
 const VIEW: ViewConfig = { width: 640, height: 512, beatsVisible: 8, scrollBeats: 0 };
@@ -100,5 +105,60 @@ describe("piano-roll scripted note-edit (FL mouse sequence, headless)", () => {
     expect(encodeClip(back)).toBe(bytes);
     expect(() => decodeClip("not json")).toThrow();
     expect(() => decodeClip(JSON.stringify({ length_beats: 4, notes: [{ bogus: 1 }] }))).toThrow();
+  });
+});
+
+describe("pitch viewport (scroll/zoom)", () => {
+  test("defaults show the whole range exactly like before", () => {
+    expect(rowH(VIEW)).toBe(4);
+    expect(pitchToY(127, VIEW)).toBe(0);
+    expect(yToPitch(0, VIEW)).toBe(127);
+    expect(yToPitch(511, VIEW)).toBe(0);
+  });
+
+  test("pitch names follow C4 = MIDI 60", () => {
+    expect(pitchName(60)).toBe("C4");
+    expect(pitchName(0)).toBe("C-1");
+    expect(pitchName(127)).toBe("G9");
+  });
+
+  test("scroll clamps the window inside 0..127", () => {
+    expect(scrollTop(127, 128, -200)).toBe(127);
+    expect(scrollTop(100, 32, -90)).toBe(31);
+    expect(scrollTop(31, 32, 200)).toBe(127);
+  });
+
+  test("zoom doubles/halves rows within 12..128", () => {
+    expect(zoomRows(128, -1)).toBe(64);
+    expect(zoomRows(64, 1)).toBe(128);
+    expect(zoomRows(12, -1)).toBe(12);
+    expect(zoomRows(128, 1)).toBe(128);
+  });
+
+  test("zoom anchor keeps the cursor pitch under the cursor", () => {
+    const v: ViewConfig = { ...VIEW, topPitch: 100, rowsVisible: 64 };
+    const p = yToPitch(100, v);
+    expect(p).toBe(88);
+    const rows2 = zoomRows(64, -1);
+    const top2 = anchorTop(p, 100, VIEW.height / rows2, rows2);
+    expect(top2).toBe(94);
+    const v2: ViewConfig = { ...VIEW, topPitch: top2, rowsVisible: rows2 };
+    expect(Math.abs(pitchToY(p, v2) - 100)).toBeLessThanOrEqual(8);
+  });
+
+  test("mapping round-trips inside a zoomed window", () => {
+    const v: ViewConfig = { ...VIEW, topPitch: 71, rowsVisible: 24 };
+    for (const p of [48, 60, 71]) {
+      expect(yToPitch(pitchToY(p, v) + 1, v)).toBe(p);
+    }
+  });
+});
+
+describe("preview pitch math", () => {
+  test("midiToFreq is equal-tempered at A4 = 440", () => {
+    expect(midiToFreq(69)).toBeCloseTo(440, 6);
+    expect(midiToFreq(60)).toBeCloseTo(261.626, 3);
+    expect(midiToFreq(57)).toBeCloseTo(220, 6);
+    expect(midiToFreq(81)).toBeCloseTo(880, 6);
   });
 });

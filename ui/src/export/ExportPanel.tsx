@@ -86,6 +86,13 @@ export default function ExportPanel(props: {
   });
 
   function onNormalize(target: LoudnessTarget) {
+    // The range config gates everything: normalizing an invalid range
+    // would enqueue an item named after the validation error.
+    const cfgErr = bounceError();
+    if (cfgErr) {
+      setBounceStatus(`normalize refused: ${cfgErr}`);
+      return;
+    }
     const err = checkTarget(target);
     if (err) {
       setBounceStatus(`normalize refused: ${err}`);

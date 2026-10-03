@@ -26,10 +26,11 @@ pub fn render_subset(
     buffers: &mut BTreeMap<String, Vec<f32>>,
     frames: usize,
     edge_delays: &BTreeMap<(String, String), u64>,
+    start_frame: u64,
 ) -> BTreeMap<String, Vec<f32>> {
     let mut out = BTreeMap::new();
     for id in order {
-        let buf = render_one(graph, id, frames, buffers, edge_delays);
+        let buf = render_one(graph, id, frames, buffers, edge_delays, start_frame);
         buffers.insert(id.clone(), buf.clone());
         out.insert(id.clone(), buf);
     }
@@ -44,6 +45,7 @@ fn render_one(
     frames: usize,
     buffers: &BTreeMap<String, Vec<f32>>,
     edge_delays: &BTreeMap<(String, String), u64>,
+    start_frame: u64,
 ) -> Vec<f32> {
     let mut input = vec![0.0f32; frames];
     for producer in graph.producers_of(id) {
@@ -80,6 +82,15 @@ fn render_one(
             o
         }
         Proc::Mix => input,
+        Proc::Loop { buf } => {
+            if buf.is_empty() {
+                return vec![0.0; frames];
+            }
+            let len = buf.len() as u64;
+            (0..frames)
+                .map(|t| buf[((start_frame + t as u64) % len) as usize])
+                .collect()
+        }
     }
 }
 
@@ -112,14 +123,23 @@ impl RemoteExecutor {
 
     /// Render one block. `boundary` carries the client's local-producer
     /// buffers for every local→remote cut edge producer. Returns one
-    /// buffer per remote node.
+    /// buffer per remote node. `start_frame` positions [`Proc::Loop`]
+    /// reads (the caller's running frame count).
     pub fn execute(
         &self,
         boundary: &BTreeMap<String, Vec<f32>>,
         frames: usize,
+        start_frame: u64,
     ) -> BTreeMap<String, Vec<f32>> {
         let mut buffers = boundary.clone();
-        render_subset(&self.graph, &self.remote_order, &mut buffers, frames, &self.edge_delays)
+        render_subset(
+            &self.graph,
+            &self.remote_order,
+            &mut buffers,
+            frames,
+            &self.edge_delays,
+            start_frame,
+        )
     }
 }
 
@@ -157,7 +177,7 @@ mod tests {
         // equal one local render, bit for bit.
         let (rg, delays) = rig();
         let frames = 128;
-        let full = rg.render(frames, 1, &delays).unwrap();
+        let full = rg.render(frames, 1, &delays, 0).unwrap();
 
         let part = Partition::split(&rg.topo, &["dly"]).unwrap();
         let remote_order = part.remote_order(&rg.topo).unwrap();
@@ -176,11 +196,11 @@ mod tests {
             })
             .cloned()
             .collect();
-        render_subset(&rg, &upstream, &mut buffers, frames, &delays);
+        render_subset(&rg, &upstream, &mut buffers, frames, &delays, 0);
 
         // Server pass over the remote subset from the shipped boundary.
         let exec = RemoteExecutor::new(rg.clone(), remote_order, delays.clone());
-        let remote_out = exec.execute(&buffers, frames);
+        let remote_out = exec.execute(&buffers, frames, 0);
         for (id, buf) in &remote_out {
             buffers.insert(id.clone(), buf.clone());
         }
@@ -190,7 +210,7 @@ mod tests {
             .into_iter()
             .filter(|id| !buffers.contains_key(id))
             .collect();
-        render_subset(&rg, &rest, &mut buffers, frames, &delays);
+        render_subset(&rg, &rest, &mut buffers, frames, &delays, 0);
 
         for (id, buf) in &full {
             assert_eq!(

@@ -133,4 +133,9 @@ describe("command palette", () => {
   test("unknown action ids reject", async () => {
     await expect(runPaletteAction("nope.missing")).rejects.toThrow("unknown action");
   });
+
+  test("action titles carry no product branding", () => {
+    const branded = ACTIONS.filter((a) => /ccez/i.test(a.title)).map((a) => a.id);
+    expect(branded).toEqual([]);
+  });
 });

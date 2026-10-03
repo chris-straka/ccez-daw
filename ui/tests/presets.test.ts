@@ -6,6 +6,7 @@ import {
   DEVICE_PARAM_RANGES,
   NATIVE_PRESETS,
   applyPresetToNode,
+  deviceClassOf,
   findNativePreset,
   presetParamOps,
   seedNativePresetLibrary,
@@ -121,5 +122,15 @@ describe("native preset library", () => {
     // A groove concept query surfaces the drunk-drums starting point.
     const groove = searchLibrary("drunk swung drum groove with slouch", lib, { topK: 3 });
     expect(groove.map((h) => h.item.id)).toContain("hum_drunk_drums");
+  });
+
+  test("deviceClassOf reads the class tag without throwing", () => {
+    const arp = stubNode(findNativePreset("arp_casino_random")!);
+    expect(deviceClassOf(arp)).toBe("arpeggiator");
+    expect(deviceClassOf({ params: [] })).toBeNull();
+    const bogus = {
+      params: [{ id: "device_class", label: "", value: 999, min: 0, max: 999, default: 0, unit: "" }],
+    };
+    expect(deviceClassOf(bogus)).toBeNull();
   });
 });

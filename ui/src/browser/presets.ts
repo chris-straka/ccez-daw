@@ -586,13 +586,23 @@ export function findNativePreset(id: string): NativePreset | undefined {
   return NATIVE_PRESETS.find((p) => p.id === id);
 }
 
-/** Read a stub node's device class from its `device_class` tag param. */
-function nodeClass(node: Pick<Node, "params">): NativeDeviceClass {
+/** Non-throwing class read: `null` when the node is not a native device. */
+export function deviceClassOf(node: Pick<Node, "params">): NativeDeviceClass | null {
   const tag = node.params.find((p) => p.id === "device_class");
   for (const [name, code] of Object.entries(CLASS_CODES)) {
     if (tag?.value === code) return name as NativeDeviceClass;
   }
-  throw new Error(`node is not a native device (device_class ${tag?.value})`);
+  return null;
+}
+
+/** Read a stub node's device class from its `device_class` tag param. */
+function nodeClass(node: Pick<Node, "params">): NativeDeviceClass {
+  const cls = deviceClassOf(node);
+  if (!cls) {
+    const tag = node.params.find((p) => p.id === "device_class");
+    throw new Error(`node is not a native device (device_class ${tag?.value})`);
+  }
+  return cls;
 }
 
 /**

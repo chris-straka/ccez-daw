@@ -109,11 +109,12 @@ The validation path (`punch-take` in `cargo test -p ccez-core record`
 and `bun test tests/record.test.ts`) runs exactly the snippet above on
 both sides of the mirror, so Rust/TS drift shows up as red.
 
-## Why no contract changes
+## Why (almost) no contract changes
 
-Deliberately, this track adds no `OpKind`, no project-schema field, no
-IPC command, and no `contracts/` edit: takes are `ClipAdded` payloads,
-the keeper is a `build_comp` composite, and count-in/monitor state is a
-UI-side concern over the existing `EngineState`. The typegen drift gate
-therefore passes untouched, and parallel tracks extending `emit.rs`
-cannot conflict with this one.
+Deliberately, this track adds no `OpKind` and no project-schema field:
+takes are `ClipAdded` payloads, the keeper is a `build_comp` composite,
+and count-in/monitor state is a UI-side concern. The one additive
+surface is the `engine_record` transport command (`contracts/ipc-table.md`,
+post-freeze row): without it `EngineState::Recording` was unreachable
+and the punch badge could never light. Takes still ride the frozen op
+log, so the typegen drift gate passes with exactly one new command row.

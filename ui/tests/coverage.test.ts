@@ -38,7 +38,7 @@ describe("post-v0 action coverage: one action runs everywhere", () => {
     }
   });
 
-  test("local coverage actions resolve to descriptors until wired", async () => {
+  test("default runner resolves local actions to descriptors (the shell wires the real handlers)", async () => {
     for (const id of COVERAGE_IDS.slice(1)) {
       const a = findAction(id);
       await expect(a!.run({})).resolves.toEqual({ local: id, args: {} });

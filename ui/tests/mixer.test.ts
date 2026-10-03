@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { sampleProject } from "../src/project/sample";
 import {
+  audible,
   captureSnapshot,
   dbToGain,
   effectiveTrackGain,
@@ -12,6 +13,7 @@ import {
   recallSnapshot,
   referenceTracks,
   rms,
+  silenceReason,
   snapshotDiff,
   strips,
   vcaTrim,
@@ -74,6 +76,25 @@ describe("mixer model", () => {
     expect(matchGainFor([], b)).toBe(1);
     expect(rms([])).toBe(0);
     expect(gainToDb(0)).toBe(-120);
+  });
+
+  test("audible mirrors mute/solo routing (solo wins, refs never sound)", () => {
+    const { p } = desk();
+    expect(audible(p, "trk_click")).toBe(true);
+    expect(silenceReason(p, "trk_click")).toBeNull();
+    p.tracks.find((t) => t.id === "trk_click")!.muted = true;
+    expect(audible(p, "trk_click")).toBe(false);
+    expect(silenceReason(p, "trk_click")).toBe("muted");
+    p.tracks.find((t) => t.id === "trk_music")!.solo = true;
+    expect(audible(p, "trk_click")).toBe(false);
+    expect(silenceReason(p, "trk_click")).toBe("soloed out");
+    expect(audible(p, "trk_music")).toBe(true);
+    p.tracks.push({
+      id: "ref_commercial", name: "[REF] Commercial", volume: 0.9, pan: 0,
+      muted: false, solo: false, clip_ids: [], device_ids: [],
+    });
+    expect(audible(p, "ref_commercial")).toBe(false);
+    expect(silenceReason(p, "ref_commercial")).toBe("REF never in mix");
   });
 
   test("reference convention: never in the mix list", () => {

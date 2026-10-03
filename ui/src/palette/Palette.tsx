@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { LOCAL_GUIDANCE } from "../actions/registry";
 import { filterActions, runPaletteAction } from "./model";
 
 /** Thin Solid view over `palette.ts`: fuzzy input + keyboard navigation. */
@@ -22,6 +23,12 @@ export default function Palette(props: {
   });
 
   async function run(id: string) {
+    // Guidance actions stay open showing the text (same copy the shell
+    // surfaces in the header): closing on an inert descriptor looked dead.
+    if (LOCAL_GUIDANCE[id]) {
+      setError(LOCAL_GUIDANCE[id]!);
+      return;
+    }
     try {
       await runPaletteAction(id, {});
       setError(null);

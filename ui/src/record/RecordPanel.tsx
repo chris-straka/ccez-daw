@@ -1,6 +1,6 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import type { ClipKind, EngineState, Op, Project } from "../generated/project";
-import { op_apply } from "../tauri/commands";
+import { engine_position, engine_record, engine_stop, op_apply } from "../tauri/commands";
 import { sampleTimelineDoc, type Section } from "../timeline/model";
 import {
   availableInputDevices,
@@ -43,6 +43,10 @@ export default function RecordPanel(props: {
   /** Latest drained capture block driving the meter (hardware or null). */
   inputSamples?: ArrayLike<number>;
   applyOp?: (op: Op) => Promise<unknown>;
+  /** Mirror transport changes into the shell (the panel starts/stops takes). */
+  onTransport?: (s: EngineState) => void;
+  /** Bump to toggle punch in/out from the global `record.punch` action. */
+  punchNonce?: number;
 }) {
   const [armed, setArmed] = createSignal<string[]>([]);
   const [punchKind, setPunchKind] = createSignal<"manual" | "auto">("auto");
@@ -116,13 +120,61 @@ export default function RecordPanel(props: {
     }
   }
 
-  function punchIn(): void {
+  // Live playhead: follow the engine while it runs; the number box stays
+  // a manual override when stopped (headless/typing a punch range).
+  createEffect(() => {
+    const t = transport();
+    if (t !== "Playing" && t !== "Recording") return;
+    const id = window.setInterval(() => {
+      engine_position({})
+        .then((b) => {
+          if (Number.isFinite(b)) setPlayhead(b);
+        })
+        .catch(() => {});
+    }, 250);
+    onCleanup(() => window.clearInterval(id));
+  });
+
+  // Global `record.punch` action (`r`, palette, native menu): toggle the
+  // pass from anywhere. Runs only when the nonce changes.
+  const [handledNonce, setHandledNonce] = createSignal(0);
+  createEffect(() => {
+    const n = props.punchNonce ?? 0;
+    if (n !== 0 && n !== handledNonce()) {
+      setHandledNonce(n);
+      if (untrack(passStart) === null) void punchIn();
+      else punchOut();
+    }
+  });
+
+  async function punchIn(): Promise<void> {
     if (passStart() !== null) {
       setStatus("record: already punched in — punch out first");
       return;
     }
+    // A take pass rolls the transport in Recording (song audible for
+    // context). Headless/no-bridge still marks the pass so ranges stay
+    // committable — the status says which happened.
+    if (transport() !== "Recording") {
+      try {
+        props.onTransport?.(await engine_record({}));
+      } catch {
+        setStatus("record: transport unavailable — marking pass without rolling");
+        setPassStart(playhead());
+        return;
+      }
+    }
     setPassStart(playhead());
     setStatus(`record: punched in @ ${playhead()}`);
+  }
+
+  async function stopTransport(): Promise<void> {
+    try {
+      props.onTransport?.(await engine_stop({}));
+      setStatus("record: transport stopped");
+    } catch (e) {
+      setStatus(`record: stop failed: ${String(e)}`);
+    }
   }
 
   function punchOut(): void {
@@ -284,11 +336,14 @@ export default function RecordPanel(props: {
               style={{ width: "64px" }}
             />
           </label>
-          <button data-testid="record-punch-in" onClick={punchIn}>
+          <button data-testid="record-punch-in" onClick={() => void punchIn()}>
             Punch in
           </button>
           <button data-testid="record-punch-out" onClick={punchOut}>
             Punch out
+          </button>
+          <button data-testid="record-stop" onClick={() => void stopTransport()}>
+            Stop
           </button>
           <span class={`engine-badge${punching() ? " playing" : ""}`} data-testid="record-punch-state">
             {punching() ? "● punching" : "○ idle"}

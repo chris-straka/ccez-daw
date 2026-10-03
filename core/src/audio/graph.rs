@@ -113,7 +113,9 @@ impl AudioGraph {
         graph
     }
 
-    fn ensure_node(&mut self, id: &str) {
+    /// Insert a bare node when absent (the live loop's `mix` sink is not
+    /// necessarily a project node). Additive; topology inference unchanged.
+    pub fn ensure_node(&mut self, id: &str) {
         if !self.nodes.contains_key(id) {
             self.nodes.insert(
                 id.to_string(),

@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Op, Project } from "../generated/project";
 import { op_apply } from "../tauri/commands";
 import {
@@ -38,6 +38,10 @@ export function quantForKind(kind: QuantKind): LaunchQuant {
 export default function SessionView(props: {
   project: Project | null;
   applyOp?: (op: Op) => Promise<unknown>;
+  /** Bump to launch the selected slot from the global `session.launch` action. */
+  launchNonce?: number;
+  /** Bump to record the pending jam from `session.jam_record`. */
+  jamNonce?: number;
 }) {
   const doc = sampleTimelineDoc();
   const [quantKind, setQuantKind] = createSignal<QuantKind>("bar");
@@ -96,6 +100,47 @@ export default function SessionView(props: {
       setLastLaunch(`launch failed: ${String(e)}`);
     }
   }
+
+  // Keyboard launcher model: one slot is selected (clicking a slot
+  // selects it too); the global `session.launch` action (`S`) fires the
+  // selection. Defaults to the first slot so `S` works immediately.
+  const defaultSlot = createMemo((): { section_id: string; track_id: string } | null => {
+    const project = props.project;
+    if (!project) return null;
+    const first = launcherSlots(project, doc).find((s) => s.section_id === doc.sections[0]?.id);
+    return first ? { section_id: first.section_id, track_id: first.track_id } : null;
+  });
+  const [selected, setSelected] = createSignal<{ section_id: string; track_id: string } | null>(null);
+  const selectedSlot = () => selected() ?? defaultSlot();
+
+  function launchSelected(): void {
+    const slot = selectedSlot();
+    if (!slot) {
+      setLastLaunch("nothing to launch — no slots");
+      return;
+    }
+    launchSlot(slot.section_id, slot.track_id);
+  }
+
+  // Global actions (`S` / `J`, palette, menus): run only on nonce changes,
+  // and only once the project has loaded (a key pressed during startup waits
+  // for it instead of firing into nothing).
+  const [handledLaunch, setHandledLaunch] = createSignal(0);
+  createEffect(() => {
+    const n = props.launchNonce ?? 0;
+    if (n !== 0 && n !== handledLaunch() && props.project) {
+      setHandledLaunch(n);
+      launchSelected();
+    }
+  });
+  const [handledJam, setHandledJam] = createSignal(0);
+  createEffect(() => {
+    const n = props.jamNonce ?? 0;
+    if (n !== 0 && n !== handledJam() && props.project) {
+      setHandledJam(n);
+      void recordJam();
+    }
+  });
 
   async function recordJam(): Promise<void> {
     const project = props.project;
@@ -176,11 +221,17 @@ export default function SessionView(props: {
                   <button
                     data-testid={`slot-launch-${slot.section_id}-${slot.track_id}`}
                     title={`${slot.track_id}: ${slot.clip_ids.join(", ") || "silent"}`}
-                    onClick={() => launchSlot(slot.section_id, slot.track_id)}
+                    onClick={() => {
+                      setSelected({ section_id: slot.section_id, track_id: slot.track_id });
+                      launchSlot(slot.section_id, slot.track_id);
+                    }}
                     class="slot-btn"
                     classList={{
                       filled: slot.clip_ids.length > 0,
                       silent: slot.clip_ids.length === 0,
+                      selected:
+                        selectedSlot()?.section_id === slot.section_id &&
+                        selectedSlot()?.track_id === slot.track_id,
                     }}
                   >
                     {slot.clip_ids.join(", ") || "—"}

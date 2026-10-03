@@ -23,6 +23,7 @@ pub mod device;
 pub mod input;
 pub mod graph;
 pub mod link;
+pub mod live;
 #[cfg(feature = "link-net")]
 pub mod link_net;
 pub mod render;
@@ -45,5 +46,6 @@ pub use transport::{
     NULL_BLOCK_FRAMES,
 };
 pub use graph::{AudioGraph, GraphError, LATENCY_PARAM};
+pub use live::{live_graph, loop_beats, MAX_LIVE_LOOP_BEATS, MIN_LIVE_LOOP_BEATS};
 pub use render::{Proc, RenderGraph};
 pub use schedule::{Placement, RemoteRef, Schedule, ScheduleError};

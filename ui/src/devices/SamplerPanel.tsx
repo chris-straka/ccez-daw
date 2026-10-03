@@ -22,6 +22,9 @@ export default function SamplerPanel(props: {
 }) {
   const [sampleKey, setSampleKey] = createSignal("");
   const [status, setStatus] = createSignal("");
+  // Same drag-local pattern as the mixer strips: the thumb follows the
+  // pointer, the op commits on release.
+  const [drafts, setDrafts] = createSignal<Record<string, number>>({});
 
   const apply = (op: Op): Promise<unknown> =>
     props.applyOp ? props.applyOp(op) : op_apply({ op });
@@ -48,7 +51,16 @@ export default function SamplerPanel(props: {
     testid: string,
   ) {
     const node = () => props.node;
-    const val = () => (node() ? paramValue(node() as Node, param, min) : min);
+    const committed = () => (node() ? paramValue(node() as Node, param, min) : min);
+    const val = () => drafts()[param] ?? committed();
+    function release(raw: number): void {
+      setDrafts((d) => {
+        const next = { ...d };
+        delete next[param];
+        return next;
+      });
+      void setParam(param, raw);
+    }
     return (
       <label class="mixer-label">
         {label}{" "}
@@ -60,7 +72,8 @@ export default function SamplerPanel(props: {
           max={max}
           step={step}
           value={val()}
-          onInput={(e) => void setParam(param, Number(e.currentTarget.value))}
+          onInput={(e) => setDrafts((d) => ({ ...d, [param]: Number(e.currentTarget.value) }))}
+          onChange={(e) => release(Number(e.currentTarget.value))}
         />
       </label>
     );

@@ -1,10 +1,16 @@
 /** Typed invoke wrappers over the generated v0 IPC bindings. */
 export { EVENTS } from "../generated/ipc";
 export {
+  asset_list,
+  asset_load,
+  asset_store,
   clip_add,
   engine_play,
+  engine_position,
+  engine_record,
   engine_set_tempo,
   engine_stop,
+  link_toggle,
   op_apply,
   op_redo,
   op_undo,

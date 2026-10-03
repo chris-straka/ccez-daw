@@ -124,11 +124,11 @@ fn mix_rig(stems: usize) -> (RenderGraph, BTreeMap<(String, String), u64>) {
 fn graph_render_block_stays_in_budget() {
     let (g, delays) = rig();
     // Warm up once (page faults, first BTreeMap grows), then time.
-    let first = g.render(FRAMES, 1, &delays).expect("renders");
+    let first = g.render(FRAMES, 1, &delays, 0).expect("renders");
     assert_eq!(first["mix"][64], 2.0);
     let start = Instant::now();
     for _ in 0..GRAPH_ITERS {
-        let out = g.render(FRAMES, 1, &delays).expect("renders");
+        let out = g.render(FRAMES, 1, &delays, 0).expect("renders");
         std::hint::black_box(out["mix"][64]);
     }
     let elapsed = start.elapsed();
@@ -141,11 +141,11 @@ fn graph_render_block_stays_in_budget() {
 #[test]
 fn mixer_sum_stays_in_budget() {
     let (g, delays) = mix_rig(8);
-    let first = g.render(FRAMES, 1, &delays).expect("renders");
+    let first = g.render(FRAMES, 1, &delays, 0).expect("renders");
     assert!((first["mix"][0] - 1.0).abs() < 1e-6);
     let start = Instant::now();
     for _ in 0..MIX_ITERS {
-        let out = g.render(FRAMES, 1, &delays).expect("renders");
+        let out = g.render(FRAMES, 1, &delays, 0).expect("renders");
         std::hint::black_box(out["mix"][0]);
     }
     let elapsed = start.elapsed();

@@ -117,9 +117,10 @@ pub fn render_mono_block(
     delays: &std::collections::BTreeMap<(String, String), u64>,
     out_node: &str,
     frames: usize,
+    start_frame: u64,
 ) -> Option<Vec<f32>> {
     let g = graph?;
-    g.render(frames, 1, delays).ok()?.remove(out_node)
+    g.render(frames, 1, delays, start_frame).ok()?.remove(out_node)
 }
 
 /// Thread-safe block counters shared between an audio callback (or the
@@ -165,6 +166,10 @@ pub struct NullBackend {
     graph: Option<RenderGraph>,
     delays: std::collections::BTreeMap<(String, String), u64>,
     out_node: String,
+    /// Running frame count across pumps: the loop position. A graph swap
+    /// keeps it (edits must not restart the loop), only construction
+    /// zeroes it.
+    rendered_frames: u64,
     /// Rendered output blocks, for assertions. (The cpal side writes to
     /// the device instead of keeping these.)
     pub rendered: Vec<Vec<f32>>,
@@ -191,6 +196,7 @@ impl NullBackend {
             graph: None,
             delays: std::collections::BTreeMap::new(),
             out_node: "mix".to_string(),
+            rendered_frames: 0,
             rendered: Vec::new(),
             drained: 0,
             counters,
@@ -236,13 +242,20 @@ impl AudioBackend for NullBackend {
         }
         // Same code path as the cpal callback: byte-identical by
         // construction (see `render_mono_block`).
-        let block = match render_mono_block(self.graph.as_ref(), &self.delays, &self.out_node, frames) {
+        let block = match render_mono_block(
+            self.graph.as_ref(),
+            &self.delays,
+            &self.out_node,
+            frames,
+            self.rendered_frames,
+        ) {
             Some(b) => b,
             None => {
                 self.counters.underruns.fetch_add(1, Ordering::Relaxed);
                 vec![0.0; frames]
             }
         };
+        self.rendered_frames += frames as u64;
         self.counters.blocks.fetch_add(1, Ordering::Relaxed);
         self.rendered.push(block);
         true
@@ -403,6 +416,9 @@ pub(crate) struct CallbackState {
     out_node: String,
     silence: Vec<f32>,
     counters: SharedCounters,
+    /// Running frame count across callbacks: the loop position (a graph
+    /// swap keeps it, like [`NullBackend`]).
+    rendered_frames: u64,
 }
 
 impl CallbackState {
@@ -425,6 +441,7 @@ impl CallbackState {
             out_node,
             silence: Vec::new(),
             counters,
+            rendered_frames: 0,
         }
     }
 
@@ -458,9 +475,16 @@ impl CallbackState {
         // Render serially in the callback (block is small); the multicore
         // schedule pays off in the offline renderer.
         static EMPTY: Vec<f32> = Vec::new();
-        match render_mono_block(self.graph.as_ref(), &self.delays, &self.out_node, frames) {
+        match render_mono_block(
+            self.graph.as_ref(),
+            &self.delays,
+            &self.out_node,
+            frames,
+            self.rendered_frames,
+        ) {
             Some(buf) => {
                 self.counters.blocks.fetch_add(1, Ordering::Relaxed);
+                self.rendered_frames += frames as u64;
                 self.silence = buf;
                 &self.silence
             }

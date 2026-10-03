@@ -39,12 +39,16 @@ export default function ShortcutEditor(props: {
   const badKeys = createMemo(() => contestedKeys(table()));
   const conflicts = createMemo(() => findConflicts(table()));
 
+  // Focus the search box on open like the command palette, so Escape lands
+  // inside the dialog (where it closes) instead of in the vim layer.
+  let searchEl: HTMLInputElement | undefined;
   createEffect(() => {
     if (props.open) {
       setTable(loadEditorTable(activeStore()));
       setQuery("");
       setDrafts({});
       setNotice(null);
+      queueMicrotask(() => searchEl?.focus());
     }
   });
 
@@ -76,6 +80,15 @@ export default function ShortcutEditor(props: {
     );
   }
 
+  // Escape closes like the command palette (which also stops the key from
+  // reaching the vim layer while the editor is open).
+  function onKey(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      props.onClose();
+    }
+  }
+
   function reset() {
     const fresh = resetEditor(activeStore());
     setTable(fresh);
@@ -92,10 +105,12 @@ export default function ShortcutEditor(props: {
           role="dialog"
           aria-label="Shortcuts editor"
           class="palette-dialog editor-dialog"
+          onKeyDown={onKey}
         >
           <div class="session-controls">
             <strong>Shortcuts</strong>
             <input
+              ref={searchEl}
               placeholder="Search keys or actions…"
               value={query()}
               onInput={(e) => setQuery(e.currentTarget.value)}

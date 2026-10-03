@@ -146,11 +146,19 @@ let key = freeze_track(&mut engine, &project, "trk", &config)?; // travels in bu
 Two honest v1 limits (not hidden): clip sources render procedurally —
 `builtin:click` audio clips render metronome clicks, MIDI clips render a
 loop-clean reference tone (exactly 220 cycles per beat, so whole-beat
-windows wrap without a click) — because engine assets are opaque blobs
-with no decoder yet. Real sample/MIDI decoding lands behind this same
-API. And device chains contribute only `gain`/`volume` params; full DSP
+windows wrap without a click) — except Audio clips naming `asset:` keys,
+which render decoded WAV audio from the engine's audio assets (a dangling
+key renders silence, never a tone). MIDI note bytes still have no decoder.
+And device chains contribute only `gain`/`volume` params; full DSP
 lands with the device track. Pan is ignored: v1 stems are mono, the
 standard shape for looped game deliverables.
+
+Live playback hears exactly what export hears: the shell pushes the
+pre-rendered mix loop (`core/src/audio/live.rs`, a `Proc::Loop` on the
+`mix` sink) on play/record and every applied op, so Space plays the
+song instead of topology silence. The loop spans the longest clip end
+(clamped to 256 beats) at the push-time tempo — a tempo change
+re-renders from the loop start.
 
 How to verify: `cargo test --manifest-path core/Cargo.toml bounce` — 10
 tests covering exact stem length + full-window loop points, loop-clean

@@ -1,7 +1,7 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { Clip, Op, Project } from "../generated/project";
-import type { MidiClip } from "../pianoroll/model";
-import { op_apply } from "../tauri/commands";
+import { decodeClip, type MidiClip } from "../pianoroll/model";
+import { asset_load, asset_store } from "../tauri/commands";
 import ScoreView from "./ScoreView";
 import type { Clef } from "./pitch";
 import {
@@ -9,7 +9,6 @@ import {
   midiClips,
   readScoreClip,
   resolveScoreClip,
-  scoreCommitOp,
   writeScoreClip,
 } from "./score";
 import {
@@ -29,8 +28,9 @@ import {
  *   with no saved bytes yet show an empty staff of the clip's length.
  * - Staff gestures commit through the piano-roll store (`createNoteAtStep`
  *   keeps the same `note_id` sequence, no schema change) and report through
- *   `onEdit`; Commit persists the timeline side as one frozen `ClipAdded`
- *   op through the existing `op_apply` (undoable, no new IPC).
+ *   `onEdit`; Commit persists the working note bytes to the asset store —
+ *   frozen metadata alone would drop every edit. Content commits are
+ *   file-durable, not op-log undoable: there is no note-level op kind.
  * - Pass `assets` to model the engine asset store in tests/hosts; pass
  *   `applyOp` to override the transport (tests).
  */
@@ -46,11 +46,32 @@ export default function ScorePanel(props: {
   const [selection, setSelection] = createSignal<NoteSelection>(new Set<number>());
   const [status, setStatus] = createSignal("pick a MIDI clip — the staff follows it");
 
-  const apply = (op: Op): Promise<unknown> =>
-    props.applyOp ? props.applyOp(op) : op_apply({ op });
-
   const clips = createMemo(() => midiClips(props.project));
   const frozen = createMemo(() => resolveScoreClip(props.project, picked()));
+
+  /** Asset key for a clip's note bytes: explicit source, else per-clip default. */
+  function assetKey(f: Clip): string {
+    return f.source || `${f.id}.mid`;
+  }
+
+  // Hydrate the working clip from durable bytes on first view. Local edits
+  // (overrides) always win: a load never clobbers them.
+  createEffect(() => {
+    const f = frozen();
+    if (!f || overrides()[f.id]) return;
+    const key = assetKey(f);
+    asset_load({ key })
+      .then((bytes) => {
+        if (!bytes || bytes.length === 0) return;
+        try {
+          const clip = decodeClip(new Uint8Array(bytes));
+          setOverrides((o) => (o[f.id] ? o : { ...o, [f.id]: clip }));
+        } catch {
+          // Corrupt asset: fall back to the empty staff below.
+        }
+      })
+      .catch(() => {});
+  });
 
   function working(): { clip: MidiClip; frozen: Clip } | null {
     const f = frozen();
@@ -110,8 +131,10 @@ export default function ScorePanel(props: {
     const w = working();
     if (!w) return;
     try {
-      await apply(scoreCommitOp("ui", w.frozen));
-      setStatus(`committed ${w.frozen.id} (ClipAdded op, undoable)`);
+      const bytes = Array.from(new TextEncoder().encode(writeScoreClip(w.clip)));
+      await asset_store({ key: assetKey(w.frozen), kind: "midi", bytes });
+      const n = w.clip.notes.length;
+      setStatus(`Committed ${n} note${n === 1 ? "" : "s"} (saved)`);
     } catch (e) {
       setStatus(`commit refused: ${String(e)}`);
     }

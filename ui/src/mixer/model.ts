@@ -107,6 +107,35 @@ export function effectiveTrackGain(project: Project, groups: VcaGroup[], trackId
   return track.volume * vcaTrim(groups, trackId) * bus;
 }
 
+/**
+ * Is `trackId` audible under the project's mute/solo state? Mirrors
+ * `audible` in `core/src/mixer.rs`: solo wins over mute (any solo → only
+ * solos sound); reference tracks never sound in the mix.
+ */
+export function audible(project: Project, trackId: string): boolean {
+  const track = project.tracks.find((t) => t.id === trackId);
+  if (!track) throw new Error(`unknown mixer track \`${trackId}\``);
+  if (isReferenceTrack(track.id, track.name)) return false;
+  const anySolo = project.tracks.some(
+    (t) =>
+      (t.solo && !isReferenceTrack(t.id, t.name) && t.id !== trackId) ||
+      (t.id === trackId && t.solo),
+  );
+  if (anySolo) return track.solo;
+  return !track.muted;
+}
+
+/** Why `audible` is false (`null` when the track sounds). */
+export function silenceReason(project: Project, trackId: string): string | null {
+  if (audible(project, trackId)) return null;
+  const track = project.tracks.find((t) => t.id === trackId);
+  if (track && isReferenceTrack(track.id, track.name)) return "REF never in mix";
+  const otherSolo = project.tracks.some(
+    (t) => t.id !== trackId && t.solo && !isReferenceTrack(t.id, t.name),
+  );
+  return otherSolo ? "soloed out" : "muted";
+}
+
 export interface MixerSnapshot {
   name: string;
   volumes: Record<string, number>;

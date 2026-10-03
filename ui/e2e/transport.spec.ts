@@ -11,6 +11,24 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
 });
 
+test("play button toggles play then stop", async ({ page }) => {
+  await page.getByRole("button", { name: "▶" }).click();
+  expect((await ipcCalls(page)).map((c) => c.cmd)).toContain("engine_play");
+  await expect(page.getByRole("button", { name: "❚❚" })).toBeVisible();
+  await page.getByRole("button", { name: "❚❚" }).click();
+  expect((await ipcCalls(page)).map((c) => c.cmd)).toContain("engine_stop");
+  await expect(page.getByRole("button", { name: "▶" })).toBeVisible();
+});
+
+test("space toggles play then stop", async ({ page }) => {
+  await page.keyboard.press("Space");
+  expect((await ipcCalls(page)).map((c) => c.cmd)).toContain("engine_play");
+  await expect(page.getByRole("button", { name: "❚❚" })).toBeVisible();
+  await page.keyboard.press("Space");
+  expect((await ipcCalls(page)).map((c) => c.cmd)).toContain("engine_stop");
+  await expect(page.getByRole("button", { name: "▶" })).toBeVisible();
+});
+
 test("undo button appends op_undo", async ({ page }) => {
   await page.getByTestId("undo-btn").click();
   const calls = await ipcCalls(page);

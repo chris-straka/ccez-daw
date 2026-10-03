@@ -1,5 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
 import type { Node, Op } from "../generated/project";
+import { previewNote } from "../audio/preview";
 import { op_apply } from "../tauri/commands";
 import {
   DEFAULT_PAD_NAMES,
@@ -50,6 +51,9 @@ export default function DrumRackPanel(props: {
     setSelected(pad);
     const hit = rack()[pad];
     props.onStrike?.(hit);
+    // Audible immediately through the UI-local voice (pad note + trim
+    // transpose/gain); the engine mix only renders committed clips.
+    previewNote(hit.note + hit.transpose, { gain: hit.gain, seconds: 0.18 });
     setStatus(
       `pad ${pad} → ${hit.trackId}:${hit.note} (${DEFAULT_PAD_NAMES[pad]})` +
         (hit.deviceId ? ` · trim → ${hit.deviceId}` : " · unbound (trim stays local)"),

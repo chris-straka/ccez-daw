@@ -9,11 +9,20 @@ import {
   matchGainFor,
   recallSnapshot,
   referenceTracks,
+  silenceReason,
   snapshotDiff,
   strips,
   type MixerSnapshot,
   type VcaGroup,
 } from "./model";
+
+/** Fader readout: effective gain while audible, the honest reason when not. */
+function gainReadout(project: Project, groups: VcaGroup[], id: string, vol: number): string {
+  const reason = silenceReason(project, id);
+  return reason
+    ? `${vol.toFixed(2)} (silent — ${reason})`
+    : `${vol.toFixed(2)} (eff ${effectiveTrackGain(project, groups, id).toFixed(2)})`;
+}
 
 /**
  * Track G: mixer console view.
@@ -34,6 +43,25 @@ export default function Mixer(props: {
   const [slotB, setSlotB] = createSignal<MixerSnapshot | null>(null);
   const [ab, setAb] = createSignal<"A" | "B">("A");
   const [note, setNote] = createSignal("");
+  // In-flight drag positions, keyed `trackId:field`. The thumb follows the
+  // pointer locally; the backend commits once on release (onChange). Without
+  // this, every drag pixel awaits a full op_apply + project_get round-trip
+  // and each refresh yanks the thumb back mid-gesture.
+  const [drafts, setDrafts] = createSignal<Record<string, number>>({});
+  const draftKey = (id: string, field: "volume" | "pan") => `${id}:${field}`;
+  const shown = (id: string, field: "volume" | "pan", committed: number) =>
+    drafts()[draftKey(id, field)] ?? committed;
+  function preview(id: string, field: "volume" | "pan", value: number): void {
+    setDrafts((d) => ({ ...d, [draftKey(id, field)]: value }));
+  }
+  function commit(id: string, field: "volume" | "pan", value: number): void {
+    setDrafts((d) => {
+      const next = { ...d };
+      delete next[draftKey(id, field)];
+      return next;
+    });
+    props.onPatch(id, field, value);
+  }
 
   const list = () => strips(props.project);
   const refs = () => referenceTracks(props.project);
@@ -70,7 +98,7 @@ export default function Mixer(props: {
   }
 
   return (
-    <div class="session-view">
+    <div id="mixer-view" data-testid="mixer-view" tabIndex={-1} class="session-view">
       <Show when={refs().length > 0}>
         <div class="mixer-ref">
           REF (never in mix): {refs().join(", ")} — cue solo-listens the reference, mix stays muted.
@@ -91,29 +119,34 @@ export default function Mixer(props: {
               <label class="mixer-label">
                 vol
                 <input
+                  data-testid={`mixer-vol-${s.id}`}
                   type="range"
                   min="0"
                   max="1.5"
                   step="0.01"
-                  value={s.volume}
-                  onInput={(e) => props.onPatch(s.id, "volume", Number(e.target.value))}
+                  value={shown(s.id, "volume", s.volume)}
+                  onInput={(e) => preview(s.id, "volume", Number(e.target.value))}
+                  onChange={(e) => commit(s.id, "volume", Number(e.target.value))}
                 />
-                <span class="mixer-values">{s.volume.toFixed(2)} (eff {effectiveTrackGain(props.project, groups(), s.id).toFixed(2)})</span>
+                <span class="mixer-values">{gainReadout(props.project, groups(), s.id, shown(s.id, "volume", s.volume))}</span>
               </label>
               <label class="mixer-label">
                 pan
                 <input
+                  data-testid={`mixer-pan-${s.id}`}
                   type="range"
                   min="-1"
                   max="1"
                   step="0.01"
-                  value={s.pan}
-                  onInput={(e) => props.onPatch(s.id, "pan", Number(e.target.value))}
+                  value={shown(s.id, "pan", s.pan)}
+                  onInput={(e) => preview(s.id, "pan", Number(e.target.value))}
+                  onChange={(e) => commit(s.id, "pan", Number(e.target.value))}
                 />
-                <span class="mixer-values">{s.pan.toFixed(2)}</span>
+                <span class="mixer-values">{shown(s.id, "pan", s.pan).toFixed(2)}</span>
               </label>
               <div class="scene-row">
                 <button
+                  data-testid={`mixer-mute-${s.id}`}
                   class="mute-btn"
                   classList={{ on: s.muted }}
                   onClick={() => props.onPatch(s.id, "muted", !s.muted)}
@@ -121,6 +154,7 @@ export default function Mixer(props: {
                   M
                 </button>
                 <button
+                  data-testid={`mixer-solo-${s.id}`}
                   class="solo-btn"
                   classList={{ on: s.solo }}
                   onClick={() => props.onPatch(s.id, "solo", !s.solo)}
