@@ -11,6 +11,24 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
 });
 
+test("play button toggles play then stop", async ({ page }) => {
+  await page.getByRole("button", { name: "▶" }).click();
+  expect((await ipcCalls(page)).map((c) => c.cmd)).toContain("engine_play");
+  await expect(page.getByRole("button", { name: "❚❚" })).toBeVisible();
+  await page.getByRole("button", { name: "❚❚" }).click();
+  expect((await ipcCalls(page)).map((c) => c.cmd)).toContain("engine_stop");
+  await expect(page.getByRole("button", { name: "▶" })).toBeVisible();
+});
+
+test("space toggles play then stop", async ({ page }) => {
+  await page.keyboard.press("Space");
+  expect((await ipcCalls(page)).map((c) => c.cmd)).toContain("engine_play");
+  await expect(page.getByRole("button", { name: "❚❚" })).toBeVisible();
+  await page.keyboard.press("Space");
+  expect((await ipcCalls(page)).map((c) => c.cmd)).toContain("engine_stop");
+  await expect(page.getByRole("button", { name: "▶" })).toBeVisible();
+});
+
 test("undo button appends op_undo", async ({ page }) => {
   await page.getByTestId("undo-btn").click();
   const calls = await ipcCalls(page);
@@ -43,3 +61,13 @@ test("new sends the typed name", async ({ page }) => {
   expect(created).toBeDefined();
   expect(created?.args).toMatchObject({ name: "e2e-song" });
 });
+
+for (const action of ["new", "open"] as const) {
+  test(`${action} stops the previous transport in the shell`, async ({ page }) => {
+    await page.getByTestId("project-path").fill("/tmp/e2e-other");
+    await page.getByRole("button", { name: "▶" }).click();
+    await expect(page.getByRole("button", { name: "❚❚" })).toBeVisible();
+    await page.getByTestId(`project-${action}`).click();
+    await expect(page.getByRole("button", { name: "▶" })).toBeVisible();
+  });
+}

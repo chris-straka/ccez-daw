@@ -32,6 +32,11 @@ pub enum Proc {
     Delay(u64),
     /// Sums its inputs sample by sample.
     Mix,
+    /// Loops a pre-rendered buffer (the live transport's mix loop):
+    /// frame `t` of the block starting at `start_frame` reads
+    /// `buf[(start_frame + t) % buf.len()]`. Empty buffer = silence.
+    /// Ignores inputs like [`Proc::Impulse`].
+    Loop { buf: Vec<f32> },
 }
 
 /// Executable form of an [`AudioGraph`]: signal topology plus one [`Proc`]
@@ -72,12 +77,15 @@ impl RenderGraph {
     /// by node id. `threads == 1` renders serially; higher values split each
     /// schedule level across scoped threads — bit-identical either way.
     /// `edge_delays` carries [`AudioGraph::all_edge_delays`] compensation
-    /// (pass an empty map for the uncompensated behavior).
+    /// (pass an empty map for the uncompensated behavior). `start_frame`
+    /// is the running frame count (the backends track it): only
+    /// [`Proc::Loop`] reads it; every other proc renders position-free.
     pub fn render(
         &self,
         frames: usize,
         threads: usize,
         edge_delays: &BTreeMap<(String, String), u64>,
+        start_frame: u64,
     ) -> Result<BTreeMap<String, Vec<f32>>, ScheduleError> {
         let schedule = Schedule::build(&self.topo)?;
         schedule.require_all_local()?;
@@ -85,7 +93,10 @@ impl RenderGraph {
         for level in &schedule.levels {
             if threads <= 1 || level.len() < 2 {
                 for id in level {
-                    buffers.insert(id.clone(), self.render_node(id, frames, &buffers, edge_delays));
+                    buffers.insert(
+                        id.clone(),
+                        self.render_node(id, frames, &buffers, edge_delays, start_frame),
+                    );
                 }
             } else {
                 // Scoped threads borrow `buffers` read-only; each thread
@@ -98,7 +109,7 @@ impl RenderGraph {
                             s.spawn(|| {
                                 (
                                     id.clone(),
-                                    self.render_node(id, frames, &buffers, edge_delays),
+                                    self.render_node(id, frames, &buffers, edge_delays, start_frame),
                                 )
                             })
                         })
@@ -121,6 +132,7 @@ impl RenderGraph {
         frames: usize,
         buffers: &BTreeMap<String, Vec<f32>>,
         edge_delays: &BTreeMap<(String, String), u64>,
+        start_frame: u64,
     ) -> Vec<f32> {
         // Sum producer buffers, each shifted by its compensation delay.
         // A delay of d drops the producer's first d frames into the line
@@ -171,6 +183,15 @@ impl RenderGraph {
                 out
             }
             Proc::Mix => input,
+            Proc::Loop { buf } => {
+                if buf.is_empty() {
+                    return vec![0.0; frames];
+                }
+                let len = buf.len() as u64;
+                (0..frames)
+                    .map(|t| buf[((start_frame + t as u64) % len) as usize])
+                    .collect()
+            }
         }
     }
 }
@@ -250,7 +271,7 @@ mod tests {
             kind: EdgeKind::Audio,
         });
         let g = RenderGraph::from_audio_graph(AudioGraph::from_project(&p));
-        let out = g.render(512, 4, &BTreeMap::new()).expect("renders");
+        let out = g.render(512, 4, &BTreeMap::new(), 0).expect("renders");
         for (id, buf) in &out {
             assert!(buf.iter().all(|&s| s == 0.0), "{id} must be silent");
         }
@@ -272,7 +293,7 @@ mod tests {
 
         // Compensated: both impulses land on frame 64 -> peak of 2.0 there,
         // zeros everywhere else.
-        let out = g.render(256, 1, &delays).expect("renders");
+        let out = g.render(256, 1, &delays, 0).expect("renders");
         let mix = &out["mix"];
         assert_eq!(mix.len(), 256);
         for (t, &s) in mix.iter().enumerate() {
@@ -286,16 +307,38 @@ mod tests {
         // Uncompensated (empty delays): the fast impulse leaks at frame 0
         // while the delayed one lands at 64 — audibly a flam, measurably a
         // misalignment. This is the bug compensation exists to fix.
-        let raw = g.render(256, 1, &BTreeMap::new()).expect("renders");
+        let raw = g.render(256, 1, &BTreeMap::new(), 0).expect("renders");
         assert_eq!(raw["mix"][0], 1.0);
         assert_eq!(raw["mix"][64], 1.0);
     }
 
     #[test]
+    fn loop_proc_reads_at_block_offset_and_wraps() {
+        // The live transport loops a pre-rendered mix buffer: block N
+        // starts at buffer offset N, wrapping at the buffer end.
+        let mut p = Project::new("p", "Loop");
+        p.tracks.push(track("a"));
+        p.routing.push(Edge {
+            id: "e1".to_string(),
+            from_node: "a".to_string(),
+            from_port: "out".to_string(),
+            to_node: "mix".to_string(),
+            to_port: "in".to_string(),
+            kind: EdgeKind::Audio,
+        });
+        let mut g = RenderGraph::from_audio_graph(AudioGraph::from_project(&p));
+        g.set_proc("mix", Proc::Loop { buf: vec![1.0, 2.0, 3.0, 4.0] });
+        let out = g.render(4, 1, &BTreeMap::new(), 0).expect("renders");
+        assert_eq!(out["mix"], vec![1.0, 2.0, 3.0, 4.0]);
+        let out = g.render(4, 1, &BTreeMap::new(), 2).expect("renders");
+        assert_eq!(out["mix"], vec![3.0, 4.0, 1.0, 2.0]);
+    }
+
+    #[test]
     fn multicore_render_is_bit_identical() {
         let (g, delays) = rig();
-        let serial = g.render(256, 1, &delays).expect("serial");
-        let parallel = g.render(256, 8, &delays).expect("parallel");
+        let serial = g.render(256, 1, &delays, 0).expect("serial");
+        let parallel = g.render(256, 8, &delays, 0).expect("parallel");
         assert_eq!(serial, parallel);
     }
 }

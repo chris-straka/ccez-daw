@@ -13,15 +13,17 @@ const KINDS: KindFilter[] = ["All", "Sample", "Preset", "Plugin", "Project"];
  * A single search box indexes samples, presets, plugins, and projects
  * together; kind tabs filter, semantic ranking orders. Results show the
  * cosine score so users learn what "similar" means here. `onPick` lets
- * host views (timeline, mixer) insert the chosen entry; by default picking
- * just highlights the row.
+ * host views (timeline, mixer) insert the chosen entry; it may return a
+ * one-line outcome message, shown under the list so picks never fail
+ * silently. By default picking just highlights the row.
  */
 export default function BrowserPalette(props: {
-  onPick?: (item: LibraryItem) => void;
+  onPick?: (item: LibraryItem) => Promise<string | void> | string | void;
 }) {
   const [query, setQuery] = createSignal("");
   const [kind, setKind] = createSignal<KindFilter>("All");
   const [picked, setPicked] = createSignal<string | null>(null);
+  const [note, setNote] = createSignal<string | null>(null);
 
   // Demo seeds plus the curated native preset library: every preset is
   // a searchable Preset row, stamped through ParamSet ops by the host view.
@@ -30,9 +32,15 @@ export default function BrowserPalette(props: {
     searchLibrary(query(), items(), { kind: kind(), topK: 8 }),
   );
 
-  function pick(item: LibraryItem) {
+  async function pick(item: LibraryItem) {
     setPicked(item.id);
-    props.onPick?.(item);
+    setNote(null);
+    try {
+      const msg = await props.onPick?.(item);
+      if (msg) setNote(msg);
+    } catch (e) {
+      setNote(`pick refused: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   return (
@@ -62,9 +70,10 @@ export default function BrowserPalette(props: {
           {({ item, score }) => (
             <li>
               <button
+                data-testid={`browser-row-${item.id}`}
                 class="browser-row"
                 classList={{ selected: picked() === item.id }}
-                onClick={() => pick(item)}
+                onClick={() => void pick(item)}
                 style={{ display: "flex", gap: "6px", width: "100%", "text-align": "left", border: "none", background: "transparent" }}
               >
                 <span class={`kind-chip kind-${item.kind.toLowerCase()}`}>
@@ -88,6 +97,9 @@ export default function BrowserPalette(props: {
         {results().length} result(s) · {getDefaultProvider().name} · semantic
         similarity search
       </div>
+      <Show when={note()}>
+        <div class="mixer-foot" data-testid="browser-note">{note()}</div>
+      </Show>
     </div>
   );
 }

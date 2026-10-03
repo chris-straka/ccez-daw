@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Clip, Op, Project } from "../generated/project";
 import { op_apply } from "../tauri/commands";
 import { assignTakeLanes } from "../record/record";
@@ -23,6 +23,8 @@ import {
 export default function CompPanel(props: {
   project: Project | null;
   applyOp?: (op: Op) => Promise<unknown>;
+  /** Bump to commit the current picks from the global `comp.commit` action. */
+  commitNonce?: number;
 }) {
   const [trackId, setTrackId] = createSignal<string | null>(null);
   const [startBeats, setStartBeats] = createSignal(0);
@@ -148,6 +150,18 @@ export default function CompPanel(props: {
   }
 
   const previewText = createMemo(preview);
+
+  // Global `comp.commit` action (`C`, palette, Clip menu): commit the
+  // current picks from anywhere. Runs only on nonce changes and only once
+  // the project has loaded (a key pressed during startup waits for it).
+  const [handledNonce, setHandledNonce] = createSignal(0);
+  createEffect(() => {
+    const n = props.commitNonce ?? 0;
+    if (n !== 0 && n !== handledNonce() && props.project) {
+      setHandledNonce(n);
+      void commit();
+    }
+  });
 
   return (
     <div data-testid="comp-panel" class="session-view">

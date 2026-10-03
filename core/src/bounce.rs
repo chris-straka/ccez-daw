@@ -17,8 +17,9 @@
 //!
 //! v1 limits (honest, not hidden): clip sources render procedurally —
 //! `builtin:click` audio clips render metronome clicks, MIDI clips render a
-//! loop-clean reference tone — because engine assets are opaque blobs with
-//! no decoder yet. Real sample/MIDI decoding lands behind this same API.
+//! loop-clean reference tone — except Audio clips naming `asset:` keys,
+//! which render decoded WAV audio from the [`SampleBank`] (a dangling key
+//! renders silence, never a tone). MIDI note bytes still have no decoder.
 //! Device chains contribute only `gain`/`volume` params; full DSP lands with
 //! the device track. Pan is ignored: v1 stems are mono, the standard shape
 //! for looped game deliverables.
@@ -29,7 +30,8 @@
 use std::collections::HashMap;
 
 use crate::engine::Engine;
-use crate::model::{Clip, Project};
+use crate::loopseam::resample_linear;
+use crate::model::{Clip, ClipKind, Project};
 use crate::plugins::ara::{AraDocument, MockAraEffect, MusicalContext};
 
 /// Default render rate: CD-adjacent, the game-audio lingua franca.
@@ -146,10 +148,63 @@ impl Stem {
     }
 }
 
+/// Decoded sample audio addressable by asset key: what `asset:` clips
+/// render. Built from the engine's `audio`-kind WAV assets (see
+/// [`Engine::sample_bank`]); undecodable blobs never enter the bank, so a
+/// dangling key renders silence, never an error.
+#[derive(Debug, Clone, Default)]
+pub struct SampleBank {
+    samples: HashMap<String, Sample>,
+}
+
+/// One decoded sample: mono frames at their native rate (resampled to the
+/// render rate at clip time).
+#[derive(Debug, Clone)]
+pub struct Sample {
+    pub rate: u32,
+    pub mono: Vec<f32>,
+}
+
+impl SampleBank {
+    pub fn empty() -> Self {
+        Self { samples: HashMap::new() }
+    }
+
+    /// Decode WAV `bytes` under `key`, replacing any previous entry.
+    /// Non-WAV/decoding failures are the caller's `Err` — the bank builder
+    /// skips those keys instead.
+    pub fn insert_wav(&mut self, key: &str, bytes: &[u8]) -> Result<()> {
+        let stem = decode_wav(bytes)?;
+        self.samples.insert(
+            key.to_string(),
+            Sample { rate: stem.sample_rate, mono: stem.samples },
+        );
+        Ok(())
+    }
+
+    pub fn get(&self, key: &str) -> Option<&Sample> {
+        self.samples.get(key)
+    }
+}
+
+/// `asset:` source prefix: Audio clips naming a bank key render decoded
+/// sample audio; every other source keeps the procedural v1 path.
+pub const ASSET_SOURCE_PREFIX: &str = "asset:";
+
 /// Render one track's subtree (its clips x device gains x track volume).
 /// Per-track stems ignore mute/solo: a stem is the track's raw material,
 /// not its mixer state. The mix (`render_mix`) honors both.
 pub fn render_track(project: &Project, track_id: &str, config: &BounceConfig) -> Result<Stem> {
+    render_track_with_bank(project, track_id, config, &SampleBank::empty())
+}
+
+/// [`render_track`] with decoded sample audio for `asset:` clips.
+pub fn render_track_with_bank(
+    project: &Project,
+    track_id: &str,
+    config: &BounceConfig,
+    bank: &SampleBank,
+) -> Result<Stem> {
     let track = project
         .tracks
         .iter()
@@ -162,7 +217,7 @@ pub fn render_track(project: &Project, track_id: &str, config: &BounceConfig) ->
     let gain = track_gain(project, track_id) * track.volume as f32;
     let mut samples = vec![0.0f32; n];
     for clip in project.clips.iter().filter(|c| c.track_id == track_id) {
-        render_clip_into(clip, project.tempo, config, &mut samples);
+        render_clip_into(clip, project.tempo, config, bank, &mut samples);
     }
     for s in &mut samples {
         *s *= gain;
@@ -179,6 +234,15 @@ pub fn render_track(project: &Project, track_id: &str, config: &BounceConfig) ->
 /// Render the full mix: every track summed, honoring mute and solo (if any
 /// track is soloed, only soloed tracks sound).
 pub fn render_mix(project: &Project, config: &BounceConfig) -> Result<Stem> {
+    render_mix_with_bank(project, config, &SampleBank::empty())
+}
+
+/// [`render_mix`] with decoded sample audio for `asset:` clips.
+pub fn render_mix_with_bank(
+    project: &Project,
+    config: &BounceConfig,
+    bank: &SampleBank,
+) -> Result<Stem> {
     let n = config.sample_count(project.tempo)?;
     if n == 0 {
         return Ok(Stem::silent("mix", config.sample_rate, 0));
@@ -192,7 +256,7 @@ pub fn render_mix(project: &Project, config: &BounceConfig) -> Result<Stem> {
         let gain = track_gain(project, &track.id) * track.volume as f32;
         let mut buf = vec![0.0f32; n];
         for clip in project.clips.iter().filter(|c| c.track_id == track.id) {
-            render_clip_into(clip, project.tempo, config, &mut buf);
+            render_clip_into(clip, project.tempo, config, bank, &mut buf);
         }
         for (dst, src) in samples.iter_mut().zip(buf.iter()) {
             *dst += *src * gain;
@@ -209,10 +273,19 @@ pub fn render_mix(project: &Project, config: &BounceConfig) -> Result<Stem> {
 
 /// Render one stem per track: the game-deliverable batch.
 pub fn render_stems(project: &Project, config: &BounceConfig) -> Result<Vec<Stem>> {
+    render_stems_with_bank(project, config, &SampleBank::empty())
+}
+
+/// [`render_stems`] with decoded sample audio for `asset:` clips.
+pub fn render_stems_with_bank(
+    project: &Project,
+    config: &BounceConfig,
+    bank: &SampleBank,
+) -> Result<Vec<Stem>> {
     project
         .tracks
         .iter()
-        .map(|t| render_track(project, &t.id, config))
+        .map(|t| render_track_with_bank(project, &t.id, config, bank))
         .collect()
 }
 
@@ -224,7 +297,8 @@ pub fn freeze_track(
     track_id: &str,
     config: &BounceConfig,
 ) -> Result<String> {
-    let stem = render_track(project, track_id, config)?;
+    let bank = engine.sample_bank();
+    let stem = render_track_with_bank(project, track_id, config, &bank)?;
     let wav = encode_wav(&stem);
     let key = format!("freeze-{track_id}.wav");
     engine.store_asset(&key, FROZEN_STEM_KIND, &wav)?;
@@ -254,8 +328,14 @@ fn track_gain(project: &Project, track_id: &str) -> f32 {
 
 /// Add one clip's contribution into `out`. Time is beats; only the overlap
 /// with the bounce window sounds.
-fn render_clip_into(clip: &Clip, tempo: f64, config: &BounceConfig, out: &mut [f32]) {
-    let buf = clip_window(clip, tempo, config, out.len());
+fn render_clip_into(
+    clip: &Clip,
+    tempo: f64,
+    config: &BounceConfig,
+    bank: &SampleBank,
+    out: &mut [f32],
+) {
+    let buf = clip_window(clip, tempo, config, bank, out.len());
     for (dst, s) in out.iter_mut().zip(buf.iter()) {
         *dst += *s;
     }
@@ -264,7 +344,13 @@ fn render_clip_into(clip: &Clip, tempo: f64, config: &BounceConfig, out: &mut [f
 /// Render one clip alone into a full-window buffer (silence outside the
 /// clip's overlap with the window). Same math as [`render_clip_into`],
 /// owned per clip so the ARA path can transform a clip before it sums.
-fn clip_window(clip: &Clip, tempo: f64, config: &BounceConfig, n: usize) -> Vec<f32> {
+fn clip_window(
+    clip: &Clip,
+    tempo: f64,
+    config: &BounceConfig,
+    bank: &SampleBank,
+    n: usize,
+) -> Vec<f32> {
     let mut buf = vec![0.0f32; n];
     let sr = config.sample_rate as f64;
     let beats_per_sec = tempo / 60.0;
@@ -272,6 +358,32 @@ fn clip_window(clip: &Clip, tempo: f64, config: &BounceConfig, n: usize) -> Vec<
     let clip_end = clip.start_beats + clip.length_beats;
     if clip_end <= config.start_beat || clip.start_beats >= win_end {
         return buf;
+    }
+    // Decoded sample audio: `asset:` Audio clips play the banked WAV from
+    // the clip start, truncated to the clip bounds (arrangement wins).
+    // A dangling key renders silence — a content hole, never a tone.
+    if clip.kind == ClipKind::Audio {
+        if let Some(key) = clip.source.strip_prefix(ASSET_SOURCE_PREFIX) {
+            if let Some(sample) = bank.get(key) {
+                let ratio = sample.rate as f64 / sr;
+                if let Ok(audio) = resample_linear(&sample.mono, ratio) {
+                    let start = ((clip.start_beats - config.start_beat) * sr / beats_per_sec)
+                        .round() as i64;
+                    let end = ((clip_end - config.start_beat) * sr / beats_per_sec).round()
+                        as i64;
+                    for (i, s) in audio.iter().enumerate() {
+                        let dst = start + i as i64;
+                        if dst >= end {
+                            break;
+                        }
+                        if dst >= 0 && (dst as usize) < buf.len() {
+                            buf[dst as usize] += s;
+                        }
+                    }
+                }
+            }
+            return buf;
+        }
     }
     let is_click = clip.kind == crate::model::ClipKind::Audio && clip.source == "builtin:click";
     // Loop-clean reference tone: exactly 220 cycles per beat at any tempo,
@@ -312,7 +424,9 @@ pub fn ara_document_for_track(
     let mut doc = AraDocument::new(MusicalContext::from_project(project));
     let window_start_sec = config.start_beat * 60.0 / project.tempo;
     for clip in project.clips.iter().filter(|c| c.track_id == track_id) {
-        let buf = clip_window(clip, project.tempo, config, n);
+        // ARA documents stay procedural (empty bank): effect analysis on
+        // stable synthetic sources, not on decoded samples.
+        let buf = clip_window(clip, project.tempo, config, &SampleBank::empty(), n);
         doc.add_source(&clip.id, config.sample_rate, buf)
             .map_err(|e| BounceError::BadRange(e.to_string()))?;
         if let Some(region_id) = doc
@@ -406,7 +520,7 @@ pub fn render_track_with_ara(
     let gain = track_gain(project, track_id) * track.volume as f32;
     let mut samples = vec![0.0f32; n];
     for clip in project.clips.iter().filter(|c| c.track_id == track_id) {
-        let mut buf = clip_window(clip, project.tempo, config, n);
+        let mut buf = clip_window(clip, project.tempo, config, &SampleBank::empty(), n);
         if let Some(fx) = effects.get(&clip.id) {
             apply_ara_to_clip(&mut buf, clip, project.tempo, config, ara, fx);
         }
@@ -447,7 +561,7 @@ pub fn render_mix_with_ara(
         let gain = track_gain(project, &track.id) * track.volume as f32;
         let mut buf = vec![0.0f32; n];
         for clip in project.clips.iter().filter(|c| c.track_id == track.id) {
-            let mut clip_buf = clip_window(clip, project.tempo, config, n);
+            let mut clip_buf = clip_window(clip, project.tempo, config, &SampleBank::empty(), n);
             if let Some(fx) = effects.get(&clip.id) {
                 apply_ara_to_clip(&mut clip_buf, clip, project.tempo, config, ara, fx);
             }
@@ -641,6 +755,76 @@ mod tests {
         assert_eq!(s.sample_rate, 8000);
         assert_eq!((s.loop_start, s.loop_end), (0, 16000));
         assert!(s.peak() > 0.1, "tone must sound, peak={}", s.peak());
+    }
+
+    #[test]
+    fn asset_clip_renders_decoded_wav_through_bank() {
+        // A known constant stem, banked as WAV, must come back through an
+        // `asset:` clip at track gain (0.8) — this is the sample path the
+        // live loop and the stems share.
+        let src = Stem {
+            name: "hit".to_string(),
+            sample_rate: 8000,
+            samples: vec![0.5; 800],
+            loop_start: 0,
+            loop_end: 800,
+        };
+        let mut bank = SampleBank::empty();
+        bank.insert_wav("hit.wav", &encode_wav(&src)).expect("decode");
+        let mut p = Project::new("p", "P");
+        p.tempo = 120.0;
+        p.tracks.push(Track {
+            id: "trk".to_string(),
+            name: "Kit".to_string(),
+            volume: 0.8,
+            pan: 0.0,
+            muted: false,
+            solo: false,
+            clip_ids: vec![],
+            device_ids: vec![],
+        });
+        p.clips.push(Clip {
+            id: "clip".to_string(),
+            track_id: "trk".to_string(),
+            name: "Hit".to_string(),
+            start_beats: 0.0,
+            length_beats: 0.2,
+            kind: ClipKind::Audio,
+            source: "asset:hit.wav".to_string(),
+        });
+        let s = render_mix_with_bank(&p, &cfg(), &bank).expect("render");
+        assert!(s.peak() > 0.35, "decoded sample must sound, peak={}", s.peak());
+        assert!(s.peak() < 0.45, "gain applied once, peak={}", s.peak());
+    }
+
+    #[test]
+    fn missing_asset_clip_renders_silence_never_tone() {
+        // A dangling `asset:` key is a content hole, not a tone cue: honest
+        // silence (the sampler panel's contract), while unknown non-asset
+        // sources keep today's procedural tone.
+        let mut p = Project::new("p", "P");
+        p.tempo = 120.0;
+        p.tracks.push(Track {
+            id: "trk".to_string(),
+            name: "Kit".to_string(),
+            volume: 0.8,
+            pan: 0.0,
+            muted: false,
+            solo: false,
+            clip_ids: vec![],
+            device_ids: vec![],
+        });
+        p.clips.push(Clip {
+            id: "clip".to_string(),
+            track_id: "trk".to_string(),
+            name: "Hole".to_string(),
+            start_beats: 0.0,
+            length_beats: 1.0,
+            kind: ClipKind::Audio,
+            source: "asset:nope.wav".to_string(),
+        });
+        let s = render_mix_with_bank(&p, &cfg(), &SampleBank::empty()).expect("render");
+        assert!(s.samples.iter().all(|&x| x == 0.0), "missing asset = silence");
     }
 
     #[test]

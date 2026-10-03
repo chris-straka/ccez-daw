@@ -61,8 +61,9 @@ bun install            # install ui + mcp workspaces
 bun run typegen        # regenerate TS bindings from Rust (core is source of truth)
 bun run check          # typegen drift gate + tsc + core tests (FAILS on contract drift)
 bun run test           # all TS + Rust tests
+cargo test -p ccez-daw --lib # native shell command regression tests
 bun run test:e2e       # Playwright web-mode specs (first: cd ui && bunx playwright install chromium)
-bun run tauri:dev      # launch the DAW shell (proves Solid-in-Tauri cycle)
+bun run tauri dev      # launch the DAW shell (starts Vite + Tauri; tauri:dev also works)
 cargo test --manifest-path core/Cargo.toml   # Rust core tests
 ```
 

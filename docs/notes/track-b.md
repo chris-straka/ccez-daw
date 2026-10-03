@@ -146,11 +146,19 @@ let key = freeze_track(&mut engine, &project, "trk", &config)?; // travels in bu
 Two honest v1 limits (not hidden): clip sources render procedurally —
 `builtin:click` audio clips render metronome clicks, MIDI clips render a
 loop-clean reference tone (exactly 220 cycles per beat, so whole-beat
-windows wrap without a click) — because engine assets are opaque blobs
-with no decoder yet. Real sample/MIDI decoding lands behind this same
-API. And device chains contribute only `gain`/`volume` params; full DSP
+windows wrap without a click) — except Audio clips naming `asset:` keys,
+which render decoded WAV audio from the engine's audio assets (a dangling
+key renders silence, never a tone). MIDI note bytes still have no decoder.
+And device chains contribute only `gain`/`volume` params; full DSP
 lands with the device track. Pan is ignored: v1 stems are mono, the
 standard shape for looped game deliverables.
+
+Live playback hears exactly what export hears: the shell pushes the
+pre-rendered mix loop (`core/src/audio/live.rs`, a `Proc::Loop` on the
+`mix` sink) on play/record and every applied op, so Space plays the
+song instead of topology silence. The loop spans the longest clip end
+(clamped to 256 beats) at the push-time tempo — a tempo change
+re-renders from the loop start.
 
 How to verify: `cargo test --manifest-path core/Cargo.toml bounce` — 10
 tests covering exact stem length + full-window loop points, loop-clean
@@ -158,3 +166,27 @@ tone edges, volume/device-gain scaling, mute-kills-mix vs
 stems-ignore-mute, solo isolation, WAV round-trip (audio + loop within
 16-bit quantization), freeze-stores-decodable-asset, out-of-window
 silence, clean errors, and a both-tracks bounce of `Project::sample`.
+
+## WIP merge validation (2026-10-03)
+
+The shell releases the engine lock before rebuilding live audio after adding
+tracks or clips. The hardware startup handshake reports its selected sample
+rate; live mixes render at that rate. Both callbacks and the null device count
+actual sample frames, including silent blocks, so recording and playback
+positions advance at the correct rate with variable callback sizes. Stop joins
+the pump before capturing the final position.
+
+Tempo edits use the existing durable `TempoSet` op. Undo/redo restores both
+the project tempo and the transport, and live loops render at the effective
+transport tempo. Unrelated edits preserve the joined Link session tempo. The v1 loop still uses procedural MIDI reference audio;
+piano-roll previews remain separate from the live mix.
+
+New creates a separate directory under the app-data `ccez-daw/projects` root;
+it preserves the previous project's log, snapshots, and assets. New/Open stop
+the old transport before switching the active engine. The shell reflects that
+stopped state. The original app-data `ccez-daw/project` remains the startup
+project; projects created with New can be exported with Save.
+
+Regression coverage lives in `src-tauri/src/lib.rs` (native command lifecycle),
+`core/src/audio/{device,transport}.rs` (frame counts and recording clock), and
+`ui/e2e/transport.spec.ts` (New/Open transport state).

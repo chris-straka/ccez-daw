@@ -127,13 +127,14 @@ impl LiveCpal {
     /// audio.
     fn spawn(
         counters: SharedCounters,
-        ready: std::sync::mpsc::Sender<Result<AudioEngine, DeviceError>>,
+        ready: std::sync::mpsc::Sender<Result<(AudioEngine, u32), DeviceError>>,
         stop_rx: std::sync::mpsc::Receiver<()>,
     ) -> std::thread::JoinHandle<()> {
-        std::thread::spawn(move || {
-            match CpalBackend::open_default_with_counters(None, counters) {
-                Ok((stream, engine, _)) => {
-                    if ready.send(Ok(engine)).is_err() {
+        std::thread::spawn(
+            move || match CpalBackend::open_default_with_counters(None, counters) {
+                Ok((stream, engine, counters)) => {
+                    let rate = counters.sample_rate.load(Ordering::Relaxed);
+                    if ready.send(Ok((engine, rate))).is_err() {
                         return;
                     }
                     let _ = stop_rx.recv();
@@ -142,8 +143,8 @@ impl LiveCpal {
                 Err(e) => {
                     let _ = ready.send(Err(e));
                 }
-            }
-        })
+            },
+        )
     }
 
     fn shutdown(&mut self) {
@@ -226,13 +227,16 @@ impl TransportController {
     pub fn play(&self) -> Result<EngineState, DeviceError> {
         {
             let inner = self.inner.lock().expect("transport lock");
-            if inner.state == EngineState::Playing {
-                return Ok(EngineState::Playing);
+            // Playing or already Recording: the pump is running, never open
+            // a second stream — `engine_play` during a take is a no-op.
+            if inner.state == EngineState::Playing || inner.state == EngineState::Recording {
+                return Ok(inner.state.clone());
             }
         }
         // Fresh counters per run so stats describe this run; the cpal
         // callback feeds these same counters (and the null pump clones
         // them), so both backends report through one lens.
+        self.counters.frames.store(0, Ordering::Relaxed);
         self.counters.blocks.store(0, Ordering::Relaxed);
         self.counters.underruns.store(0, Ordering::Relaxed);
         self.counters.overruns.store(0, Ordering::Relaxed);
@@ -240,16 +244,16 @@ impl TransportController {
         // backends); this thread blocks only until the device answers.
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
         let (stop_tx, stop_rx) = std::sync::mpsc::channel();
-        let thread =
-            LiveCpal::spawn(self.counters.clone(), ready_tx, stop_rx);
+        let thread = LiveCpal::spawn(self.counters.clone(), ready_tx, stop_rx);
         match ready_rx.recv() {
-            Ok(Ok(engine)) => {
+            Ok(Ok((engine, sample_rate))) => {
                 let mut inner = self.inner.lock().expect("transport lock");
                 inner.cpal = Some(LiveCpal {
                     engine,
                     stop_tx,
                     thread: Some(thread),
                 });
+                inner.sample_rate = sample_rate;
                 inner.backend = Some(TransportBackend::Cpal);
                 inner.state = EngineState::Playing;
                 Ok(EngineState::Playing)
@@ -269,6 +273,14 @@ impl TransportController {
         }
     }
 
+    /// Start recording on the null device: the pump runs like `play_null`
+    /// but the state reads Recording, so punch/take logic can tell a take
+    /// pass from plain playback. No audio is captured (null input) — takes
+    /// are marked from playhead positions and committed as clips.
+    pub fn record_null(&self) -> EngineState {
+        self.start_null(EngineState::Recording)
+    }
+
     /// Start the transport on the null device unconditionally. Public so
     /// tests (and headless hosts) can prove the full start/stop lifecycle
     /// without hardware; `play` calls this itself when cpal reports no
@@ -278,11 +290,19 @@ impl TransportController {
     /// without hardware; `play` calls this itself when cpal reports no
     /// device.
     pub fn play_null(&self) -> EngineState {
+        self.start_null(EngineState::Playing)
+    }
+
+    fn start_null(&self, state: EngineState) -> EngineState {
         let mut inner = self.inner.lock().expect("transport lock");
-        if inner.state == EngineState::Playing {
-            return EngineState::Playing;
+        if inner.state == EngineState::Playing || inner.state == EngineState::Recording {
+            if state == EngineState::Recording {
+                inner.state = EngineState::Recording;
+            }
+            return inner.state.clone();
         }
         // Fresh counters per transport run so stats describe this run.
+        self.counters.frames.store(0, Ordering::Relaxed);
         self.counters.blocks.store(0, Ordering::Relaxed);
         self.counters.underruns.store(0, Ordering::Relaxed);
         self.counters.overruns.store(0, Ordering::Relaxed);
@@ -291,6 +311,7 @@ impl TransportController {
 
         let (engine, rx, params) = AudioEngine::channel();
         let counters = self.counters.clone();
+        inner.sample_rate = DEFAULT_SAMPLE_RATE;
         let rate = inner.sample_rate;
         // Sleep per block so the pump advances in roughly realtime (a
         // 512-frame block at 44100 Hz is ~11.6 ms); stats derive position
@@ -307,8 +328,58 @@ impl TransportController {
             pump: Some(pump),
         });
         inner.backend = Some(TransportBackend::Null);
-        inner.state = EngineState::Playing;
-        EngineState::Playing
+        inner.state = state.clone();
+        state
+    }
+
+    /// Start a recording pass: like `play` the output runs (so the player
+    /// hears the song for context) but the state reads Recording, arming
+    /// the punch/take path. Falls back to `record_null` with no hardware.
+    pub fn record(&self) -> Result<EngineState, DeviceError> {
+        {
+            let mut inner = self.inner.lock().expect("transport lock");
+            if inner.state == EngineState::Playing || inner.state == EngineState::Recording {
+                inner.state = EngineState::Recording;
+                return Ok(EngineState::Recording);
+            }
+        }
+        // Fresh counters per run so stats describe this run; the cpal
+        // callback feeds these same counters (and the null pump clones
+        // them), so both backends report through one lens.
+        self.counters.frames.store(0, Ordering::Relaxed);
+        self.counters.blocks.store(0, Ordering::Relaxed);
+        self.counters.underruns.store(0, Ordering::Relaxed);
+        self.counters.overruns.store(0, Ordering::Relaxed);
+        // The stream opens on its owner thread (it is `!Send` on some
+        // backends); this thread blocks only until the device answers.
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel();
+        let thread = LiveCpal::spawn(self.counters.clone(), ready_tx, stop_rx);
+        match ready_rx.recv() {
+            Ok(Ok((engine, sample_rate))) => {
+                let mut inner = self.inner.lock().expect("transport lock");
+                inner.cpal = Some(LiveCpal {
+                    engine,
+                    stop_tx,
+                    thread: Some(thread),
+                });
+                inner.sample_rate = sample_rate;
+                inner.backend = Some(TransportBackend::Cpal);
+                inner.state = EngineState::Recording;
+                Ok(EngineState::Recording)
+            }
+            Ok(Err(DeviceError::NoDevice(_))) => {
+                let _ = thread.join();
+                Ok(self.record_null())
+            }
+            Ok(Err(e)) => {
+                let _ = thread.join();
+                Err(e)
+            }
+            Err(_) => Err(DeviceError::Stream(
+                "audio owner thread failed to start".to_string(),
+            )),
+        }
     }
 
     /// Stop the transport: drop the cpal stream (audio halts when the
@@ -320,7 +391,7 @@ impl TransportController {
         // would leave the pump spinning on a disconnected channel forever.
         {
             let inner = self.inner.lock().expect("transport lock");
-            if inner.state != EngineState::Playing {
+            if inner.state != EngineState::Playing && inner.state != EngineState::Recording {
                 return inner.state.clone();
             }
             if let Some(n) = inner.null.as_ref() {
@@ -330,7 +401,7 @@ impl TransportController {
                 c.engine.send(AudioCommand::Stop);
             }
         }
-        let null_handle = {
+        let (null_handle, rate, tempo) = {
             let mut inner = self.inner.lock().expect("transport lock");
             // Shut the hardware stream down (drops it on its owner thread,
             // halting audio) before reporting stopped.
@@ -344,21 +415,21 @@ impl TransportController {
             inner.state = EngineState::Stopped;
             // Finalize position from blocks actually rendered, at the
             // effective tempo (the session tempo while Link is enabled).
-            let blocks = self.counters.blocks.load(Ordering::Relaxed);
             let tempo = if inner.link_enabled {
                 inner.link.tempo()
             } else {
                 f32::from_bits(self.tempo_bits.load(Ordering::Relaxed)) as f64
             };
             let rate = inner.sample_rate;
-            let beats = blocks as f64 * beats_for_frames(1, rate, tempo);
-            self.position_beats_bits
-                .store(beats.to_bits(), Ordering::Relaxed);
-            pump
+            (pump, rate, tempo)
         };
         if let Some(handle) = null_handle {
             let _ = handle.join();
         }
+        let frames = self.counters.frames.load(Ordering::Relaxed);
+        let beats = frames as f64 * beats_for_frames(1, rate, tempo);
+        self.position_beats_bits
+            .store(beats.to_bits(), Ordering::Relaxed);
         EngineState::Stopped
     }
 
@@ -400,8 +471,7 @@ impl TransportController {
             return;
         }
         if enabled {
-            let local =
-                f32::from_bits(self.tempo_bits.load(Ordering::Relaxed)) as f64;
+            let local = f32::from_bits(self.tempo_bits.load(Ordering::Relaxed)) as f64;
             inner.link.set_tempo(local);
         } else {
             let session = inner.link.tempo();
@@ -413,6 +483,15 @@ impl TransportController {
 
     pub fn link_enabled(&self) -> bool {
         self.inner.lock().expect("transport lock").link_enabled
+    }
+
+    /// Join/leave the Link session clock (the `link.join` action): enabling
+    /// carries the local tempo into the session, disabling snapshots the
+    /// session tempo back. Returns the new membership. Never touches audio.
+    pub fn toggle_link(&self) -> bool {
+        let enabled = !self.link_enabled();
+        self.set_link_enabled(enabled);
+        enabled
     }
 
     /// Peers currently on this transport's Link session (including self).
@@ -429,11 +508,7 @@ impl TransportController {
     /// Join one more peer onto this transport's session (a handle for
     /// tests and future discovery layers — not a new transport).
     pub fn join_link_peer(&self) -> LinkSession {
-        self.inner
-            .lock()
-            .expect("transport lock")
-            .link
-            .join_peer()
+        self.inner.lock().expect("transport lock").link.join_peer()
     }
 
     /// Swap the rendered graph on the live output (whatever the backend).
@@ -459,11 +534,14 @@ impl TransportController {
         }
     }
 
-    /// Current engine state plus counters and clock, in one snapshot.
-    /// While Link is enabled `tempo_bpm` follows the session tempo (block
-    /// scheduling follows it too, so the timeline and the session agree by
-    /// construction); Link status itself is visible as `link_enabled`,
-    /// `link_peers`, and `link_phase` — no new IPC commands needed.
+    /// Sample rate the backends render at. The live loop is pre-rendered
+    /// at this rate so loop frames and device frames agree exactly.
+    pub fn sample_rate(&self) -> u32 {
+        self.inner.lock().expect("transport lock").sample_rate
+    }
+
+    /// Current engine state, counters, and clock in one snapshot.
+    /// Link status is visible as `link_enabled`, `link_peers`, and `link_phase`.
     pub fn stats(&self) -> TransportStats {
         let inner = self.inner.lock().expect("transport lock");
         let (blocks, underruns, overruns) = self.counters.snapshot();
@@ -474,11 +552,13 @@ impl TransportController {
         } else {
             f32::from_bits(self.tempo_bits.load(Ordering::Relaxed)) as f64
         };
-        let position_beats = if inner.state == EngineState::Playing {
-            blocks as f64 * beats_for_frames(1, inner.sample_rate, tempo)
-        } else {
-            f64::from_bits(self.position_beats_bits.load(Ordering::Relaxed))
-        };
+        let position_beats =
+            if inner.state == EngineState::Playing || inner.state == EngineState::Recording {
+                self.counters.frames.load(Ordering::Relaxed) as f64
+                    * beats_for_frames(1, inner.sample_rate, tempo)
+            } else {
+                f64::from_bits(self.position_beats_bits.load(Ordering::Relaxed))
+            };
         TransportStats {
             state: inner.state.clone(),
             backend: inner.backend,
@@ -510,7 +590,10 @@ mod tests {
     use crate::audio::graph::AudioGraph;
     use crate::model::{Edge, EdgeKind, Project, Track};
 
-    fn rig() -> (RenderGraph, std::collections::BTreeMap<(String, String), u64>) {
+    fn rig() -> (
+        RenderGraph,
+        std::collections::BTreeMap<(String, String), u64>,
+    ) {
         let mut p = Project::new("p", "Transport");
         for id in ["a", "b"] {
             p.tracks.push(Track {
@@ -544,6 +627,27 @@ mod tests {
     }
 
     #[test]
+    fn rendered_position_uses_frames_in_playback_and_recording() {
+        for state in [EngineState::Playing, EngineState::Recording] {
+            let t = TransportController::new();
+            {
+                let mut inner = t.inner.lock().unwrap();
+                inner.state = state.clone();
+                inner.sample_rate = 48000;
+            }
+            // Two differently sized callbacks total one second at 48 kHz.
+            t.counters.blocks.store(2, Ordering::Relaxed);
+            t.counters.frames.store(48000, Ordering::Relaxed);
+            // Existing stats must not mistake two blocks for two samples.
+            let expected = beats_for_frames(48000, 48000, 120.0);
+            assert_eq!(t.stats().position_beats, expected, "{state:?}");
+            assert_eq!(t.sample_rate(), 48000);
+            t.stop();
+            assert_eq!(t.stats().position_beats, expected);
+        }
+    }
+
+    #[test]
     fn null_transport_start_stop_lifecycle() {
         let t = TransportController::new();
         assert_eq!(t.engine_state(), EngineState::Stopped);
@@ -564,15 +668,54 @@ mod tests {
     }
 
     #[test]
+    fn recording_reuses_playback_and_preserves_the_playhead() {
+        let t = TransportController::new();
+        t.play_null();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while t.stats().blocks < 2 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let before = t.stats();
+        assert!(before.position_beats > 0.0);
+        assert_eq!(t.record().unwrap(), EngineState::Recording);
+        let recording = t.stats();
+        assert_eq!(recording.backend, Some(TransportBackend::Null));
+        assert!(recording.position_beats >= before.position_beats);
+        assert!(recording.blocks >= before.blocks);
+        t.stop();
+        assert!(t.stats().position_beats >= recording.position_beats);
+    }
+
+    #[test]
+    fn record_null_lifecycle_enters_recording_and_stops() {
+        let t = TransportController::new();
+        assert_eq!(t.record_null(), EngineState::Recording);
+        assert_eq!(t.stats().state, EngineState::Recording);
+        assert_eq!(t.stats().backend, Some(TransportBackend::Null));
+        assert_eq!(t.stop(), EngineState::Stopped);
+        assert_eq!(t.engine_state(), EngineState::Stopped);
+    }
+
+    #[test]
     fn play_degrades_gracefully_without_hardware() {
         // The real entry point: on a machine with audio hardware this opens
         // a stream; on headless/CI it falls back to the null device. Either
         // way it must return Playing and stop cleanly — never panic.
         let t = TransportController::new();
-        assert_eq!(t.play().expect("play never fails headless"), EngineState::Playing);
+        assert_eq!(
+            t.play().expect("play never fails headless"),
+            EngineState::Playing
+        );
         let stats = t.stats();
         assert_eq!(stats.state, EngineState::Playing);
         assert!(stats.backend.is_some(), "some backend must serve play");
+        if stats.backend == Some(TransportBackend::Cpal) {
+            assert!(t.sample_rate() > 0);
+            assert_eq!(
+                t.sample_rate(),
+                t.counters.sample_rate.load(Ordering::Relaxed)
+            );
+        }
         assert_eq!(t.stop(), EngineState::Stopped);
     }
 
@@ -583,10 +726,7 @@ mod tests {
         // byte for byte — they share `render_mono_block`, this proves it.
         let (g, delays) = rig();
         let frames = 256;
-        let offline = g
-            .render(frames, 1, &delays)
-            .expect("offline renders")["mix"]
-            .clone();
+        let offline = g.render(frames, 1, &delays, 0).expect("offline renders")["mix"].clone();
 
         let (engine, rx, params) = AudioEngine::channel();
         let mut backend = NullBackend::new(rx, params);
@@ -696,6 +836,16 @@ mod tests {
         t.set_tempo(100.0);
         assert_eq!(peer.tempo(), 100.0);
         assert_eq!(t.stats().tempo_bpm, 100.0);
+    }
+
+    #[test]
+    fn toggle_link_flips_session_membership_and_reports() {
+        let t = TransportController::new();
+        assert!(!t.link_enabled());
+        assert!(t.toggle_link(), "joining reports enabled");
+        assert!(t.link_enabled());
+        assert!(!t.toggle_link(), "leaving reports disabled");
+        assert!(!t.link_enabled());
     }
 
     #[test]

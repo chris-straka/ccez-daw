@@ -170,7 +170,7 @@ export const ACTIONS: ActionDef[] = [
   // the same ids the palette uses, so menu and palette stay in sync.
   // Unregistered handlers resolve to descriptors (see `runLocal`); Track K
   // wires real behavior (dialogs, zoom, fullscreen, edit fallbacks).
-  localAction("app.about", "App: About ccez-daw"),
+  localAction("app.about", "App: About"),
   localAction("app.quit", "App: Quit"),
   localAction("app.preferences", "App: Preferences"),
   localAction("edit.cut", "Edit: Cut"),
@@ -191,5 +191,26 @@ export const ACTIONS: ActionDef[] = [
 export function findAction(id: string): ActionDef | undefined {
   return ACTIONS.find((a) => a.id === id);
 }
+
+/**
+ * Guidance for actions no key, palette row, or menu item can supply
+ * arguments (or UI) for. Both dispatch paths consult it: the shell
+ * registers these as handlers that surface the text, and the palette
+ * shows it inline instead of closing on an inert descriptor — so nothing
+ * resolves silently anywhere.
+ */
+export const LOCAL_GUIDANCE: Record<string, string> = {
+  "clip.add": "Add Clip needs clip details — import a WAV on the Timeline or commit a take instead",
+  "clip.duplicate": "Duplicate Clip needs a selected clip in the Timeline",
+  "clip.delete": "Delete Clip needs a selected clip in the Timeline",
+  "track.delete": "Delete Track needs a selected track in the Timeline",
+  "automation.point_set": "Set Automation Point needs a lane — click one in the Automation tab",
+  "app.about": "A game-music DAW (native About panel not built yet)",
+  "app.preferences": "No preferences panel yet — keybindings live under ? (Shortcuts editor)",
+  "help.open_docs": "Docs live in docs/ of the repo checkout (no viewer wired yet)",
+  "view.zoom.in": "Timeline zoom is not built yet",
+  "view.zoom.out": "Timeline zoom is not built yet",
+  "view.zoom.reset": "Timeline zoom is not built yet",
+};
 
 export type { Project };

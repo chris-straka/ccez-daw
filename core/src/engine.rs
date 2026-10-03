@@ -780,6 +780,28 @@ impl Engine {
         read_manifest(&self.dir).assets
     }
 
+    /// Decode every decodable `audio`-kind asset into a render-ready
+    /// [`SampleBank`](crate::bounce::SampleBank) for `asset:` clips.
+    /// Undecodable blobs are skipped (dangling keys render silence, never
+    /// errors); an engine with no audio assets yields an empty bank and
+    /// byte-identical procedural renders.
+    pub fn sample_bank(&self) -> crate::bounce::SampleBank {
+        let mut bank = crate::bounce::SampleBank::empty();
+        for entry in read_manifest(&self.dir).assets {
+            if entry.kind != ASSET_KIND_AUDIO {
+                continue;
+            }
+            let bytes = match self.load_asset(&entry.key) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            if bank.insert_wav(&entry.key, &bytes).is_err() {
+                eprintln!("sample_bank: skipping undecodable audio asset {}", entry.key);
+            }
+        }
+        bank
+    }
+
     // -- portable bundle ----------------------------------------------------
 
     /// Copy this project dir into `dest` as one portable package: project +

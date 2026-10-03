@@ -25,11 +25,26 @@ export interface CannedClip {
   source: string;
 }
 
+export interface CannedDeviceParam {
+  id: string;
+  min: number;
+  max: number;
+  value?: number;
+}
+
+export interface CannedDevice {
+  id: string;
+  name: string;
+  classCode: number;
+  params?: CannedDeviceParam[];
+}
+
 /** Canned backend state served to `invoke` by command name. */
 export interface CannedBackend {
   projectName: string;
   tracks: Array<{ id: string; name: string }>;
   clips?: CannedClip[];
+  devices?: CannedDevice[];
 }
 
 export function defaultCanned(): CannedBackend {
@@ -60,6 +75,7 @@ export function installInBrowser(canned: CannedBackend): void {
   const callbacks = new Map<number, Cb>();
   const listeners = new Map<string, number[]>();
   let nextId = 1;
+  let linkOn = false;
 
   function cannedProject(): Record<string, unknown> {
     return {
@@ -80,7 +96,23 @@ export function installInBrowser(canned: CannedBackend): void {
         device_ids: [],
       })),
       clips: (canned.clips ?? []).map((c) => ({ ...c })),
-      devices: [],
+      devices: (canned.devices ?? []).map((d) => ({
+        id: d.id,
+        name: d.name,
+        kind: "Device",
+        params: [
+          { id: "device_class", label: "Device class", value: d.classCode, min: 0, max: 255, default: d.classCode, unit: "" },
+          ...(d.params ?? []).map((p) => ({
+            id: p.id,
+            label: p.id,
+            value: p.value ?? p.min,
+            min: p.min,
+            max: p.max,
+            default: p.min,
+            unit: "",
+          })),
+        ],
+      })),
       routing: [],
       automation: [],
     };
@@ -138,6 +170,11 @@ export function installInBrowser(canned: CannedBackend): void {
         return cannedProject();
       case "engine_play":
         return "Playing";
+      case "engine_record":
+        return "Recording";
+      case "link_toggle":
+        linkOn = !linkOn;
+        return linkOn;
       case "engine_stop":
         return "Stopped";
       case "engine_set_tempo":
@@ -150,8 +187,16 @@ export function installInBrowser(canned: CannedBackend): void {
       case "op_redo":
         return 1;
       case "track_add":
+        // Faithful to the bridge: the backend rejects a nameless call.
+        if (typeof args["name"] !== "string" || args["name"] === "") {
+          throw new Error("missing field `name`");
+        }
         return "t_e2e";
       case "clip_add":
+        // Faithful to the bridge: the backend rejects a clipless call.
+        if (typeof args["clip"] !== "object" || args["clip"] === null) {
+          throw new Error("missing field `clip`");
+        }
         return "clip_e2e";
       default:
         return null;

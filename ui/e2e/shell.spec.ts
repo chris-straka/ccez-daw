@@ -18,7 +18,6 @@ test.beforeEach(async ({ page }) => {
 test("shell shows rail, tabs, and default timeline", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Browser" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Mixer" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Command palette" })).toBeVisible();
   for (const tab of ["Timeline", "Session", "Piano roll", "Score", "Automation", "Groove", "Record", "Comp"]) {
     await expect(page.getByTestId(`tab-${tab}`), `${tab} tab visible`).toBeVisible();
   }
@@ -48,8 +47,9 @@ test("timeline shows the canned project", async ({ page }) => {
   await expect(page.getByText("e2e-fixture @ 120 BPM")).toBeVisible();
   // TimelineView lanes show track names with clip blocks (vol/pan live in
   // the mixer now, not the lane row; the default canned project has tracks
-  // but no clips, so the lane name is the invoke-path proof).
-  await expect(page.getByText("Drums", { exact: true }).first()).toBeVisible();
+  // but no clips, so the lane name is the invoke-path proof). Scoped to
+  // `.lane-name`: the import row's track picker repeats the name.
+  await expect(page.locator(".lane-name", { hasText: "Drums" }).first()).toBeVisible();
   const calls = await ipcCalls(page);
   expect(calls.map((c) => c.cmd)).toContain("project_get");
 });

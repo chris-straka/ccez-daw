@@ -181,6 +181,13 @@ body {
   overflow-y: auto;
 }
 
+/* Panels keep their natural height so the column scrolls as one unit
+   instead of crushing each panel into its own sliver. */
+.daw-column > .daw-panel,
+.daw-rail > .daw-panel {
+  flex: none;
+}
+
 /* Left browser rail: fixed width, full height. */
 .daw-rail {
   display: flex;
@@ -457,6 +464,14 @@ body {
   font-size: 12px;
   font-family: var(--daw-mono);
   white-space: nowrap;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.clip-chip.dragging {
+  opacity: 0.65;
+  cursor: grabbing;
 }
 
 /* Clip color follows signal kind: teal audio, steel-blue MIDI. */

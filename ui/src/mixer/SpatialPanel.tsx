@@ -26,6 +26,9 @@ export default function SpatialPanel(props: {
     props.project.tracks.filter((t) => spatialDeviceForTrack(props.project, t.id));
   const [trackId, setTrackId] = createSignal<string>(withSpatial()[0]?.id ?? "");
   const [status, setStatus] = createSignal("");
+  // Same drag-local pattern as the mixer strips: the thumb follows the
+  // pointer, the op commits on release.
+  const [drafts, setDrafts] = createSignal<Record<string, number>>({});
 
   const node = (): Node | null => {
     const id = trackId() || withSpatial()[0]?.id;
@@ -58,7 +61,16 @@ export default function SpatialPanel(props: {
     testid: string,
   ) {
     const dev = () => node();
-    const val = () => (dev() ? paramValue(dev() as Node, param, min) : min);
+    const committed = () => (dev() ? paramValue(dev() as Node, param, min) : min);
+    const val = () => drafts()[param] ?? committed();
+    function release(raw: number): void {
+      setDrafts((d) => {
+        const next = { ...d };
+        delete next[param];
+        return next;
+      });
+      void setParam(param, raw);
+    }
     return (
       <label class="mixer-label">
         {label}{" "}
@@ -70,7 +82,8 @@ export default function SpatialPanel(props: {
           max={max}
           step={step}
           value={val()}
-          onInput={(e) => void setParam(param, Number(e.currentTarget.value))}
+          onInput={(e) => setDrafts((d) => ({ ...d, [param]: Number(e.currentTarget.value) }))}
+          onChange={(e) => release(Number(e.currentTarget.value))}
         />
       </label>
     );
@@ -96,7 +109,10 @@ export default function SpatialPanel(props: {
             <select
               data-testid="spatial-track"
               value={trackId()}
-              onInput={(e) => setTrackId(e.currentTarget.value)}
+              onInput={(e) => {
+                setTrackId(e.currentTarget.value);
+                setDrafts({});
+              }}
               style={{ "margin-left": "4px", "max-width": "200px" }}
             >
               <For each={withSpatial()}>{(t) => <option value={t.id}>{t.name}</option>}</For>

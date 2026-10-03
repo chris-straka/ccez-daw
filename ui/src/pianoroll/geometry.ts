@@ -13,17 +13,66 @@ export interface ViewConfig {
   beatsVisible: number;
   /** First visible beat (scroll). */
   scrollBeats: number;
-  /** Highest visible pitch (default 127); always shows 128 rows down. */
+  /** Highest visible pitch (default 127). */
   topPitch?: number;
+  /** Rows in the window (default 128 = the whole range). */
+  rowsVisible?: number;
 }
 
 export const MIN_PITCH = 0;
 export const MAX_PITCH = 127;
+/** Narrowest window: two octaves minus a fifth still shows chord shapes. */
+export const MIN_ROWS = 12;
 /** Right-edge grab zone width in px for resize vs move disambiguation. */
 export const RESIZE_HANDLE_PX = 6;
 
+/** Clamped row count for the window (default: the whole range). */
+export function visibleRows(view: ViewConfig): number {
+  const r = Math.floor(view.rowsVisible ?? 128);
+  return Math.min(128, Math.max(MIN_ROWS, r));
+}
+
+/** Clamped top pitch: the window always stays inside 0..127. */
+export function visibleTop(view: ViewConfig): number {
+  const rows = visibleRows(view);
+  const t = Math.floor(view.topPitch ?? MAX_PITCH);
+  return Math.min(MAX_PITCH, Math.max(rows - 1, t));
+}
+
+/** Lowest visible pitch (derived, clamped). */
+export function visibleBottom(view: ViewConfig): number {
+  return Math.max(MIN_PITCH, visibleTop(view) - visibleRows(view) + 1);
+}
+
+/** Scroll the window by whole rows (positive = toward higher pitches). */
+export function scrollTop(top: number, rows: number, deltaRows: number): number {
+  const r = Math.min(128, Math.max(MIN_ROWS, Math.floor(rows)));
+  return Math.min(MAX_PITCH, Math.max(r - 1, Math.floor(top) + Math.round(deltaRows)));
+}
+
+/** Zoom the window: +1 doubles rows (out), -1 halves (in). */
+export function zoomRows(rows: number, dir: 1 | -1): number {
+  const r = Math.min(128, Math.max(MIN_ROWS, Math.floor(rows)));
+  return dir > 0 ? Math.min(128, r * 2) : Math.max(MIN_ROWS, Math.floor(r / 2));
+}
+
+/** Top pitch that keeps `pitch` under cursor height `y` after a zoom. */
+export function anchorTop(pitch: number, cursorY: number, rowH2: number, rows: number): number {
+  const r = Math.min(128, Math.max(MIN_ROWS, Math.floor(rows)));
+  const top = Math.round(pitch + cursorY / rowH2);
+  return Math.min(MAX_PITCH, Math.max(r - 1, top));
+}
+
+const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+/** Scientific pitch name with C4 = MIDI 60 (C-1 .. G9). */
+export function pitchName(pitch: number): string {
+  const p = Math.min(MAX_PITCH, Math.max(MIN_PITCH, Math.round(pitch)));
+  return `${NAMES[p % 12]}${Math.floor(p / 12) - 1}`;
+}
+
 export function rowH(view: ViewConfig): number {
-  return view.height / 128;
+  return view.height / visibleRows(view);
 }
 
 export function pxPerBeat(view: ViewConfig): number {
@@ -38,13 +87,13 @@ export function xToBeat(x: number, view: ViewConfig): number {
   return view.scrollBeats + x / pxPerBeat(view);
 }
 
-/** Pitch rows run top (127) to bottom (0): row `p` occupies `[y, y+rowH)`. */
+/** Pitch rows run top (`topPitch`) to bottom: row `p` occupies `[y, y+rowH)`. */
 export function pitchToY(pitch: number, view: ViewConfig): number {
-  return (MAX_PITCH - pitch) * rowH(view);
+  return (visibleTop(view) - pitch) * rowH(view);
 }
 
 export function yToPitch(y: number, view: ViewConfig): number {
-  const p = MAX_PITCH - Math.floor(y / rowH(view));
+  const p = visibleTop(view) - Math.floor(y / rowH(view));
   return Math.min(MAX_PITCH, Math.max(MIN_PITCH, p));
 }
 

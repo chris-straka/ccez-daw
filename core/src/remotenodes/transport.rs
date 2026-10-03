@@ -195,11 +195,14 @@ fn execute_request(
             msg: "boundary buffer length != frames".to_string(),
         };
     }
+    // Loop position from the block index (exact while every block in the
+    // stream renders the same frame count, the norm for device callbacks).
+    let start_frame = block * frames as u64;
     Message::RenderResponse {
         block,
         seq,
         degraded: false,
-        outputs: exec.execute(inputs, frames),
+        outputs: exec.execute(inputs, frames, start_frame),
     }
 }
 
@@ -405,7 +408,13 @@ impl RemoteSession {
 
     /// Render every local node whose producers are already in `buffers`
     /// (one sweep in signal-flow order). Returns the newly rendered ids.
-    fn render_available(&self, buffers: &mut BTreeMap<String, Vec<f32>>, frames: usize) -> Vec<String> {
+    /// `start_frame` positions [`Proc::Loop`] reads (block * frames).
+    fn render_available(
+        &self,
+        buffers: &mut BTreeMap<String, Vec<f32>>,
+        frames: usize,
+        start_frame: u64,
+    ) -> Vec<String> {
         let mut done = Vec::new();
         for id in &self.local_order {
             if buffers.contains_key(id) {
@@ -422,7 +431,7 @@ impl RemoteSession {
             }
         }
         if !done.is_empty() {
-            render_subset(&self.graph, &done, buffers, frames, &self.edge_delays);
+            render_subset(&self.graph, &done, buffers, frames, &self.edge_delays, start_frame);
         }
         done
     }
@@ -439,7 +448,7 @@ impl RemoteSession {
         self.next_seq += 1;
 
         let mut buffers: BTreeMap<String, Vec<f32>> = BTreeMap::new();
-        self.render_available(&mut buffers, frames);
+        self.render_available(&mut buffers, frames, block * frames as u64);
 
         let t0 = now_ms() as f64;
         let outcome: Result<BTreeMap<String, Vec<f32>>, TransportError> = (|| {
@@ -481,7 +490,7 @@ impl RemoteSession {
                 for (id, buf) in outputs {
                     buffers.insert(id, buf);
                 }
-                self.render_available(&mut buffers, frames);
+                self.render_available(&mut buffers, frames, block * frames as u64);
                 BlockOutput {
                     block,
                     source: BlockSource::Remote,
@@ -515,7 +524,7 @@ impl RemoteSession {
                 let seq = self.next_seq;
                 self.next_seq += 1;
                 let mut buffers: BTreeMap<String, Vec<f32>> = BTreeMap::new();
-                self.render_available(&mut buffers, frames);
+                self.render_available(&mut buffers, frames, block * frames as u64);
                 let stream = self.stream.as_mut().unwrap();
                 codec::write_message(
                     stream,
@@ -571,7 +580,7 @@ impl RemoteSession {
                     for (id, buf) in outputs {
                         buffers.insert(id, buf);
                     }
-                    self.render_available(&mut buffers, frames);
+                    self.render_available(&mut buffers, frames, block * frames as u64);
                     out.push(BlockOutput {
                         block,
                         source: BlockSource::Remote,
@@ -605,13 +614,14 @@ impl RemoteSession {
     /// Full-local render of one block: upstream locals, remote subset via
     /// the failover executor, downstream locals.
     fn render_local(&mut self, block: u64, frames: usize) -> BlockOutput {
+        let start_frame = block * frames as u64;
         let mut buffers: BTreeMap<String, Vec<f32>> = BTreeMap::new();
-        self.render_available(&mut buffers, frames);
-        let remote_out = self.failover_exec.execute(&buffers, frames);
+        self.render_available(&mut buffers, frames, start_frame);
+        let remote_out = self.failover_exec.execute(&buffers, frames, start_frame);
         for (id, buf) in remote_out {
             buffers.insert(id, buf);
         }
-        self.render_available(&mut buffers, frames);
+        self.render_available(&mut buffers, frames, start_frame);
         BlockOutput {
             block,
             source: BlockSource::LocalFailover,
@@ -686,7 +696,7 @@ mod tests {
         assert!(rtt < 2000.0, "loopback ping absurd: {rtt}ms");
 
         let frames = 128;
-        let expected = rg.render(frames, 1, &delays).unwrap();
+        let expected = rg.render(frames, 1, &delays, 0).unwrap();
         for block in 0..4 {
             let got = sess.render_block(block, frames);
             assert_eq!(got.source, BlockSource::Remote, "block {block} went local");
@@ -706,7 +716,7 @@ mod tests {
         let addr = spawn_server(rg.clone(), delays.clone());
         let mut sess = session(addr);
         let frames = 128;
-        let expected = rg.render(frames, 1, &delays).unwrap();
+        let expected = rg.render(frames, 1, &delays, 0).unwrap();
         let outs = sess.render_many(0, 6, frames);
         assert_eq!(outs.len(), 6);
         for got in &outs {
@@ -731,7 +741,7 @@ mod tests {
 
         assert!(matches!(sess.status(), SessionStatus::Degraded { .. }));
         let frames = 128;
-        let expected = rg.render(frames, 1, &delays).unwrap();
+        let expected = rg.render(frames, 1, &delays, 0).unwrap();
         let got = sess.render_block(0, frames);
         assert_eq!(got.source, BlockSource::LocalFailover);
         for (id, buf) in &expected {

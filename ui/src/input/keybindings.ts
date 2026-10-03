@@ -46,6 +46,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "u", mode: "normal", context: "all", action: "project.undo" },
   { keys: "ctrl+r", mode: "normal", context: "all", action: "project.redo" },
   { keys: "ctrl+s", mode: "all", context: "all", action: "project.save" },
+  { keys: "?", mode: "normal", context: "all", action: "help.show_shortcuts" },
 
   // --- arrangement + piano-roll motions (normal + visual) ---
   { keys: "h", mode: "normal", context: "all", action: "vim.motion.left" },

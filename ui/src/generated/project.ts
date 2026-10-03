@@ -37,6 +37,14 @@ export type TransitionKind = z.infer<typeof TransitionKindSchema>;
 export const StemKindSchema = z.enum(["MusicLayer", "SfxClip"]);
 export type StemKind = z.infer<typeof StemKindSchema>;
 
+/** One stored asset: key, kind (audio/midi/preset/plugin), byte size. */
+export const AssetEntrySchema = z.object({
+  key: z.string(),
+  kind: z.string(),
+  size: z.number(),
+});
+export type AssetEntry = z.infer<typeof AssetEntrySchema>;
+
 /** Universal address of one automatable/modulatable parameter. */
 export const ParamAddressSchema = z.object({
   node: z.string(),

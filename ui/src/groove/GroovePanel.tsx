@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal } from "solid-js";
 import type { Clip, Op } from "../generated/project";
 import { op_apply } from "../tauri/commands";
 import type { MidiClip } from "../pianoroll/model";
@@ -36,6 +36,8 @@ export default function GroovePanel(props: {
   pool?: GroovePool;
   applyOp?: (op: Op) => Promise<unknown>;
   onEdit?: (clip: MidiClip) => void;
+  /** Bump to apply the current template from the global `groove.apply` action. */
+  applyNonce?: number;
 }) {
   const [pool] = createSignal(props.pool ?? new GroovePool());
   const [version, setVersion] = createSignal(0);
@@ -109,6 +111,18 @@ export default function GroovePanel(props: {
       setMessage(`preview refused: ${(e as Error).message}`);
     }
   }
+
+  // Global `groove.apply` action (palette, Clip menu): apply the current
+  // template from anywhere. Runs only on nonce changes; the empty pool /
+  // missing target reports honestly instead of throwing.
+  const [handledApply, setHandledApply] = createSignal(0);
+  createEffect(() => {
+    const n = props.applyNonce ?? 0;
+    if (n !== 0 && n !== handledApply()) {
+      setHandledApply(n);
+      void applyGrooveToTarget();
+    }
+  });
 
   async function applyGrooveToTarget(): Promise<void> {
     const found = currentTemplate();

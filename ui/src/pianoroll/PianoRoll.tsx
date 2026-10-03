@@ -1,14 +1,19 @@
 import { createEffect, onCleanup, onMount } from "solid-js";
 import {
+  anchorTop,
   beatToX,
   hitTest,
   notesAt,
   pitchToY,
   pxPerBeat,
   rowH,
+  scrollTop,
   snapBeat,
+  visibleBottom,
+  visibleTop,
   xToBeat,
   yToPitch,
+  zoomRows,
   type ViewConfig,
 } from "./geometry";
 import type { MidiClip } from "./model";
@@ -21,17 +26,20 @@ import { createNote, moveNote, resizeNote, sweepDelete } from "./store";
  * - Drag a note body: move it (pitch + time, snapped).
  * - Drag a note's right edge: resize its length.
  * - Right-button press/sweep: delete notes under the cursor.
+ * - Wheel: scroll octaves. Ctrl/Cmd+wheel: zoom, anchored at the cursor.
  *
  * Hot-canvas contract: Solid signals commit finished edits (`onChange`) but
  * never participate in per-frame drawing. The rAF loop reads a plain mutable
  * snapshot (`frame`) refreshed by one `createEffect`, so framework code stays
- * out of the draw path.
+ * out of the draw path. The pitch viewport lives in `frame` for the same
+ * reason; the host learns the visible range through `onViewport`.
  */
 export default function PianoRoll(props: {
   clip: MidiClip;
   beatsVisible?: number;
   snap?: number;
   onChange?: (next: MidiClip) => void;
+  onViewport?: (range: { lo: number; hi: number }) => void;
 }) {
   let canvas: HTMLCanvasElement | undefined;
   let raf = 0;
@@ -51,7 +59,9 @@ export default function PianoRoll(props: {
       swept: number[];
     };
     scrollBeats: number;
-  } = { notes: [], hover: null, drag: null, scrollBeats: 0 };
+    topPitch: number;
+    rows: number;
+  } = { notes: [], hover: null, drag: null, scrollBeats: 0, topPitch: 127, rows: 128 };
 
   /** Piano-key strip width (CSS px): pitch names live here, the grid starts right of it. */
   const KEY_W = 64;
@@ -61,7 +71,37 @@ export default function PianoRoll(props: {
     height: canvas?.clientHeight || 320,
     beatsVisible: props.beatsVisible ?? 8,
     scrollBeats: frame.scrollBeats,
+    topPitch: frame.topPitch,
+    rowsVisible: frame.rows,
   });
+
+  function reportViewport(): void {
+    const v = view();
+    props.onViewport?.({ lo: visibleBottom(v), hi: visibleTop(v) });
+  }
+
+  function onWheel(e: WheelEvent): void {
+    if (!canvas) return;
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const y = e.clientY - r.top;
+    const v = view();
+    if (e.ctrlKey || e.metaKey) {
+      // Zoom, anchored at the cursor pitch.
+      const rows2 = zoomRows(frame.rows, e.deltaY > 0 ? 1 : -1);
+      if (rows2 === frame.rows) return;
+      const pitch = yToPitch(y, v);
+      frame.rows = rows2;
+      frame.topPitch = anchorTop(pitch, y, v.height / rows2, rows2);
+    } else {
+      // Wheel down shows lower octaves.
+      const rh = rowH(v);
+      const dRows = Math.round(e.deltaY / rh);
+      if (!dRows) return;
+      frame.topPitch = scrollTop(frame.topPitch, frame.rows, -dRows);
+    }
+    reportViewport();
+  }
 
   function commit(next: MidiClip): void {
     frame.notes = next.notes;
@@ -313,6 +353,7 @@ export default function PianoRoll(props: {
   onMount(() => {
     frame.notes = props.clip.notes;
     raf = requestAnimationFrame(draw);
+    reportViewport();
     const onCtx = (e: Event) => e.preventDefault();
     canvas?.addEventListener("contextmenu", onCtx);
     onCleanup(() => {
@@ -335,6 +376,7 @@ export default function PianoRoll(props: {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onWheel={onWheel}
     />
   );
 }

@@ -97,6 +97,15 @@ pub const ENUMS: &[EnumDef] = &[
 
 pub const STRUCTS: &[StructDef] = &[
     StructDef {
+        name: "AssetEntry",
+        doc: "One stored asset: key, kind (audio/midi/preset/plugin), byte size.",
+        fields: &[
+            f!("key", F_STRING, Z_STRING),
+            f!("kind", F_STRING, Z_STRING),
+            f!("size", F_NUMBER, Z_NUMBER),
+        ],
+    },
+    StructDef {
         name: "ParamAddress",
         doc: "Universal address of one automatable/modulatable parameter.",
         fields: &[
@@ -408,10 +417,33 @@ pub fn render_project_ts() -> String {
 /// Render `ui/src/generated/ipc.ts`: typed `invoke` wrappers + event names.
 pub fn render_ipc_ts() -> String {
     let mut out = header();
-    out.push_str(
-        "import { invoke } from \"@tauri-apps/api/core\";\n\
-         import type { Clip, EngineState, Op, ParamAddress, Project } from \"./project\";\n\n",
-    );
+    out.push_str("import { invoke } from \"@tauri-apps/api/core\";\n");
+    // Import every emitted type the commands/events reference (derived, so
+    // a new struct like `AssetEntry` cannot arrive without its import).
+    let mut known: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for e in ENUMS {
+        known.insert(e.name);
+    }
+    for s in STRUCTS {
+        known.insert(s.name);
+    }
+    let mut refs: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    let mut scan = |ts: &str| {
+        for w in ts.split(|ch: char| !ch.is_alphanumeric() && ch != '_') {
+            if let Some(&name) = known.get(w) {
+                refs.insert(name);
+            }
+        }
+    };
+    for c in COMMANDS {
+        scan(c.args_ts);
+        scan(c.returns_ts);
+    }
+    for e in EVENTS {
+        scan(e.payload_ts);
+    }
+    let names: Vec<&str> = refs.into_iter().collect();
+    out.push_str(&format!("import type {{ {} }} from \"./project\";\n\n", names.join(", ")));
     for c in COMMANDS {
         out.push_str(&format!("/** {} */\n", c.doc));
         out.push_str(&format!(
@@ -462,6 +494,7 @@ mod tests {
                         && *w != "string"
                         && *w != "never"
                         && *w != "number"
+                        && *w != "boolean"
                         && *w != "void"
                         && *w != "unknown"
                         && *w != "Promise"
@@ -473,6 +506,9 @@ mod tests {
                         && *w != "path"
                         && *w != "target"
                         && *w != "tempo"
+                        && *w != "key"
+                        && *w != "kind"
+                        && *w != "bytes"
                 })
                 .map(|w| w.to_string())
                 .collect();

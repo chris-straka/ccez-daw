@@ -9,7 +9,7 @@
     "build": "vite build",
     "check": "tsc --noEmit",
     "test": "bun test tests",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "cd .. && ./ui/node_modules/.bin/tauri dev",
     "tauri:build": "tauri build"
   },
   "dependencies": {

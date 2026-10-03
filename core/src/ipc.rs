@@ -94,10 +94,46 @@ pub const COMMANDS: &[CommandDef] = &[
         returns_ts: "EngineState",
     },
     CommandDef {
+        name: "engine_record",
+        doc: "Start a recording pass (transport runs, state reads Recording).",
+        args_ts: "Record<string, never>",
+        returns_ts: "EngineState",
+    },
+    CommandDef {
+        name: "link_toggle",
+        doc: "Join/leave the Link session clock; returns the new membership.",
+        args_ts: "Record<string, never>",
+        returns_ts: "boolean",
+    },
+    CommandDef {
         name: "engine_set_tempo",
         doc: "Set the transport tempo in BPM.",
         args_ts: "{ tempo: number }",
         returns_ts: "void",
+    },
+    CommandDef {
+        name: "asset_store",
+        doc: "Store an opaque blob (MIDI bytes, audio, preset) under an asset key.",
+        args_ts: "{ key: string; kind: string; bytes: number[] }",
+        returns_ts: "void",
+    },
+    CommandDef {
+        name: "asset_load",
+        doc: "Load an opaque blob by asset key.",
+        args_ts: "{ key: string }",
+        returns_ts: "number[]",
+    },
+    CommandDef {
+        name: "asset_list",
+        doc: "List stored assets (key/kind/size) without reading bytes.",
+        args_ts: "Record<string, never>",
+        returns_ts: "AssetEntry[]",
+    },
+    CommandDef {
+        name: "engine_position",
+        doc: "Current transport position in beats.",
+        args_ts: "Record<string, never>",
+        returns_ts: "number",
     },
 ];
 

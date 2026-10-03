@@ -17,3 +17,6 @@ tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ccez-core = { path = "../core" }
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }

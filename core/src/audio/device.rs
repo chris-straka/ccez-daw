@@ -28,7 +28,10 @@ use super::render::RenderGraph;
 #[derive(Debug)]
 pub enum AudioCommand {
     /// Set one `node:param` value (also mirrored into the [`ParamBank`]).
-    SetParam { target: String, value: f32 },
+    SetParam {
+        target: String,
+        value: f32,
+    },
     /// Swap the rendered graph. Built fully off-thread; the callback takes
     /// it with `try_recv` between blocks, so swaps are click-free and
     /// wait-free.
@@ -117,9 +120,12 @@ pub fn render_mono_block(
     delays: &std::collections::BTreeMap<(String, String), u64>,
     out_node: &str,
     frames: usize,
+    start_frame: u64,
 ) -> Option<Vec<f32>> {
     let g = graph?;
-    g.render(frames, 1, delays).ok()?.remove(out_node)
+    g.render(frames, 1, delays, start_frame)
+        .ok()?
+        .remove(out_node)
 }
 
 /// Thread-safe block counters shared between an audio callback (or the
@@ -135,6 +141,10 @@ pub fn render_mono_block(
 ///   callback budget; the audio still rendered, but the handoff is hot.
 #[derive(Debug, Clone, Default)]
 pub struct SharedCounters {
+    /// Actual mono frames rendered, independent of callback block size.
+    pub frames: Arc<AtomicU64>,
+    /// Selected hardware output rate, populated before the stream starts.
+    pub sample_rate: Arc<std::sync::atomic::AtomicU32>,
     pub blocks: Arc<AtomicU64>,
     pub underruns: Arc<AtomicU64>,
     pub overruns: Arc<AtomicU64>,
@@ -165,6 +175,10 @@ pub struct NullBackend {
     graph: Option<RenderGraph>,
     delays: std::collections::BTreeMap<(String, String), u64>,
     out_node: String,
+    /// Running frame count across pumps: the loop position. A graph swap
+    /// keeps it (edits must not restart the loop), only construction
+    /// zeroes it.
+    rendered_frames: u64,
     /// Rendered output blocks, for assertions. (The cpal side writes to
     /// the device instead of keeping these.)
     pub rendered: Vec<Vec<f32>>,
@@ -191,6 +205,7 @@ impl NullBackend {
             graph: None,
             delays: std::collections::BTreeMap::new(),
             out_node: "mix".to_string(),
+            rendered_frames: 0,
             rendered: Vec::new(),
             drained: 0,
             counters,
@@ -210,7 +225,11 @@ impl NullBackend {
                 AudioCommand::SetParam { target, value } => {
                     self.cache.insert(target, value);
                 }
-                AudioCommand::SwapGraph { graph, delays, out_node } => {
+                AudioCommand::SwapGraph {
+                    graph,
+                    delays,
+                    out_node,
+                } => {
                     self.graph = Some(graph);
                     self.delays = delays;
                     self.out_node = out_node;
@@ -230,19 +249,27 @@ impl AudioBackend for NullBackend {
             return false;
         }
         if n > 1 {
-            self.counters
-                .overruns
-                .fetch_add(n - 1, Ordering::Relaxed);
+            self.counters.overruns.fetch_add(n - 1, Ordering::Relaxed);
         }
         // Same code path as the cpal callback: byte-identical by
         // construction (see `render_mono_block`).
-        let block = match render_mono_block(self.graph.as_ref(), &self.delays, &self.out_node, frames) {
+        let block = match render_mono_block(
+            self.graph.as_ref(),
+            &self.delays,
+            &self.out_node,
+            frames,
+            self.rendered_frames,
+        ) {
             Some(b) => b,
             None => {
                 self.counters.underruns.fetch_add(1, Ordering::Relaxed);
                 vec![0.0; frames]
             }
         };
+        self.rendered_frames += frames as u64;
+        self.counters
+            .frames
+            .fetch_add(frames as u64, Ordering::Relaxed);
         self.counters.blocks.fetch_add(1, Ordering::Relaxed);
         self.rendered.push(block);
         true
@@ -310,7 +337,11 @@ impl CpalBackend {
     /// A [`DeviceError::NoDevice`] means "no hardware here" — the caller
     /// (see `transport`) degrades to the null device instead of panicking.
     pub fn open_default(
-        initial: Option<(RenderGraph, std::collections::BTreeMap<(String, String), u64>, String)>,
+        initial: Option<(
+            RenderGraph,
+            std::collections::BTreeMap<(String, String), u64>,
+            String,
+        )>,
     ) -> Result<(cpal::Stream, AudioEngine, SharedCounters), DeviceError> {
         Self::open_default_with_counters(initial, SharedCounters::new())
     }
@@ -318,20 +349,26 @@ impl CpalBackend {
     /// Same as [`CpalBackend::open_default`], but the callback feeds the
     /// caller's counters so one controller observes both backends.
     pub fn open_default_with_counters(
-        initial: Option<(RenderGraph, std::collections::BTreeMap<(String, String), u64>, String)>,
+        initial: Option<(
+            RenderGraph,
+            std::collections::BTreeMap<(String, String), u64>,
+            String,
+        )>,
         counters: SharedCounters,
     ) -> Result<(cpal::Stream, AudioEngine, SharedCounters), DeviceError> {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         let host = cpal::default_host();
-        let device = host.default_output_device().ok_or_else(|| {
-            DeviceError::NoDevice("default output device not found".to_string())
-        })?;
-        let supported = device.default_output_config().map_err(|e| {
-            DeviceError::NoDevice(format!("default output config: {e}"))
-        })?;
+        let device = host
+            .default_output_device()
+            .ok_or_else(|| DeviceError::NoDevice("default output device not found".to_string()))?;
+        let supported = device
+            .default_output_config()
+            .map_err(|e| DeviceError::NoDevice(format!("default output config: {e}")))?;
         let (engine, rx, params) = AudioEngine::channel();
         let stream = build_stream(&device, &supported, rx, params, counters.clone(), initial)?;
-        stream.play().map_err(|e| DeviceError::Stream(e.to_string()))?;
+        stream
+            .play()
+            .map_err(|e| DeviceError::Stream(e.to_string()))?;
         Ok((stream, engine, counters))
     }
 }
@@ -343,12 +380,16 @@ fn build_stream(
     rx: Receiver<AudioCommand>,
     params: Arc<ParamBank>,
     counters: SharedCounters,
-    initial: Option<(RenderGraph, std::collections::BTreeMap<(String, String), u64>, String)>,
+    initial: Option<(
+        RenderGraph,
+        std::collections::BTreeMap<(String, String), u64>,
+        String,
+    )>,
 ) -> Result<cpal::Stream, DeviceError> {
     use cpal::traits::DeviceTrait;
     let channels = config.channels() as usize;
     let sample_rate = config.sample_rate().0;
-    let _ = sample_rate; // reserved for resampling when graph rate != device rate (phase 2)
+    counters.sample_rate.store(sample_rate, Ordering::Relaxed);
     let stream_config: cpal::StreamConfig = config.clone().into();
 
     let mut state = CallbackState::new(rx, params, counters, initial);
@@ -366,7 +407,9 @@ fn build_stream(
             .build_output_stream(
                 &stream_config,
                 move |out: &mut [i16], _| {
-                    state.fill_convert(out, channels, |s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+                    state.fill_convert(out, channels, |s| {
+                        (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
+                    })
                 },
                 err_fn,
                 None,
@@ -384,7 +427,9 @@ fn build_stream(
                 None,
             )
             .map_err(|e| DeviceError::Stream(e.to_string())),
-        other => Err(DeviceError::Stream(format!("unsupported sample format: {other:?}"))),
+        other => Err(DeviceError::Stream(format!(
+            "unsupported sample format: {other:?}"
+        ))),
     }
 }
 
@@ -403,6 +448,9 @@ pub(crate) struct CallbackState {
     out_node: String,
     silence: Vec<f32>,
     counters: SharedCounters,
+    /// Running frame count across callbacks: the loop position (a graph
+    /// swap keeps it, like [`NullBackend`]).
+    rendered_frames: u64,
 }
 
 impl CallbackState {
@@ -410,7 +458,11 @@ impl CallbackState {
         rx: Receiver<AudioCommand>,
         params: Arc<ParamBank>,
         counters: SharedCounters,
-        initial: Option<(RenderGraph, std::collections::BTreeMap<(String, String), u64>, String)>,
+        initial: Option<(
+            RenderGraph,
+            std::collections::BTreeMap<(String, String), u64>,
+            String,
+        )>,
     ) -> Self {
         let (graph, delays, out_node) = match initial {
             Some((g, d, o)) => (Some(g), d, o),
@@ -425,6 +477,7 @@ impl CallbackState {
             out_node,
             silence: Vec::new(),
             counters,
+            rendered_frames: 0,
         }
     }
 
@@ -440,7 +493,11 @@ impl CallbackState {
                 AudioCommand::SetParam { target, value } => {
                     self.cache.insert(target, value);
                 }
-                AudioCommand::SwapGraph { graph, delays, out_node } => {
+                AudioCommand::SwapGraph {
+                    graph,
+                    delays,
+                    out_node,
+                } => {
                     self.graph = Some(graph);
                     self.delays = delays;
                     self.out_node = out_node;
@@ -457,8 +514,19 @@ impl CallbackState {
         // let _cache = &self.cache; // params feed device params in phase 2 (audible DSP reads them)
         // Render serially in the callback (block is small); the multicore
         // schedule pays off in the offline renderer.
+        self.counters
+            .frames
+            .fetch_add(frames as u64, Ordering::Relaxed);
+        let start_frame = self.rendered_frames;
+        self.rendered_frames += frames as u64;
         static EMPTY: Vec<f32> = Vec::new();
-        match render_mono_block(self.graph.as_ref(), &self.delays, &self.out_node, frames) {
+        match render_mono_block(
+            self.graph.as_ref(),
+            &self.delays,
+            &self.out_node,
+            frames,
+            start_frame,
+        ) {
             Some(buf) => {
                 self.counters.blocks.fetch_add(1, Ordering::Relaxed);
                 self.silence = buf;
@@ -469,8 +537,8 @@ impl CallbackState {
                 self.counters.underruns.fetch_add(1, Ordering::Relaxed);
                 if self.silence.len() != frames {
                     self.silence.resize(frames, 0.0);
-                    self.silence.fill(0.0);
                 }
+                self.silence.fill(0.0);
                 if self.silence.is_empty() {
                     &EMPTY
                 } else {
@@ -513,7 +581,10 @@ mod tests {
     use crate::audio::render::Proc;
     use crate::model::{Edge, EdgeKind, Project, Track};
 
-    fn rig() -> (RenderGraph, std::collections::BTreeMap<(String, String), u64>) {
+    fn rig() -> (
+        RenderGraph,
+        std::collections::BTreeMap<(String, String), u64>,
+    ) {
         let mut p = Project::new("p", "Device");
         for id in ["a", "b"] {
             p.tracks.push(Track {
@@ -544,6 +615,43 @@ mod tests {
         g.set_proc("b", Proc::Constant(0.25));
         g.set_proc("mix", Proc::Mix);
         (g, delays)
+    }
+
+    #[test]
+    fn both_backends_count_actual_frames_even_without_a_graph() {
+        let (_, rx, params) = AudioEngine::channel();
+        let mut null = NullBackend::new(rx, params);
+        let (_, rx, params) = AudioEngine::channel();
+        let counters = SharedCounters::new();
+        let mut callback = CallbackState::new(rx, params, counters.clone(), None);
+        for frames in [64, 96] {
+            assert!(null.pump(frames));
+            assert_eq!(callback.next_block(frames), vec![0.0; frames]);
+        }
+        assert_eq!(null.counters.frames.load(Ordering::Relaxed), 160);
+        assert_eq!(counters.frames.load(Ordering::Relaxed), 160);
+        assert_eq!(callback.rendered_frames, 160);
+        assert_eq!(counters.snapshot(), (2, 2, 0));
+    }
+
+    #[test]
+    fn callback_substitutes_silence_after_an_audible_graph_disappears() {
+        let (engine, rx, params) = AudioEngine::channel();
+        let (graph, delays) = rig();
+        let mut callback = CallbackState::new(
+            rx,
+            params,
+            SharedCounters::new(),
+            Some((graph, delays, "mix".into())),
+        );
+        assert_eq!(callback.next_block(64), vec![0.5; 64]);
+        let (graph, delays) = rig();
+        engine.send(AudioCommand::SwapGraph {
+            graph,
+            delays,
+            out_node: "missing".into(),
+        });
+        assert_eq!(callback.next_block(64), vec![0.0; 64]);
     }
 
     #[test]

@@ -10,3 +10,6 @@ mcp/dist/
 ui/test-results/
 ui/playwright-report/
 .agents/memory/.muse-memory.lock
+
+# Muse agent memory: notes are shared, locks are not
+.agents/memory/*.lock

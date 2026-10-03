@@ -247,7 +247,7 @@ mod tests {
         let mut g = RenderGraph::from_audio_graph(AudioGraph::from_project(&p));
         g.set_proc("a", Proc::Constant(0.25));
         g.set_proc("mix", Proc::Mix);
-        let bufs = g.render(512, 1, &BTreeMap::new()).expect("renders");
+        let bufs = g.render(512, 1, &BTreeMap::new(), 0).expect("renders");
         let mut tap = MeterTap::new(48_000.0);
         tap.observe_node(&bufs, "mix");
         tap.publish();

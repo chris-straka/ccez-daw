@@ -85,6 +85,11 @@ export function encodeClip(clip: MidiClip): string {
   return JSON.stringify({ ...parsed, notes: sortNotes(parsed.notes) });
 }
 
+/** Equal-tempered frequency for a MIDI pitch (A4 = 440 Hz). */
+export function midiToFreq(pitch: number): number {
+  return 440 * Math.pow(2, (pitch - 69) / 12);
+}
+
 export function sortNotes(notes: MidiNote[]): MidiNote[] {
   return [...notes].sort(
     (a, b) =>
