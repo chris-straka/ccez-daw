@@ -44,6 +44,15 @@ freeze: the `AutomationPointSet` op — see `contracts/op-log-format.md`).
 
 - Bun >= 1.1, Rust stable, Tauri 2 system deps
   ([prerequisites](https://v2.tauri.app/start/prerequisites/)).
+- Linux (Debian/Ubuntu) also needs ALSA headers for the audio engine; the
+  full list CI installs is:
+
+  ```sh
+  sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+    libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
+  ```
+- Optional: `ffmpeg` on `PATH` for video thumbnails (without it, filmstrip
+  cells render as placeholders).
 
 ## Commands
 
@@ -52,6 +61,7 @@ bun install            # install ui + mcp workspaces
 bun run typegen        # regenerate TS bindings from Rust (core is source of truth)
 bun run check          # typegen drift gate + tsc + core tests (FAILS on contract drift)
 bun run test           # all TS + Rust tests
+bun run test:e2e       # Playwright web-mode specs (first: cd ui && bunx playwright install chromium)
 bun run tauri:dev      # launch the DAW shell (proves Solid-in-Tauri cycle)
 cargo test --manifest-path core/Cargo.toml   # Rust core tests
 ```

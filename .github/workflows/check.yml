@@ -42,6 +42,24 @@ jobs:
       - run: bun run test
         working-directory: mcp
 
+  # Web-mode Playwright specs: Vite dev server + mocked Tauri IPC, so a
+  # stock browser is all it needs (see ui/e2e/playwright.config.ts).
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+        working-directory: ui
+      - run: bun run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-test-results
+          path: ui/test-results/
+          retention-days: 7
+
   rust-macos:
     runs-on: macos-latest
     steps:
@@ -72,6 +90,7 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
       - run: cargo check --locked --workspace --target x86_64-unknown-linux-gnu
+      - run: cargo test --locked --workspace --target x86_64-unknown-linux-gnu
 
   rust-windows:
     runs-on: windows-latest
