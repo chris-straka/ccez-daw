@@ -6,7 +6,7 @@ import { cellsForClip, type ClipThumbMap } from "./thumbnails";
  * Agent 2: filmstrip lane — one row per video clip on the beat ruler.
  *
  * Thumbnails are real JPEG cells: the host extracts a `ThumbStrip` per
- * media file with core (`extract_strip`: ffmpeg decode + tiny-codec JPEG),
+ * media file with core (`extract_strip`: ffmpeg decode + JPEG encode),
  * converts each real frame path to a `blob:`/asset URL, and passes the
  * cells in via `thumbs` (see `./thumbnails`). Slots without media —
  * `take:<key>` sources, missing strips, placeholder frames — render the

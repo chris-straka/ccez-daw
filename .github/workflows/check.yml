@@ -25,6 +25,23 @@ jobs:
       - run: bun install
       - run: bun run typegen -- --check
 
+  # TS side: strict typecheck + unit tests for both Bun workspaces. No Rust
+  # needed (the generated bindings are committed; the job above guards them).
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+        working-directory: ui
+      - run: bun run test
+        working-directory: ui
+      - run: bun run check
+        working-directory: mcp
+      - run: bun run test
+        working-directory: mcp
+
   rust-macos:
     runs-on: macos-latest
     steps:
