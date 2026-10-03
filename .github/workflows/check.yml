@@ -22,8 +22,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
-      # typegen builds ccez-core, whose cpal audio backend links ALSA.
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      # typegen builds ccez-core, which links ALSA (cpal) and libxcb
+      # (vst3-host's X11 editor support).
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxcb1-dev
       - run: bun install
       - run: bun run typegen -- --check
 
