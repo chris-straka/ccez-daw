@@ -15,8 +15,9 @@ name: release
 #   updater (macOS/Windows/Linux jobs sign updates with these):
 #     TAURI_SIGNING_PRIVATE_KEY            (from `bunx tauri signer generate`)
 #     TAURI_SIGNING_PRIVATE_KEY_PASSWORD   (the password set at key generation)
-#   then paste the public key into `plugins.updater.pubkey` and replace
-#   OWNER in `plugins.updater.endpoints` in src-tauri/tauri.conf.json.
+#   then paste the public key into `plugins.updater.pubkey` in
+#   src-tauri/tauri.conf.json (`plugins.updater.endpoints` there already
+#   points at this repo's latest.json).
 # No Apple Developer account needed: the macOS bundle is ad-hoc signed, so
 # the first launch on another Mac needs right-click -> Open.
 #
