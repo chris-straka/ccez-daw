@@ -172,6 +172,8 @@ export const ACTIONS: ActionDef[] = [
   // wires real behavior (dialogs, zoom, fullscreen, edit fallbacks).
   localAction("app.about", "App: About"),
   localAction("app.quit", "App: Quit"),
+  localAction("app.update.check", "App: Check for Updates"),
+  localAction("app.update.install", "App: Install Update and Restart"),
   localAction("app.preferences", "App: Preferences"),
   localAction("edit.cut", "Edit: Cut"),
   localAction("edit.copy", "Edit: Copy"),

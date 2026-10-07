@@ -27,7 +27,7 @@
       "endpoints": [
         "https://github.com/chris-straka/ccez-daw/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzMkRCQUY2NDUwODAyQ0IKUldUTEFnaEY5cm90MC9WTmFkcW1XdlNCN0tuSklzOWp3S21pSm5xZW5peE1GV0VsYlpGSTFTTHIK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCOEVEMUIzMDJGRkUwQTQKUldTazRQOENzOUdPcS84QWwxb2xCNW1qOXVoclFhMDRxWlhTSC9JZEtvQWpyWjkyclRJdmVsUXkK"
     }
   },
   "bundle": {

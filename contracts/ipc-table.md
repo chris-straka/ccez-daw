@@ -35,6 +35,8 @@ them for real (the pre-wiring stubs are gone):
 | `engine_position` | `{}` | `number` | transport position in beats |
 | `engine_record` | `{}` | `EngineState` | start a recording pass (transport runs, state reads Recording) |
 | `link_toggle` | `{}` | `boolean` | join/leave the Link session clock; returns the new membership |
+| `app_update_check` | `{}` | `string` | ask the release feed (`latest.json`) for a newer signed build; returns a status line |
+| `app_update_install` | `{}` | `string` | download + verify + install the newer build, then restart; returns a status line when up to date |
 
 ## Events (`listen`)
 

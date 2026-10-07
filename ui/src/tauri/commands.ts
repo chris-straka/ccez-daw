@@ -1,6 +1,8 @@
 /** Typed invoke wrappers over the generated v0 IPC bindings. */
 export { EVENTS } from "../generated/ipc";
 export {
+  app_update_check,
+  app_update_install,
   asset_list,
   asset_load,
   asset_store,

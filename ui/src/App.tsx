@@ -25,6 +25,8 @@ import {
   engine_set_tempo,
   engine_stop,
   link_toggle,
+  app_update_check,
+  app_update_install,
   op_apply,
   op_redo,
   op_undo,
@@ -80,6 +82,9 @@ export default function App() {
   createEffect(() => {
     setVimContext(vim, contextForTab(workspaceTab()));
   });
+
+  /** Local actions whose handler leaves its answer in the status line. */
+  const REPORTS_STATUS = new Set(["app.update.check", "app.update.install"]);
 
   async function refresh() {
     try {
@@ -269,7 +274,9 @@ export default function App() {
       }
     }
     setPaletteOpen(false);
-    if (!LOCAL_GUIDANCE[id]) await refresh();
+    // Guidance and status-reporting actions own the status line; the
+    // refresh would wipe their message.
+    if (!LOCAL_GUIDANCE[id] && !REPORTS_STATUS.has(id)) await refresh();
   }
 
   onMount(() => {
@@ -385,6 +392,23 @@ export default function App() {
         await getCurrentWindow().close();
       } catch (e) {
         setError(`quit needs the app window: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    });
+    // Updater: status text either way, so a plain browser (no Tauri) gets
+    // an honest "needs the desktop app" instead of a silent no-op.
+    registerLocalActionHandler("app.update.check", async () => {
+      try {
+        setError(await app_update_check({}));
+      } catch (e) {
+        setError(`update check failed: ${String(e)}`);
+      }
+    });
+    registerLocalActionHandler("app.update.install", async () => {
+      setError("update: downloading…");
+      try {
+        setError(await app_update_install({}));
+      } catch (e) {
+        setError(`update install failed: ${String(e)}`);
       }
     });
     registerLocalActionHandler("link.join", async () => {
@@ -532,7 +556,10 @@ export default function App() {
           <span data-testid="transport-error" class="transport-error">{error()}</span>
         </Show>
       </header>
-      <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} onRan={() => void refresh()} />
+      <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} onRan={(id) => {
+          if (!REPORTS_STATUS.has(id)) void refresh();
+        }}
+      />
       <ShortcutEditor
         open={shortcutsOpen()}
         onClose={() => setShortcutsOpen(false)}

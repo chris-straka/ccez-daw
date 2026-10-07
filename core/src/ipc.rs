@@ -135,6 +135,18 @@ pub const COMMANDS: &[CommandDef] = &[
         args_ts: "Record<string, never>",
         returns_ts: "number",
     },
+    CommandDef {
+        name: "app_update_check",
+        doc: "Check the release feed for a newer signed build; returns a status line.",
+        args_ts: "Record<string, never>",
+        returns_ts: "string",
+    },
+    CommandDef {
+        name: "app_update_install",
+        doc: "Download, verify and install the newer build, then restart into it.",
+        args_ts: "Record<string, never>",
+        returns_ts: "string",
+    },
 ];
 
 pub const EVENTS: &[EventDef] = &[

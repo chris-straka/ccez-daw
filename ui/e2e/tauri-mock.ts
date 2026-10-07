@@ -175,6 +175,10 @@ export function installInBrowser(canned: CannedBackend): void {
       case "link_toggle":
         linkOn = !linkOn;
         return linkOn;
+      case "app_update_check":
+        return "update: 0.1.2 available (running 0.1.1)";
+      case "app_update_install":
+        return "update: up to date (0.1.2)";
       case "engine_stop":
         return "Stopped";
       case "engine_set_tempo":

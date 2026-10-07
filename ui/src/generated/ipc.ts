@@ -98,6 +98,16 @@ export function engine_position(args: Record<string, never>): Promise<number> {
   return invoke<number>("engine_position", args as unknown as Record<string, unknown>);
 }
 
+/** Check the release feed for a newer signed build; returns a status line. */
+export function app_update_check(args: Record<string, never>): Promise<string> {
+  return invoke<string>("app_update_check", args as unknown as Record<string, unknown>);
+}
+
+/** Download, verify and install the newer build, then restart into it. */
+export function app_update_install(args: Record<string, never>): Promise<string> {
+  return invoke<string>("app_update_install", args as unknown as Record<string, unknown>);
+}
+
 export const COMMAND_NAMES = [
   "project_new",
   "project_get",
@@ -118,6 +128,8 @@ export const COMMAND_NAMES = [
   "asset_load",
   "asset_list",
   "engine_position",
+  "app_update_check",
+  "app_update_install",
 ] as const;
 
 export const EVENTS = {

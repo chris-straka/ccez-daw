@@ -77,6 +77,7 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
             "App",
             vec![
                 A { id: "app.about", title: "About ccez-daw", accelerator: None },
+                A { id: "app.update.check", title: "Check for Updates…", accelerator: None },
                 S,
                 A { id: "app.preferences", title: "Preferences…", accelerator: Some("CmdOrCtrl+,") },
                 S,
@@ -183,6 +184,7 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
     ];
     if !macos {
         help.push(S);
+        help.push(A { id: "app.update.check", title: "Check for Updates…", accelerator: None });
         help.push(A { id: "app.about", title: "About ccez-daw", accelerator: None });
     }
     spec.push(("Help", help));
@@ -388,6 +390,8 @@ mod tests {
         "app.about",
         "app.quit",
         "app.preferences",
+        "app.update.check",
+        "app.update.install",
         "edit.cut",
         "edit.copy",
         "edit.paste",
@@ -484,6 +488,7 @@ mod tests {
                 "app.about",
                 "app.quit",
                 "app.preferences",
+                "app.update.check",
             ] {
                 assert!(ids.contains(expected), "{expected:?} missing (macos={macos})");
             }

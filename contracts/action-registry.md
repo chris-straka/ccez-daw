@@ -35,6 +35,8 @@ to descriptors until Track K wires real behavior.
 | `app.about` | — (local) | About dialog; native About panel on macOS |
 | `app.quit` | — (local) | Quit; native role on macOS, `app.exit(0)` elsewhere |
 | `app.preferences` | — (local) | Preferences dialog (Track K) |
+| `app.update.check` | — (local → `app_update_check`) | ask the release feed for a newer signed build; status line shows the answer |
+| `app.update.install` | — (local → `app_update_install`) | download, verify, install the newer build and restart |
 | `edit.cut` | — (local) | Native OS cut + sync event |
 | `edit.copy` | — (local) | Native OS copy + sync event |
 | `edit.paste` | — (local) | Native OS paste + sync event |
