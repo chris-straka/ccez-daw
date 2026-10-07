@@ -19,7 +19,7 @@
     },
     "ui": {
       "name": "ccez-daw-ui",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@tauri-apps/api": "^2",
         "solid-js": "^1.9",

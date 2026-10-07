@@ -1,11 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Ccez Daw",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "dev.ccez.daw",
   "build": {
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "cd ui && bun run dev",
+    "beforeBuildCommand": "cd ui && bun run build",
     "frontendDist": "../ui/dist"
   },
   "app": {

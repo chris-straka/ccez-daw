@@ -105,4 +105,6 @@ Changes:
   palette actions `app.update.check` / `app.update.install`, and a
   "Check for Updates…" menu item (App menu on macOS, Help elsewhere).
   `ui/e2e/updater.spec.ts` covers palette and menu.
-- Version 0.1.1 is the first test release.
+- Version 0.1.1 was the first test tag; its release run failed before
+  signing (no `beforeBuildCommand`, so `ui/dist` was never built). Fixed
+  in `tauri.conf.json`; 0.1.2 is the first published signed release.
