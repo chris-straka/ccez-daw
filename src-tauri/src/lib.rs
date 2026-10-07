@@ -388,6 +388,10 @@ fn engine_position(state: State<AppState>) -> f64 {
 /// line for the shell (`update: 0.1.2 available (running 0.1.1)`).
 #[tauri::command]
 async fn app_update_check(app: tauri::AppHandle) -> Result<String, String> {
+    update_status(&app).await
+}
+
+async fn update_status<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<String, String> {
     use tauri_plugin_updater::UpdaterExt;
     let current = app.package_info().version.to_string();
     let update = app
@@ -478,6 +482,42 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Network check against the published release feed, run by the
+/// `updater-feed` workflow at an older commit: a build carrying this
+/// commit's `tauri.conf.json` (version, pubkey, endpoint) must see the
+/// latest release and accept its signed bundle.
+#[cfg(test)]
+mod updater_feed {
+    use tauri::test::{mock_builder, mock_context, noop_assets};
+
+    #[test]
+    #[ignore = "network: reads the live GitHub release feed"]
+    fn older_build_sees_and_verifies_latest_release() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let running = config.version.clone().unwrap();
+        let mut ctx = mock_context(noop_assets());
+        ctx.package_info_mut().version = running.parse().unwrap();
+        *ctx.config_mut() = config;
+        let app = mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(ctx)
+            .unwrap();
+        let handle = app.handle().clone();
+        tauri::async_runtime::block_on(async move {
+            use tauri_plugin_updater::UpdaterExt;
+            let status = super::update_status(&handle).await.unwrap();
+            println!("{status}");
+            let expected = std::env::var("EXPECT_UPDATE_VERSION").unwrap();
+            assert_eq!(status, format!("update: {expected} available (running {running})"));
+            // download() checks the minisign signature against the pubkey.
+            let update = handle.updater().unwrap().check().await.unwrap().unwrap();
+            let bytes = update.download(|_, _| {}, || {}).await.unwrap();
+            println!("verified {} bytes for {}", bytes.len(), update.target);
+        });
+    }
 }
 
 #[cfg(test)]

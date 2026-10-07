@@ -1,0 +1,28 @@
+name: updater-feed
+
+# End-to-end updater check against the published release: check out an
+# older commit (the build a user is running), point it at the live
+# latest.json, and assert it sees `expect` and accepts the signed bundle.
+# Runs on macOS so the Tauri crate builds without GTK.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit of the older build (its tauri.conf.json is used)"
+        required: true
+      expect:
+        description: "Version the feed should offer, e.g. 0.1.1"
+        required: true
+
+jobs:
+  older-build-sees-latest:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked -p ccez-daw --lib updater_feed -- --ignored --nocapture
+        env:
+          EXPECT_UPDATE_VERSION: ${{ inputs.expect }}
