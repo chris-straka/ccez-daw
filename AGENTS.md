@@ -7,7 +7,7 @@ Follow these over cleverness.
 
 - `bun run check` — typegen drift + `tsc` + core tests. Zero tolerance.
 - `bun run test` — ui + mcp + core suites, all green.
-- `bun run test:e2e` — 38 specs against the mocked shell.
+- `bun run test:e2e` — the Playwright specs in `ui/e2e/` against the mocked shell.
 - `cargo check --manifest-path src-tauri/Cargo.toml` — after touching commands.
 
 A confident patch you never watched pass the repo's tests is the most
@@ -51,7 +51,7 @@ common wrong answer.
 - Bug fix or behavior change ships with the smallest focused test in the
   repo's normal layout (bun test, cargo test, or playwright spec).
   Watch it fail first, then fix.
-- Shell-visible behavior gets an e2e spec following `e2e/session.spec.ts`.
+- Shell-visible behavior gets an e2e spec following `ui/e2e/session.spec.ts`.
 - When behavior changes, update the doc that described the old behavior
   (`docs/notes/*`, `contracts/*`) in the same change.
 
