@@ -84,3 +84,25 @@ Developer Program (v3 Open Question 1).
 - `python3 -c yaml.safe_load` on both workflow files (lint) — pass.
 - `tauri.conf.json` parses + `pubkey` no longer contains TODO — pass.
 - `bun run check` (typegen `--check` + `tsc --noEmit` + core tests) — pass.
+
+## 2026-10-07 audit: why the updater never worked, and what changed
+
+Findings:
+- No `TAURI_SIGNING_PRIVATE_KEY` secret was ever set, and the private key
+  from 2026-09-12 lived in `/tmp` and is gone, so the committed pubkey
+  could never verify anything. No tag had ever been pushed.
+- Nothing in the app called the updater: the plugin was registered and
+  allowed, but no code checked for or installed an update.
+
+Changes:
+- New keypair (no password). Public key in `tauri.conf.json`; private key
+  at `~/.config/ccez-daw/updater.key` on f-ms-7917 (mode 600, never
+  committed). The secret is set with
+  `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.config/ccez-daw/updater.key`
+  (needs the owner; agents are not allowed to write repo secrets).
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` stays unset.
+- Additive IPC `app_update_check` / `app_update_install` (status lines),
+  palette actions `app.update.check` / `app.update.install`, and a
+  "Check for Updates…" menu item (App menu on macOS, Help elsewhere).
+  `ui/e2e/updater.spec.ts` covers palette and menu.
+- Version 0.1.1 is the first test release.
