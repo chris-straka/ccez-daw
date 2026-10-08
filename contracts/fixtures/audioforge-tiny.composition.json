@@ -1,0 +1,30 @@
+{
+  "name": "t",
+  "tempo": 120,
+  "beats_per_bar": 4,
+  "instruments": [
+    { "id": "keys", "patch": "felt_piano" },
+    { "id": "tick", "patch": "clock_tick", "reverb": 0 }
+  ],
+  "layers": [
+    { "id": "bed" },
+    { "id": "pulse", "min_intensity": 3 }
+  ],
+  "sections": [
+    { "id": "intro", "role": "intro", "bars": 1, "next": "calm" },
+    { "id": "calm", "role": "loop", "bars": 2 },
+    { "id": "end", "role": "outro", "bars": 1 }
+  ],
+  "parts": [
+    { "section": "intro", "layer": "bed", "instrument": "keys",
+      "notes": [{ "pitch": "A4", "start": 0, "length": 4 }] },
+    { "section": "calm", "layer": "bed", "instrument": "keys",
+      "notes": [{ "pitch": "D4", "start": 0, "length": 2 },
+                { "pitch": "F4", "start": 6, "length": 2 }] },
+    { "section": "calm", "layer": "pulse", "instrument": "tick",
+      "notes": [{ "pitch": "C6", "start": 0, "length": 0.25 },
+                { "pitch": "C6", "start": 4, "length": 0.25 }] },
+    { "section": "end", "layer": "bed", "instrument": "keys",
+      "notes": [{ "pitch": "D3", "start": 0, "length": 4 }] }
+  ]
+}

@@ -18,6 +18,10 @@ name = "plugin-worker"
 path = "src/bin/plugin-worker.rs"
 
 [[bin]]
+name = "ccez-compose"
+path = "src/bin/ccez-compose.rs"
+
+[[bin]]
 name = "export-validator"
 path = "src/bin/export-validator.rs"
 

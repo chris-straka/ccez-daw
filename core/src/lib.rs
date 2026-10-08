@@ -10,6 +10,7 @@ pub mod adaptive;
 pub mod ai;
 pub mod bounce;
 pub mod comp;
+pub mod compose;
 pub mod devices;
 pub mod dsp;
 pub mod audio;
