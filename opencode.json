@@ -9,18 +9,6 @@
         "@hypothesi/tauri-mcp-server"
       ],
       "enabled": true
-    },
-    "playwright": {
-      "type": "local",
-      "command": [
-        "{env:HOME}/.local/share/vite-plus/fallback-bin/npx",
-        "-y",
-        "@playwright/mcp@latest"
-      ],
-      "environment": {
-        "PATH": "{env:HOME}/.local/share/vite-plus/fallback-bin:{env:HOME}/.local/share/vite-plus/bin:/opt/homebrew/bin:{env:HOME}/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      },
-      "enabled": true
     }
   }
 }
