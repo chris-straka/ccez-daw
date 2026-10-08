@@ -22,6 +22,10 @@ freeze: the `AutomationPointSet` op — see `contracts/op-log-format.md`).
   devices (sample-identical to native kernels), Link-style tempo sync.
 - **Mix & finish** — mixer with snapshots and reference tracks,
   loudness-normalized bounce, batch + game-audio export, metering bridge.
+- **Game music for Bevy** — compose (MCP `compose_*` tools or
+  `ccez-compose`), render seamless loop stems with intro/loop/outro
+  sections and intensity 1-5 layers, export an audioforge package
+  (`docs/notes/ga-compose.md`, `contracts/audioforge-music.md`).
 - **Hosts everything** — sandboxed CLAP/VST3/AU loading with latency
   compensation, plugin scan lists, crash recovery with watchdog, ARA
   document model wired to bounce.
