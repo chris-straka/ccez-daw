@@ -63,6 +63,23 @@ jobs:
           path: ui/test-results/
           retention-days: 7
 
+  # Game-music composer end to end: build core's ccez-compose CLI, then
+  # drive it through the MCP server (compose, preview, export). The TS job
+  # above has no Rust, so this is where the real-audio MCP test must run.
+  compose-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxcb1-dev
+      - run: bun install --frozen-lockfile
+      - run: cargo build --locked --manifest-path core/Cargo.toml --bin ccez-compose
+      - run: bun test tests/compose.test.ts
+        working-directory: mcp
+        env:
+          CCEZ_COMPOSE_E2E: "1"
+
   rust-macos:
     runs-on: macos-latest
     steps:

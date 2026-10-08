@@ -1,0 +1,21 @@
+#!/usr/bin/env bun
+// Stand-in for core's ccez-compose in TS-only CI: echoes what it was
+// asked so tests can check the store's argument plumbing. Never audio.
+const [cmd, doc, ...rest] = process.argv.slice(2);
+const flag = (n: string) => {
+  const i = rest.indexOf(n);
+  return i >= 0 ? rest[i + 1] : undefined;
+};
+if (cmd === "validate") {
+  const d = JSON.parse(await Bun.file(doc!).text());
+  const errors = d.sections.length === 0 ? ["sections: need at least one loop section"] : [];
+  console.log(JSON.stringify({ ok: errors.length === 0, errors }));
+} else if (cmd === "patches") {
+  console.log(JSON.stringify([{ id: "felt_piano", description: "stub", range: [36, 96] }]));
+} else if (cmd === "preview" || cmd === "export") {
+  const plan = flag("--plan");
+  console.log(JSON.stringify({ cmd, out: flag("--out"), plan: plan ? JSON.parse(await Bun.file(plan).text()) : null }));
+} else {
+  console.error(`stub: unknown ${cmd}`);
+  process.exit(1);
+}

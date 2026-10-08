@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { InMemoryBackend } from "./backend.js";
 import { GameAudioStore } from "./gameaudio.js";
+import { ComposeStore, composeTools } from "./compose.js";
 import {
   AuditionInput,
   AutomationPointInput,
@@ -30,7 +31,11 @@ function toContent(value: unknown) {
 
 /** Build a wired server over one backend (one backend per instance, so
  *  the op log actor is always `"mcp"` for that server's mutations). */
-export function createServer(backend: InMemoryBackend, gameAudio: GameAudioStore = new GameAudioStore()): McpServer {
+export function createServer(
+  backend: InMemoryBackend,
+  gameAudio: GameAudioStore = new GameAudioStore(),
+  compose: ComposeStore = new ComposeStore(),
+): McpServer {
   const server = new McpServer({ name: "ccez-daw", version: "0.1.0" });
   const handlers = createToolHandlers(backend, gameAudio);
   const inputSchemas = [
@@ -64,6 +69,15 @@ export function createServer(backend: InMemoryBackend, gameAudio: GameAudioStore
       async (args: unknown) => toContent(await run(args)),
     );
   });
+  // Game-music composer (MCP-only, after the registry-mirrored rows):
+  // drives core's `ccez-compose` CLI; see contracts/mcp-tools.md.
+  for (const tool of composeTools(compose)) {
+    server.registerTool(
+      tool.name,
+      { description: tool.description, inputSchema: tool.input.shape },
+      async (args: unknown) => toContent(await tool.run(args)),
+    );
+  }
   return server;
 }
 
@@ -80,7 +94,8 @@ function getPort(): number {
 async function main() {
   const backend = new InMemoryBackend();
   const gameAudio = new GameAudioStore();
-  const server = createServer(backend, gameAudio);
+  const compose = new ComposeStore();
+  const server = createServer(backend, gameAudio, compose);
 
   if (process.argv.includes("--http")) {
     // Streamable HTTP (stateless) via the official TS SDK web-standard
@@ -98,7 +113,7 @@ async function main() {
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
         });
-        const perRequest = createServer(backend, gameAudio);
+        const perRequest = createServer(backend, gameAudio, compose);
         await perRequest.connect(transport);
         try {
           return await transport.handleRequest(req);

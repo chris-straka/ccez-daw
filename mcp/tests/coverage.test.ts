@@ -185,7 +185,7 @@ describe("coverage tools over the MCP wire", () => {
     const backend = new InMemoryBackend();
     const client = await linkedClient(backend);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).slice(10)).toEqual([...COVERAGE_TOOL_NAMES]);
+    expect(tools.map((t) => t.name).slice(10, 10 + COVERAGE_TOOL_NAMES.length)).toEqual([...COVERAGE_TOOL_NAMES]);
 
     const point = await call(client, "automation_set_point", {
       lane: "trk_1:volume",
