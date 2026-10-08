@@ -91,8 +91,12 @@ async function main() {
     Bun.serve({
       port,
       fetch: async (req: Request) => {
+        // JSON responses (not SSE): handleRequest resolves with the whole
+        // reply, so closing the per-request server below can't cut off a
+        // streamed body (it did: every HTTP call came back empty).
         const transport = new WebStandardStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
+          enableJsonResponse: true,
         });
         const perRequest = createServer(backend, gameAudio);
         await perRequest.connect(transport);
