@@ -6,7 +6,7 @@
 //! once then goes silent) and adaptive *layers* (a bed that always plays,
 //! more layers that fade in as the game's intensity rises 1..=5). Every
 //! (section, layer) pair with notes renders to one mono stem; the game
-//! runtime (audioforge, `~/SWE/audio/audioforge`) mixes the stems by game state.
+//! runtime (audioforge, `~/Games/_audio/audioforge`) mixes the stems by game state.
 //!
 //! The document is plain JSON so agents (the MCP `compose_*` tools) and
 //! people author the same thing:

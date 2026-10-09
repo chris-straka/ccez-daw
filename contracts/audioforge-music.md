@@ -2,7 +2,7 @@
 
 What `ccez-compose export` (and the MCP `compose_export_audioforge` tool)
 writes for audioforge's interactive music
-(`~/SWE/audio/audioforge`, `crates/af-music/src/score.rs`). Source of truth:
+(`~/Games/_audio/audioforge`, `crates/af-music/src/score.rs`). Source of truth:
 `core/src/compose/audioforge.rs`. audioforge's
 `crates/af-runtime/tests/ccez_daw_export.rs` plays a package built from
 `contracts/fixtures/audioforge-tiny.composition.json` through its real
