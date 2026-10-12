@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "name": "interpreter_main",
+  "name": "demo_main",
   "tempo": 84,
   "beats_per_bar": 4,
   "key": "D minor",

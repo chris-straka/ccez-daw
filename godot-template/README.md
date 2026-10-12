@@ -1,7 +1,7 @@
 # godot-template — GA-4 playback layer for Godot 4.7.1 (GDScript only)
 
-> C# port for HLL lives in the game repo: `~/Games/hll/audio/Ccez*.cs`
-> (CcezBankLoader, CcezMusicPlayer, CcezSfxPlayer). Logic mirrors
+> A game may port these scripts to C# in its own repo (e.g.
+> CcezBankLoader, CcezMusicPlayer, CcezSfxPlayer). A port mirrors
 > `scripts/*.gd` line for line; behavior deltas are bugs.
 
 Drop-in audio playback for a CCEZ game-audio export package. Full teaching

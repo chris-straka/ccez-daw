@@ -25,7 +25,7 @@ seamless loop stems; `ccez-compose export` writes an audioforge package
 
 ## First agent session: rough edges hit, and what happened to them
 
-Composing The Interpreter's main theme test (intro, calm + tense loops with
+Composing a test main theme (intro, calm + tense loops with
 a `bed` layer at intensity 1 and a `lift` layer at intensity 3, outro)
 through the MCP server over HTTP:
 
