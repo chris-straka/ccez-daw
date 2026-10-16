@@ -37,6 +37,7 @@ to descriptors until Track K wires real behavior.
 | `app.preferences` | — (local) | Preferences dialog (Track K) |
 | `app.update.check` | — (local → `app_update_check`) | ask the release feed for a newer signed build; status line shows the answer |
 | `app.update.install` | — (local → `app_update_install`) | download, verify, install the newer build and restart |
+| `composition.open` | — (local → `compose_open`) | open the composition JSON at the shell's path field as a new project: rendered stems on audio tracks, notes on muted MIDI tracks (timeline + piano roll); status line says what opened |
 | `edit.cut` | — (local) | Native OS cut + sync event |
 | `edit.copy` | — (local) | Native OS copy + sync event |
 | `edit.paste` | — (local) | Native OS paste + sync event |

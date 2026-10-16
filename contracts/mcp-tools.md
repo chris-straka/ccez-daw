@@ -38,9 +38,10 @@ never writes, like `gameaudio_audition`).
 Headless composer for game music: the server holds one composition
 document (`core/src/compose`, JSON) and runs core's `ccez-compose` CLI
 (`$CCEZ_COMPOSE_BIN`, else `target/{release,debug}/ccez-compose`, else
-`cargo run`) for validation, rendering and export. There is no UI panel
-or registry action for these yet; the composition is not a timeline
-project. Every mutation returns `{ ok, errors }` from the Rust validator.
+`cargo run`) for validation, rendering and export. A composition opens in
+the DAW as a project (`compose_open_in_daw`, or the shell's `compose_open`
+IPC / "Composition: Open in the DAW"). Every mutation returns
+`{ ok, errors }` from the Rust validator.
 
 | Tool | Input | Returns |
 |---|---|---|
@@ -57,4 +58,16 @@ project. Every mutation returns `{ ok, errors }` from the Rust validator.
 | `compose_preview` | `{ out: .wav\|.mp3, plan?: [{ section, bars?, intensity? }] }` | `{ out, plan, stats }` (stereo; peak/rms, per-step layers, `instrument_rms_dbfs`, `loop_seams`, warnings) |
 | `compose_export_audioforge` | `{ dir, plan? }` | `{ dir, files, stems, trim_db, loop_seams, warnings }` (`contracts/audioforge-music.md`) |
 | `compose_save` / `compose_open` | `{ path }` | saved path / summary + validation |
+| `compose_listen` | `{ audio?, reference?, spectrogram?, plan? }` | the current composition (or `audio`) heard: `summary` lines; `preview.features` (tempo, key, onsets/s, brightness, LUFS, loudness curve and range, width); `composition.sections` (each at low and full intensity), `layers` (`lufs`, `adds_lu`, notes/bar, register), `similarity` between sections, `clashes`, `out_of_key`, `out_of_range`; `reference.comparison` (harmony, timbre, rhythm, brightness, loudness, `differences`) |
+| `compose_compare` | `{ a, b }` | both files' features and the comparison of B against A |
+| `compose_motif` | `{ name, motif? \| text? \| notes? }` | `{ motif, notes, beats, text }` (kept in the document's `motifs`) |
+| `compose_vary` | `{ motif, ops: [{ op: transpose\|chromatic\|invert\|retrograde\|augment\|sequence\|fragment\|displace\|octave\|dynamics, ... }], key?, saveAs?, write?: { section, layer, instrument, start?, mode? } }` | `{ key, notes, text, saved?, part? }` |
+| `compose_progression` | `{ key?, chords? \| preset?, every?, voicing?, pattern?, bassPattern?, subdivision?, velocity?, write? }` | `{ key, chords: [{ symbol, numeral, bass, voices }], parallel_fifths_octaves, upperText, bassText, written? }`; no chords or preset = the preset list |
+| `compose_reharmonise` | `{ motif? \| text? \| notes?, key?, every?, palette: plain\|colour, voicing?, pattern?, write? }` | `{ key, chords, voiced, parallel_fifths_octaves, written? }` |
+| `compose_arrange` | `{ section, melody?, fill?, chords?, every?, palette?, key?, ensemble?: [{ instrument, role, layer, octave?, velocity?, subdivision?, density?, keys? }], musicMd?, layerIntensity? }` | `{ key, chords, parts, added, notes, ok, errors }`; roles: melody, double, sparkle, counter, bass, pad, arp, pulse, broken, drone, percussion |
+| `compose_set_layer_fx` | `{ layer, eq?: { lowCutHz?, highCutHz?, lowDb?, midDb?, midHz?, highDb? }, reverb?, room? }` | `{ layer, ok, errors }` |
+| `compose_set_master` | `{ lufs?, ceilingDbtp?, off? }` | `{ master, ok, errors }` (previews: full chain; stems: one static gain) |
+| `compose_master_audio` | `{ in, out, lufs?, ceilingDbtp?, loop? }` | `{ out, master: { lufs_before, lufs_after, true_peak_before_dbtp, true_peak_after_dbtp, gain_db, max_reduction_db, seamless? } }` |
+| `compose_transcribe` | `{ audio, out?, midi?, tempo?, key?, bars?, startBar?, from?, to?, name? }` | `{ transcription: { tempo, key, chords, melody_notes, bass_notes, downbeat_secs }, heard, composition }` (becomes the current composition) |
+| `compose_open_in_daw` | `{ dir }` | `{ dir, tracks, clips, audio_tracks, midi_tracks, beats, warnings }` (a project bundle the DAW opens) |
 

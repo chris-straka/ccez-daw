@@ -171,6 +171,34 @@ fn fold_into(notes: Vec<Note>, range: (u8, u8)) -> Vec<Note> {
         .collect()
 }
 
+/// Accompaniment notes that would rub against the tune (a minor second or
+/// ninth while both sound for half a beat or more) move to the nearest
+/// other tone of the chord; dropped when no tone fits.
+fn avoid_rubs(notes: Vec<Note>, melody: &[Note], chords: &[(Chord, f32, f32)], range: (u8, u8)) -> Vec<Note> {
+    let rubs = |p: u8, n: &Note| {
+        melody.iter().any(|m| {
+            let ov = (m.start + m.length).min(n.start + n.length) - m.start.max(n.start);
+            let d = (m.pitch as i32 - p as i32).abs();
+            ov >= 0.5 && (d == 1 || d == 13)
+        })
+    };
+    notes
+        .into_iter()
+        .filter_map(|n| {
+            if !rubs(n.pitch, &n) {
+                return Some(n);
+            }
+            let chord = chords.iter().find(|(_, s, l)| n.start >= *s - 1e-4 && n.start < s + l - 1e-4).map(|c| c.0.pcs())?;
+            (0..=7i32)
+                .flat_map(|d| [n.pitch as i32 - d, n.pitch as i32 + d])
+                .filter(|p| (range.0 as i32..=range.1 as i32).contains(p))
+                .map(|p| p as u8)
+                .find(|&p| p != n.pitch && chord.contains(&(p % 12)) && !rubs(p, &n))
+                .map(|p| Note { pitch: p, ..n })
+        })
+        .collect()
+}
+
 fn clip_to(notes: Vec<Note>, beats: f32) -> Vec<Note> {
     notes
         .into_iter()
@@ -404,7 +432,11 @@ pub fn arrange(c: &Composition, req: &Request) -> Result<Arrangement, String> {
                     }
                     k
                 };
-                let out = shift(&src, k, v);
+                let mut out = shift(&src, k, v);
+                if m.role != Role::Melody {
+                    // A double can bend: stray notes move by octaves into range.
+                    out = fold_into(out, range);
+                }
                 let outside = out.iter().filter(|n| n.pitch < range.0 || n.pitch > range.1).count();
                 if outside > 0 {
                     notes_out.push(format!(
@@ -425,7 +457,8 @@ pub fn arrange(c: &Composition, req: &Request) -> Result<Arrangement, String> {
                 shift(&theory::realise(&v, Pattern::RootFifth, sub, m.velocity.unwrap_or(0.7), c.beats_per_bar), oct, 1.0)
             }
             Role::Pad => {
-                let v = voiced(50, 77, if range.1 - range.0 >= 30 { 4 } else { 3 })?;
+                // Above the bass register (G3 up), so the pad never muddies the bass.
+                let v = voiced(55, 79, if range.1 - range.0 >= 30 { 4 } else { 3 })?;
                 shift(&theory::realise(&v, Pattern::Block, sub, m.velocity.unwrap_or(0.5), c.beats_per_bar), oct, 1.0)
             }
             Role::Arp => {
@@ -459,7 +492,7 @@ pub fn arrange(c: &Composition, req: &Request) -> Result<Arrangement, String> {
         };
         let notes = match m.role {
             Role::Melody | Role::Double | Role::Sparkle | Role::Percussion => notes,
-            _ => fold_into(notes, range),
+            _ => avoid_rubs(fold_into(notes, range), &melody, &chords, range),
         };
         parts.push(Part {
             section: req.section.clone(),
@@ -488,15 +521,29 @@ pub struct EnsembleRow {
     pub patch: String,
     pub role: Role,
     pub layer: String,
+    /// Optional columns: `Octave`, `Velocity`, `Keys` (drums: `low/high`),
+    /// `Density` (drums: sparse | normal | busy), `Subdivision` (beats).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub octave: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub velocity: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keys: Option<(u8, u8)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub density: Option<String>,
+    /// Beats per note for arp / pulse / broken.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdivision: Option<f32>,
 }
 
 /// Read the `Ensemble` table of a music design doc:
 ///
 /// ```text
 /// ## Ensemble
-/// | Id | Patch | Role | Layer |
-/// |---|---|---|---|
-/// | lead | flute | melody | calm |
+/// | Id | Patch | Role | Layer | Keys |
+/// |---|---|---|---|---|
+/// | lead | flute | melody | calm | |
+/// | hands | bongos | percussion | lively | 63/60 |
 /// ```
 pub fn ensemble_from_markdown(md: &str) -> Result<Vec<EnsembleRow>, String> {
     let mut in_section = false;
@@ -528,7 +575,21 @@ pub fn ensemble_from_markdown(md: &str) -> Result<Vec<EnsembleRow>, String> {
                 };
                 let role: Role = serde_json::from_value(serde_json::Value::String(role.to_ascii_lowercase()))
                     .map_err(|_| format!("ensemble row {t:?}: unknown role {role:?}"))?;
-                rows.push(EnsembleRow { id, patch, role, layer });
+                let opt = |name: &str| get(name).filter(|v| !v.is_empty());
+                let octave = opt("octave").map(|v| v.trim_start_matches('+').parse::<i32>().map_err(|_| format!("ensemble row {t:?}: octave {v:?}"))).transpose()?;
+                let velocity = opt("velocity").map(|v| v.parse::<f32>().map_err(|_| format!("ensemble row {t:?}: velocity {v:?}"))).transpose()?;
+                let keys = opt("keys")
+                    .map(|v| {
+                        let k: Vec<u8> = v.split(['/', ' ', ',']).filter(|x| !x.is_empty()).filter_map(|x| x.parse().ok()).collect();
+                        match k[..] {
+                            [a, b] => Ok((a, b)),
+                            [a] => Ok((a, a)),
+                            _ => Err(format!("ensemble row {t:?}: keys {v:?} (want low/high MIDI keys)")),
+                        }
+                    })
+                    .transpose()?;
+                let subdivision = opt("subdivision").map(|v| v.parse::<f32>().map_err(|_| format!("ensemble row {t:?}: subdivision {v:?}"))).transpose()?;
+                rows.push(EnsembleRow { id, patch, role, layer, octave, velocity, keys, density: opt("density"), subdivision });
             }
         }
     }
@@ -611,6 +672,30 @@ mod tests {
     }
 
     #[test]
+    fn accompaniment_steps_off_the_tune() {
+        // A held D#5 (out of key on purpose) over a D chord: any pad D5 or
+        // D4 would rub it by a minor second or ninth, so it moves.
+        let c = comp();
+        let req = Request {
+            section: "a".into(),
+            key: None,
+            melody: vec![Note { pitch: 75, start: 0.0, length: 4.0, velocity: 0.8 }], // D#5 held
+            fill: false,
+            chords: vec!["I".into()],
+            every: Some(16.0),
+            palette: Default::default(),
+            ensemble: vec![member("pad", Role::Pad, "calm")],
+        };
+        let a = arrange(&c, &req).unwrap();
+        let held: Vec<u8> = a.parts[0].notes.iter().filter(|n| n.start < 4.0).map(|n| n.pitch).collect();
+        assert!(!held.is_empty());
+        for p in held {
+            let d = (75 - p as i32).abs();
+            assert!(d != 1 && d != 13, "pad {p} rubs the tune");
+        }
+    }
+
+    #[test]
     fn harmonises_when_no_chords_given_and_rejects_unknowns() {
         let c = comp();
         let mut req = Request {
@@ -632,11 +717,12 @@ mod tests {
 
     #[test]
     fn reads_an_ensemble_table() {
-        let md = "# Music\n\nintro text\n\n## Ensemble\n\n| Id | Patch | Role | Layer |\n|---|---|---|---|\n| lead | flute | melody | calm |\n| bells | `glockenspiel` | sparkle | lively |\n\n## Other\n| a | b |\n";
+        let md = "# Music\n\nintro text\n\n## Ensemble\n\n| Id | Patch | Role | Layer | Keys |\n|---|---|---|---|---|\n| lead | flute | melody | calm | |\n| bells | `glockenspiel` | sparkle | lively | |\n| hands | bongos | percussion | lively | 63/60 |\n\n## Other\n| a | b |\n";
         let rows = ensemble_from_markdown(md).unwrap();
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 3);
         assert_eq!(rows[1].patch, "glockenspiel");
         assert_eq!(rows[1].role, Role::Sparkle);
+        assert_eq!((rows[0].keys, rows[2].keys), (None, Some((63, 60))));
         assert!(ensemble_from_markdown("# Music\nNothing yet.").is_err());
     }
 }

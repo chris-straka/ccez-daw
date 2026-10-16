@@ -1244,12 +1244,15 @@ pub fn chord_from_weights(w: &[f64; 12], key: &Key) -> Option<(Chord, f64)> {
             let inside: f64 = sh.iter().map(|i| w[((root + i) % 12) as usize]).sum();
             let outside = total - inside;
             // Prefer triads (simpler) unless the 7th really sounds; prefer diatonic roots.
-            let mut s = inside / total - 0.6 * outside / total - if si >= 2 { 0.08 } else { 0.0 };
+            // Transcriptions hear overtones as extra notes, so a seventh
+            // must clearly sound to beat the triad, and chords outside the
+            // key need clear evidence.
+            let mut s = inside / total - 0.6 * outside / total - if si >= 2 { 0.15 } else { 0.0 };
             if !key.contains(root) {
-                s -= 0.05;
+                s -= 0.08;
             }
             if sh.iter().any(|i| !key.contains((root + i) % 12)) {
-                s -= 0.04;
+                s -= 0.1;
             }
             if best.as_ref().is_none_or(|b| s > b.1) {
                 let mut c = make_chord(root, sh.to_vec(), None, None);

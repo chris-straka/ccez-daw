@@ -289,6 +289,10 @@ export const ArrangeInput = z.object({
         velocity: z.number().min(0).max(1).optional(),
         subdivision: z.number().positive().optional(),
         density: z.enum(["sparse", "normal", "busy"]).optional().describe("percussion"),
+        keys: z
+          .tuple([z.number().int().min(0).max(127), z.number().int().min(0).max(127)])
+          .optional()
+          .describe("percussion: [low, high] MIDI keys (compose_instrument lists each drum's hits)"),
       }),
     )
     .optional()
@@ -776,7 +780,17 @@ export class ComposeStore {
     const added: string[] = [];
     if (a.musicMd) {
       const rows = (runCompose(["ensemble", resolve(a.musicMd)]) as {
-        ensemble: { id: string; patch: string; role: string; layer: string }[];
+        ensemble: {
+          id: string;
+          patch: string;
+          role: string;
+          layer: string;
+          octave?: number;
+          velocity?: number;
+          keys?: [number, number];
+          density?: string;
+          subdivision?: number;
+        }[];
       }).ensemble;
       for (const row of rows) {
         if (!d.instruments.some((i) => i.id === row.id)) {
@@ -784,7 +798,19 @@ export class ComposeStore {
           added.push(`instrument ${row.id} (${row.patch})`);
         }
       }
-      ensemble = [...ensemble, ...rows.map((r) => ({ instrument: r.id, role: r.role as any, layer: r.layer }))];
+      ensemble = [
+        ...ensemble,
+        ...rows.map((r) => ({
+          instrument: r.id,
+          role: r.role as any,
+          layer: r.layer,
+          octave: r.octave,
+          velocity: r.velocity,
+          keys: r.keys,
+          density: r.density as any,
+          subdivision: r.subdivision,
+        })),
+      ];
     }
     if (ensemble.length === 0) throw new Error("give ensemble, or musicMd with an Ensemble table");
     const dflt: Record<string, number> = { calm: 1, bed: 1, lively: 3, ...(a.layerIntensity ?? {}) };

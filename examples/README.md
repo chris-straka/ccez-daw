@@ -12,6 +12,18 @@
   target/release/ccez-compose preview examples/demo_main.composition.json --out /tmp/preview.mp3
   ```
 
+- `island_travel/`: an island-travel theme written with the writing and
+  listening tools (2026-10-16): a one-bar motif stated, sequenced down the
+  scale for bars 1-3, inverted and augmented for the B section, chords
+  voice-led (and found for the B tune by the re-harmoniser), arranged to
+  the ensemble in `island_travel/music.md` on `calm` and `lively` layers,
+  layer EQ, mastered, then heard against a reference track. The session
+  is a script of MCP calls:
+
+  ```sh
+  bun mcp/scripts/island-travel-session.ts /tmp/island [reference.ogg] [lufs]
+  ```
+
 - `demo_main.sampled.composition.json`: the same notes and layers with
   sampled instruments (2026-10-15): piano, choir oohs, contrabass, cello
   pizzicato, vibraphone, violins, xylophone and timpani in place of the

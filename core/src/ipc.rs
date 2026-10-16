@@ -147,6 +147,12 @@ pub const COMMANDS: &[CommandDef] = &[
         args_ts: "Record<string, never>",
         returns_ts: "string",
     },
+    CommandDef {
+        name: "compose_open",
+        doc: "Open a game-music composition (composition JSON) as a new project: rendered stems on audio tracks, notes on muted MIDI tracks.",
+        args_ts: "{ path: string }",
+        returns_ts: "Project",
+    },
 ];
 
 pub const EVENTS: &[EventDef] = &[

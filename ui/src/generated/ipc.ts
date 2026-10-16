@@ -108,6 +108,11 @@ export function app_update_install(args: Record<string, never>): Promise<string>
   return invoke<string>("app_update_install", args as unknown as Record<string, unknown>);
 }
 
+/** Open a game-music composition (composition JSON) as a new project: rendered stems on audio tracks, notes on muted MIDI tracks. */
+export function compose_open(args: { path: string }): Promise<Project> {
+  return invoke<Project>("compose_open", args as unknown as Record<string, unknown>);
+}
+
 export const COMMAND_NAMES = [
   "project_new",
   "project_get",
@@ -130,6 +135,7 @@ export const COMMAND_NAMES = [
   "engine_position",
   "app_update_check",
   "app_update_install",
+  "compose_open",
 ] as const;
 
 export const EVENTS = {

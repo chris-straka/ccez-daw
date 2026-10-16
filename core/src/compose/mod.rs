@@ -28,6 +28,13 @@
 //! with stats agents can read), and
 //! [`audioforge`] (the export package audioforge's interactive music
 //! loads: `score.json` + loop-kind events + stems + `mix.json`).
+//!
+//! For agents writing without ears or a keyboard: [`listen`] (what it
+//! sounds like, and how far from a reference), [`theory`] (keys, chords,
+//! voice leading, motif variations, re-harmonising), [`arrange`] (a tune
+//! and chords for an ensemble), [`fx`] (layer EQ, mastering),
+//! [`transcribe`] (AI audio to an editable composition) and [`daw`] (a
+//! composition as a DAW project).
 
 pub mod arrange;
 pub mod audioforge;

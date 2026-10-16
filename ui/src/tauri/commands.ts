@@ -7,6 +7,7 @@ export {
   asset_load,
   asset_store,
   clip_add,
+  compose_open,
   engine_play,
   engine_position,
   engine_record,

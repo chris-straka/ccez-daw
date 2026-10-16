@@ -173,6 +173,9 @@ export const ACTIONS: ActionDef[] = [
   localAction("app.about", "App: About"),
   localAction("app.quit", "App: Quit"),
   localAction("app.update.check", "App: Check for Updates"),
+  // Additive: open a composer document as a project; the shell runs
+  // `compose_open` with the path field (like Open), so it's local here.
+  localAction("composition.open", "Composition: Open in the DAW"),
   localAction("app.update.install", "App: Install Update and Restart"),
   localAction("app.preferences", "App: Preferences"),
   localAction("edit.cut", "Edit: Cut"),

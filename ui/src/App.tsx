@@ -27,6 +27,7 @@ import {
   link_toggle,
   app_update_check,
   app_update_install,
+  compose_open,
   op_apply,
   op_redo,
   op_undo,
@@ -66,6 +67,7 @@ export default function App() {
   const [tempoDraft, setTempoDraft] = createSignal("120");
   const [savePath, setSavePath] = createSignal("");
   const [projectName, setProjectName] = createSignal("");
+  const [composeStatus, setComposeStatus] = createSignal<string | null>(null);
   const [workspaceTab, setWorkspaceTab] = createSignal("Timeline");
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
 
@@ -171,6 +173,33 @@ export default function App() {
     setError(null);
   }
 
+  /**
+   * Open a composer document (composition JSON at the path field) as a new
+   * project: the rendered stems land on audio tracks (play sounds them),
+   * the notes on muted MIDI tracks for the piano roll.
+   */
+  async function openComposition() {
+    const path = savePath().trim();
+    if (!path) {
+      setError("open composition needs a composition file path");
+      return;
+    }
+    try {
+      const p = await compose_open({ path });
+      setProject(p);
+      setEngine("Stopped");
+      setError(null);
+      const midi = p.clips.filter((c) => c.kind === "Midi").length;
+      const audio = p.clips.length - midi;
+      setComposeStatus(
+        `composition: opened ${p.name} → ${p.tracks.length} tracks (${audio} rendered clips, ${midi} MIDI clips) at ${p.tempo} BPM`,
+      );
+    } catch (e) {
+      setComposeStatus(null);
+      setError(`open composition failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   async function newProject() {
     const name = projectName().trim() || "Untitled";
     setProject(await project_new({ name }));
@@ -242,6 +271,7 @@ export default function App() {
       await open();
       setPaletteOpen(false);
       return;
+
     } else if (id === "track.add") {
       // Menu / palette Add Track with the standard auto-name (the bridge
       // needs a name and a key cannot supply one).
@@ -306,6 +336,8 @@ export default function App() {
       for (const u of unlistens) u();
     });
     registerLocalActionHandler("palette.open", () => setPaletteOpen(true));
+    // Palette / keys "Composition: Open in the DAW": the path field, like Open.
+    registerLocalActionHandler("composition.open", () => openComposition());
     // `g`-chord view focus (Track K): switch to the tab (the mixer is an
     // always-visible side column, so it has no tab), move DOM focus there,
     // and sync the vim key context so view-scoped keys work on arrival.
@@ -551,9 +583,19 @@ export default function App() {
           <button data-testid="project-save" onClick={() => void save()}>
             Save
           </button>
+          <button
+            data-testid="composition-open"
+            title="Open a composition (composition JSON at the path) as a new project"
+            onClick={() => void openComposition()}
+          >
+            Open composition
+          </button>
         </div>
         <Show when={error()}>
           <span data-testid="transport-error" class="transport-error">{error()}</span>
+        </Show>
+        <Show when={composeStatus() && !error()}>
+          <span data-testid="composition-status" class="session-dim">{composeStatus()}</span>
         </Show>
       </header>
       <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} onRan={(id) => {

@@ -479,6 +479,8 @@ pub struct Comparison {
     pub rhythm: f32,
     pub brightness: f32,
     pub loudness: f32,
+    /// Raw spectral-envelope distance (MFCC, dB-like units) behind `timbre`.
+    pub timbre_distance: f32,
     /// Plain-language differences, biggest first.
     pub differences: Vec<String>,
 }
@@ -522,7 +524,9 @@ pub fn compare(a: &Features, b: &Features, a_name: &str, b_name: &str) -> Compar
         .sum::<f32>()
         .sqrt()
         / 12f32.sqrt();
-    let timbre = (-(d + 0.5 * ds) / 6.0).exp();
+    // Calibrated on real tracks: excerpts of one piece sit ~3-5 apart,
+    // one tune re-rendered ~8, different pieces 15-25.
+    let timbre = (-(d + 0.5 * ds) / 12.0).exp();
     let tempo_sim = [1.0f32, 2.0, 0.5]
         .iter()
         .map(|k| ratio_sim(a.tempo.bpm * k, b.tempo.bpm, 0.08))
@@ -585,7 +589,7 @@ pub fn compare(a: &Features, b: &Features, a_name: &str, b_name: &str) -> Compar
     if dw.abs() >= 0.08 {
         diffs.push((dw.abs(), format!("{b_name} is {} ({:.2} vs {:.2})", if dw > 0.0 { "wider" } else { "narrower" }, b.stereo_width, a.stereo_width)));
     }
-    if timbre < 0.6 {
+    if timbre < 0.4 {
         diffs.push((1.0 - timbre, format!("the instruments' colour differs (timbre {:.0}% alike)", timbre * 100.0)));
     }
     diffs.sort_by(|x, y| y.0.total_cmp(&x.0));
@@ -596,6 +600,7 @@ pub fn compare(a: &Features, b: &Features, a_name: &str, b_name: &str) -> Compar
         rhythm,
         brightness,
         loudness,
+        timbre_distance: d + 0.5 * ds,
         differences: diffs.into_iter().map(|d| d.1).collect(),
     }
 }
@@ -720,10 +725,17 @@ fn mix_of(c: &Composition, rendered: &Rendered, section: &str, intensity: u8, sk
 pub fn clashes(c: &Composition) -> Vec<Clash> {
     let mut out = Vec::new();
     for s in &c.sections {
+        // Unpitched drums (keys pick hits, not notes) can't rub.
+        let pitched = |p: &&super::Part| {
+            !c.instrument(&p.instrument)
+                .and_then(|i| super::patch_kind(&i.patch))
+                .is_some_and(|k| matches!(k, super::PatchKind::Sampled(e) if e.style.one_shot && matches!(e.family, "percussion" | "hand_drums") && e.id != "timpani"))
+        };
         let notes: Vec<(&str, &super::Note)> = c
             .parts
             .iter()
             .filter(|p| p.section == s.id)
+            .filter(pitched)
             .flat_map(|p| p.notes.iter().map(move |n| (p.instrument.as_str(), n)))
             .collect();
         for i in 0..notes.len() {
@@ -1038,6 +1050,20 @@ mod tests {
         assert!(pulse.adds_lu > 0.0);
         assert!(l.summary.iter().any(|s| s.contains("calm: intensity 1 -> 5")), "{:?}", l.summary);
         assert!(l.out_of_key.iter().any(|s| s.contains("outside D major")), "{:?}", l.out_of_key);
+    }
+
+    #[test]
+    fn drum_keys_are_not_pitches() {
+        let mut c = super::super::tests::tiny();
+        c.instruments.push(super::super::Instrument { id: "hands".into(), patch: "bongos".into(), gain_db: 0.0, reverb: 0.0, pan: None });
+        // Key 63 (a low bongo hit) "against" the bed's D4 (62) is no rub.
+        c.parts.push(super::super::Part {
+            section: "calm".into(),
+            layer: "bed".into(),
+            instrument: "hands".into(),
+            notes: vec![super::super::Note { pitch: 63, start: 0.0, length: 2.0, velocity: 0.5 }],
+        });
+        assert!(clashes(&c).is_empty());
     }
 
     #[test]

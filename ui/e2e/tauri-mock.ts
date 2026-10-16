@@ -45,6 +45,15 @@ export interface CannedBackend {
   tracks: Array<{ id: string; name: string }>;
   clips?: CannedClip[];
   devices?: CannedDevice[];
+  /** What `compose_open` returns: the project a composition becomes. */
+  composition?: {
+    name: string;
+    tempo: number;
+    tracks: Array<{ id: string; name: string; muted: boolean }>;
+    clips: CannedClip[];
+  };
+  /** Asset bytes by key (as text) for `asset_load`. */
+  assets?: Record<string, string>;
 }
 
 export function defaultCanned(): CannedBackend {
@@ -168,6 +177,35 @@ export function installInBrowser(canned: CannedBackend): void {
       case "project_open":
       case "track_list":
         return cannedProject();
+      case "compose_open": {
+        // Faithful to the bridge: a path is required and must parse.
+        const path = args["path"];
+        if (typeof path !== "string" || !path.endsWith(".json") || !canned.composition) {
+          throw new Error(`${String(path)}: not a composition`);
+        }
+        const c = canned.composition;
+        return {
+          ...cannedProject(),
+          id: `proj_compose_${c.name}`,
+          name: c.name,
+          tempo: c.tempo,
+          tracks: c.tracks.map((t) => ({
+            id: t.id,
+            name: t.name,
+            volume: 0.8,
+            pan: 0,
+            muted: t.muted,
+            solo: false,
+            clip_ids: c.clips.filter((x) => x.track_id === t.id).map((x) => x.id),
+            device_ids: [],
+          })),
+          clips: c.clips.map((x) => ({ ...x })),
+        };
+      }
+      case "asset_load": {
+        const text = canned.assets?.[args["key"] as string];
+        return text === undefined ? null : Array.from(new TextEncoder().encode(text));
+      }
       case "engine_play":
         return "Playing";
       case "engine_record":

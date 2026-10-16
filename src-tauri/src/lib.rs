@@ -160,6 +160,37 @@ fn project_open(path: String, state: State<AppState>) -> Result<Project, String>
     Ok(project)
 }
 
+/// Open a composer document (`core/src/compose`) as a fresh project
+/// beside the others: one audio track per layer with its rendered stems
+/// (so play sounds the real orchestration) and a muted MIDI track per
+/// layer and instrument for the piano roll (`compose::daw`).
+#[tauri::command]
+fn compose_open(path: String, state: State<AppState>) -> Result<Project, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    let comp: ccez_core::compose::Composition =
+        serde_json::from_str(&text).map_err(|e| format!("{path}: not a composition ({e})"))?;
+    std::fs::create_dir_all(&state.projects_root).map_err(|e| e.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let dir = state.projects_root.join(format!("proj_{stamp}_compose_{}", comp.name));
+    let report = ccez_core::compose::daw::write_project(&comp, &dir)?;
+    for w in &report.warnings {
+        eprintln!("compose_open: {w}");
+    }
+    let engine = Engine::open(&dir).map_err(|e| e.to_string())?;
+    let project = engine.project().clone();
+    state
+        .transport
+        .lock()
+        .map_err(|_| poisoned("transport"))?
+        .stop();
+    *state.engine.lock().map_err(|_| poisoned("engine"))? = engine;
+    sync_project_tempo(&state);
+    Ok(project)
+}
+
 #[tauri::command]
 fn op_apply(op: Op, state: State<AppState>) -> Result<u64, String> {
     let changes_tempo = matches!(&op.kind, OpKind::TempoSet);
@@ -478,7 +509,8 @@ pub fn run() {
             engine_set_tempo,
             engine_position,
             app_update_check,
-            app_update_install
+            app_update_install,
+            compose_open
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
