@@ -28,7 +28,13 @@
 
 pub mod audioforge;
 pub mod render;
+pub mod reverb;
+pub mod sampler;
+pub mod sf2;
+pub mod sfz;
+pub mod sha256;
 pub mod synth;
+pub mod wavread;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
