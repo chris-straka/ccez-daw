@@ -63,6 +63,20 @@ pub struct Rendered {
     /// Each instrument's own dry level (dBFS rms, after the trim) while it
     /// sounds: balance a mix without ears.
     pub instrument_rms_dbfs: BTreeMap<String, f32>,
+    /// The composition's `master`: static gain on every stem so the
+    /// loudest loop at full intensity sits at the loudness target
+    /// (capped so peaks stay under the ceiling).
+    pub master: Option<MasterGain>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct MasterGain {
+    pub target_lufs: f32,
+    /// The loudest full-intensity loop before the gain.
+    pub reference_lufs: f32,
+    pub gain_db: f32,
+    /// True when the ceiling, not the target, set the gain.
+    pub capped_by_peak: bool,
 }
 
 pub fn db_to_gain(db: f32) -> f32 {
@@ -299,6 +313,7 @@ pub fn render_stems(c: &Composition) -> Result<Rendered, String> {
     // Worst-case peak: every layer of a section at full intensity, summed
     // with its layer gain (what audioforge plays at intensity 5).
     let mut worst = 0.0f32;
+    let mut loop_mixes: Vec<[Vec<f32>; 2]> = Vec::new();
     for sec in &c.sections {
         let mut sum: [Vec<f32>; 2] = [Vec::new(), Vec::new()];
         for st in stems.iter().filter(|s| s.section == sec.id) {
@@ -318,9 +333,41 @@ pub fn render_stems(c: &Composition) -> Result<Rendered, String> {
         for ch in &sum {
             worst = worst.max(ch.iter().fold(0.0f32, |m, s| m.max(s.abs())));
         }
+        if sec.role == Role::Loop && !sum[0].is_empty() {
+            loop_mixes.push(sum);
+        }
     }
     let target = db_to_gain(-1.0);
-    let trim = if worst > 0.0 { target / worst } else { 1.0 };
+    let mut trim = if worst > 0.0 { target / worst } else { 1.0 };
+    let mut master = None;
+    let mut master_warning = None;
+    if let Some(m) = &c.master {
+        // Loudest loop (integrated LUFS) and worst true peak, after the trim.
+        let mut reference: Option<f32> = None;
+        let mut tp = f32::MIN;
+        for mix in &loop_mixes {
+            let (l, r): (Vec<f32>, Vec<f32>) = (mix[0].iter().map(|v| v * trim).collect(), mix[1].iter().map(|v| v * trim).collect());
+            if let Some(x) = crate::meter::lufs::analyse_offline(&[&l, &r], SAMPLE_RATE as f32).0 {
+                reference = Some(reference.map_or(x, |y: f32| y.max(x)));
+            }
+            tp = tp.max(super::fx::true_peak_dbtp(&[&l, &r]));
+        }
+        if let Some(reference) = reference {
+            let want = m.lufs - reference;
+            let room = m.ceiling_dbtp - tp;
+            let gain_db = want.min(room);
+            let capped_by_peak = room < want;
+            if capped_by_peak && want - room > 1.0 {
+                master_warning = Some(format!(
+                    "master: peaks hold the stems {:.1} dB under the {:.0} LUFS target (the preview's limiter closes the gap; for the stems, soften the loudest hits or lower the target)",
+                    want - room,
+                    m.lufs
+                ));
+            }
+            trim *= db_to_gain(gain_db);
+            master = Some(MasterGain { target_lufs: m.lufs, reference_lufs: reference, gain_db, capped_by_peak });
+        }
+    }
     for st in &mut stems {
         for s in st.left.iter_mut().chain(st.right.iter_mut()) {
             *s *= trim;
@@ -339,6 +386,7 @@ pub fn render_stems(c: &Composition) -> Result<Rendered, String> {
             };
             format!("instrument {id:?}: {n} note(s) have no recording at that pitch/velocity and are silent{span}")
         })
+        .chain(master_warning)
         .collect();
     let instrument_rms_dbfs = voices
         .energy
@@ -350,6 +398,7 @@ pub fn render_stems(c: &Composition) -> Result<Rendered, String> {
         trim_db: 20.0 * trim.log10(),
         warnings,
         instrument_rms_dbfs,
+        master,
     })
 }
 
@@ -737,6 +786,23 @@ mod tests {
         let bdiff: f32 = b0.left.iter().zip(&b0.right).map(|(a, b)| (a - b).abs()).sum();
         assert!(bdiff > 1.0, "with its send the bed is in the stereo hall: {bdiff}");
         assert!(seam_stats(&r.stems).iter().all(|s| s.seamless));
+    }
+
+    #[test]
+    fn master_gain_brings_the_loudest_loop_to_the_target() {
+        let mut c = tiny();
+        c.master = Some(super::super::fx::Master { lufs: -30.0, ceiling_dbtp: -1.0 });
+        let r = render_stems(&c).unwrap();
+        let m = r.master.clone().unwrap();
+        assert!(m.gain_db < 0.0 && !m.capped_by_peak, "{m:?}");
+        let (mix, _) = render_preview(&c, &r, &[PlanStep { section: "calm".into(), bars: None, intensity: 5 }]).unwrap();
+        let lufs = crate::meter::lufs::analyse_offline(&[&mix[0], &mix[1]], 48_000.0).0.unwrap();
+        assert!((lufs - -30.0).abs() < 1.0, "{lufs}");
+        // A target the peaks can't reach is capped, and says so.
+        c.master = Some(super::super::fx::Master { lufs: -8.0, ceiling_dbtp: -1.0 });
+        let r = render_stems(&c).unwrap();
+        assert!(r.master.as_ref().unwrap().capped_by_peak);
+        assert!(r.warnings.iter().any(|w| w.starts_with("master:")), "{:?}", r.warnings);
     }
 
     #[test]

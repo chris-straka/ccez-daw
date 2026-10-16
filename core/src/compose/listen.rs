@@ -252,13 +252,18 @@ pub fn analyse(left: &[f32], right: &[f32], sr: u32) -> Features {
         })
         .collect();
     for frame in &spec {
-        let lg: Vec<f32> = frame.iter().map(|m| (1.0 + 1000.0 * m).ln()).collect();
+        // Perceptual onset curve: rises in mel-band level (dB, floored at
+        // -80 dBFS so silence-to-noise flicker doesn't count).
+        let melv: Vec<f32> = bank
+            .iter()
+            .map(|filt| (10.0 * (filt.iter().map(|(k, w)| frame[*k] * frame[*k] * w).sum::<f32>() + 1e-10).log10()).max(-80.0))
+            .collect();
         let f = match &prev {
-            Some(p) => lg.iter().zip(p).map(|(a, b)| (a - b).max(0.0)).sum::<f32>(),
+            Some(p) => melv.iter().zip(p).map(|(a, b): (&f32, &f32)| (a - b).max(0.0)).sum::<f32>(),
             None => 0.0,
         };
         flux.push(f);
-        prev = Some(lg);
+        prev = Some(melv.clone());
         let energy: f32 = frame.iter().map(|m| m * m).sum();
         if energy < 1e-10 {
             continue;
@@ -294,10 +299,6 @@ pub fn analyse(left: &[f32], right: &[f32], sr: u32) -> Features {
                 chroma[i] += fc[i] / fs * w;
             }
         }
-        let melv: Vec<f32> = bank
-            .iter()
-            .map(|filt| 10.0 * (filt.iter().map(|(k, w)| frame[*k] * frame[*k] * w).sum::<f32>() + 1e-10).log10())
-            .collect();
         // DCT-II (orthonormal) -> 13 coefficients.
         let m = melv.len() as f32;
         let c: Vec<f32> = (0..13)
@@ -409,7 +410,9 @@ fn tempo_from_flux(flux: &[f32], fr: f32) -> TempoEstimate {
             let f = x - i as f32;
             ac[i] * (1.0 - f) + ac[i + 1] * f
         };
-        let comb = at(l) + 0.5 * at(2.0 * l) + 0.33 * at(3.0 * l) + 0.25 * at(4.0 * l);
+        // Metrical comb: a beat is reinforced by its bar-level multiples
+        // (x2, x4) more than by a dotted relation (x3).
+        let comb = at(l) + 0.5 * at(2.0 * l) + 0.12 * at(3.0 * l) + 0.35 * at(4.0 * l) + 0.2 * at(0.5 * l);
         let bpm = fr * 60.0 / l;
         let prior = (-0.5 * ((bpm / 110.0).log2() / 0.9).powi(2)).exp();
         comb * prior
@@ -893,7 +896,7 @@ pub fn listen_composition(c: &Composition) -> Result<(CompositionListen, Rendere
 
 // ---------------------------------------------------------- spectrogram
 
-/// A log-frequency spectrogram (40 Hz..16 kHz, -90..0 dB) as a JPEG, so an
+/// A log-frequency spectrogram (40 Hz..16 kHz, 80 dB under the loudest bin) as a JPEG, so an
 /// agent that reads images can *see* density, register and build-ups.
 pub fn spectrogram_jpeg(left: &[f32], right: &[f32], sr: u32, out: &Path) -> Result<(), String> {
     let (w, h) = (1200usize, 360usize);
@@ -905,6 +908,9 @@ pub fn spectrogram_jpeg(left: &[f32], right: &[f32], sr: u32, out: &Path) -> Res
     }
     let srf = sr as f32;
     let (flo, fhi) = (40.0f32, 16000.0f32.min(srf / 2.0));
+    // dB relative to the loudest bin, over an 80 dB range.
+    let top = spec.iter().flat_map(|f| f.iter()).fold(1e-9f32, |m, v| m.max(*v));
+    let top_db = 20.0 * top.log10();
     let mut rgb = vec![0u8; w * h * 3];
     let colour = |t: f32| -> [u8; 3] {
         // black -> purple -> orange -> pale yellow
@@ -932,8 +938,8 @@ pub fn spectrogram_jpeg(left: &[f32], right: &[f32], sr: u32, out: &Path) -> Res
                     m = m.max(frame[k]);
                 }
             }
-            let dbv = 20.0 * m.max(1e-9).log10();
-            let c = colour((dbv + 90.0) / 90.0);
+            let dbv = 20.0 * m.max(1e-9).log10() - top_db;
+            let c = colour((dbv + 80.0) / 80.0);
             let o = (y * w + x) * 3;
             rgb[o..o + 3].copy_from_slice(&c);
         }

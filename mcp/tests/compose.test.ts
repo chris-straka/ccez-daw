@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { InMemoryBackend } from "../src/backend";
-import { ComposeStore, COMPOSE_TOOL_NAMES, parseNoteText, sequenceLength, targetDirs } from "../src/compose";
+import { ComposeStore, COMPOSE_TOOL_NAMES, formatNoteText, parseNoteText, sequenceLength, targetDirs } from "../src/compose";
 import { createServer } from "../src/index";
 import { GameAudioStore } from "../src/gameaudio";
 
@@ -42,6 +42,12 @@ describe("note text notation", () => {
     expect(parseNoteText("60/2")).toEqual([{ pitches: [60], start: 0, length: 2 }]);
     expect(() => parseNoteText("A4/x")).toThrow("can't read");
     expect(() => parseNoteText("A4@2")).toThrow("velocity");
+  });
+
+  test("notes read back as the same notation", () => {
+    const text = "D5/0.5 F#5 A5/1 r/0.5 D4+F#4/1.5";
+    const rows = parseNoteText(text).flatMap((n) => n.pitches!.map((p) => ({ pitch: p, start: n.start, length: n.length })));
+    expect(formatNoteText(rows)).toBe(text);
   });
 });
 
@@ -186,4 +192,92 @@ describe("compose tools over MCP", () => {
     expect(bad.errors.join()).toContain("outside the section");
     await client.close();
   }, 120_000);
+
+  test.skipIf(!e2e)("an agent writes with motifs, chords and an ensemble, then listens and opens it in the DAW", async () => {
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await createServer(new InMemoryBackend(), new GameAudioStore(), new ComposeStore()).connect(st);
+    const client = new Client({ name: "compose-write-e2e", version: "0" });
+    await client.connect(ct);
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const r = (await client.callTool({ name, arguments: args })) as any;
+      if (r.isError) throw new Error(r.content[0].text);
+      return JSON.parse(r.content[0].text);
+    };
+    const dir = mkdtempSync(join(tmpdir(), "compose-write-"));
+    dirs.push(dir);
+    await call("compose_new", { name: "walk", tempo: 100, key: "D major" });
+    await call("compose_add_section", { id: "a", role: "loop", bars: 4 });
+    for (const [id, patch] of [["lead", "celesta"], ["pad", "warm_pad"], ["low", "soft_bass"], ["pluck", "pizzicato"]]) {
+      await call("compose_add_instrument", { id, patch });
+    }
+    // State a motif and vary it in the key.
+    expect((await call("compose_motif", { name: "hook", text: "D5/1 E5 F#5 A5" })).text).toBe("D5/1 E5 F#5 A5");
+    const inv = await call("compose_vary", { motif: "hook", ops: [{ op: "invert" }], saveAs: "hook_inv" });
+    expect(inv.text).toBe("D5/1 C#5 B4 G4");
+    const aug = await call("compose_vary", { motif: "hook", ops: [{ op: "augment", factor: 2 }] });
+    expect(aug.text).toBe("D5/2 E5 F#5 A5");
+    // A named progression, voice-led.
+    const presets = await call("compose_progression", {});
+    expect(presets.presets.some((p: any) => p.name === "royal_road")).toBe(true);
+    const prog = await call("compose_progression", { chords: ["I", "V", "vi", "IV"] });
+    expect(prog.chords.map((c: any) => c.symbol)).toEqual(["D", "A", "Bm", "G"]);
+    expect(prog.parallel_fifths_octaves).toBe(0);
+    // Chords found for the tune.
+    const re = await call("compose_reharmonise", { motif: "hook", every: 2 });
+    expect(re.chords.length).toBe(2);
+    // Arrange onto calm and lively layers (created on the way).
+    const arr = await call("compose_arrange", {
+      section: "a",
+      melody: { motif: "hook" },
+      chords: ["I", "IV", "V", "I"],
+      ensemble: [
+        { instrument: "lead", role: "melody", layer: "calm" },
+        { instrument: "pad", role: "pad", layer: "calm" },
+        { instrument: "low", role: "bass", layer: "calm" },
+        { instrument: "pluck", role: "arp", layer: "lively" },
+      ],
+    });
+    expect(arr.ok).toBe(true);
+    expect(arr.added).toContain("layer lively (intensity 3+)");
+    expect(arr.parts).toHaveLength(4);
+    await call("compose_set_layer_fx", { layer: "lively", eq: { lowCutHz: 300 }, reverb: 0.5 });
+    expect((await call("compose_set_master", { lufs: -18 })).ok).toBe(true);
+    // Ears: tempo and key come back, and the lively layer is heard.
+    const ears = await call("compose_listen", { spectrogram: join(dir, "s.jpg") });
+    expect(ears.preview.features.key.key).toBe("D major");
+    expect(ears.composition.layers.find((l: any) => l.layer === "lively").adds_lu).toBeGreaterThan(0);
+    expect(ears.composition.summary.join("\n")).toContain("intensity 1 -> 5");
+    expect(existsSync(join(dir, "s.jpg"))).toBe(true);
+    // The preview is mastered to the target.
+    const prev = await call("compose_preview", { out: join(dir, "p.wav") });
+    expect(Math.abs(prev.master.lufs_after - -18)).toBeLessThan(1);
+    const cmp = await call("compose_listen", { audio: join(dir, "p.wav"), reference: join(dir, "p.wav") });
+    expect(cmp.reference.comparison.overall).toBeGreaterThan(0.99);
+    // Open in the DAW: a project bundle with audio and MIDI tracks.
+    const daw = await call("compose_open_in_daw", { dir: join(dir, "proj") });
+    expect(daw.audio_tracks).toBe(2);
+    expect(daw.midi_tracks).toBe(4);
+    expect(existsSync(join(dir, "proj/project.json"))).toBe(true);
+    await client.close();
+  }, 180_000);
+
+  test.skipIf(!e2e)("a transcription becomes the current composition", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "compose-tr-"));
+    dirs.push(dir);
+    // basic-pitch's note-event CSV: D-major bars at 120 BPM.
+    const rows = ["start_time_s,end_time_s,pitch_midi,velocity,pitch_bend"];
+    for (let bar = 0; bar < 4; bar++) {
+      const t0 = bar * 2;
+      rows.push(`${t0},${t0 + 1.9},38,90`);
+      [74, 78, 81, 78].forEach((p, k) => rows.push(`${t0 + k * 0.5},${t0 + k * 0.5 + 0.45},${p},90`));
+    }
+    const csv = join(dir, "take.csv");
+    await Bun.write(csv, rows.join("\n"));
+    const s = new ComposeStore();
+    const r = s.transcribe({ audio: csv, tempo: 120, bars: 4, out: join(dir, "take.json") }) as any;
+    expect(r.transcription.key).toBe("D major");
+    expect(r.transcription.chords).toEqual(["D", "D", "D", "D"]);
+    expect(r.composition.ok).toBe(true);
+    expect(s.doc!.motifs!["transcribed_melody"]!.length).toBe(16);
+  }, 60_000);
 });
