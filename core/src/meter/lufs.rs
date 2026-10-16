@@ -400,11 +400,12 @@ mod tests {
         assert!((st.unwrap() - (mono + 3.01)).abs() < 0.1, "{st:?} vs {mono}");
         assert_eq!(curve.len(), 6);
         assert!(lra < 0.5, "steady tone has no range: {lra}");
-        // Quiet half then loud half: a wide loudness range.
-        let mut y = sine(1000.0, 0.01, sr, 10.0);
+        // Quiet half then a half 12 dB louder: about 12 LU of range (EBU
+        // gates out anything 20 LU under the mean, so keep the step smaller).
+        let mut y = sine(1000.0, 0.05, sr, 10.0);
         y.extend(sine(1000.0, 0.2, sr, 10.0));
         let (_, _, lra) = analyse_offline(&[&y], sr);
-        assert!(lra > 15.0, "{lra}");
+        assert!((10.0..=13.0).contains(&lra), "{lra}");
         assert!(analyse_offline(&[&vec![0.0; 48_000]], sr).0.is_none());
     }
 
