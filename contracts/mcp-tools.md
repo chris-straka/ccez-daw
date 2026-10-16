@@ -45,13 +45,16 @@ project. Every mutation returns `{ ok, errors }` from the Rust validator.
 | Tool | Input | Returns |
 |---|---|---|
 | `compose_new` | `{ name, tempo, beatsPerBar?, key? }` | summary |
-| `compose_patches` | `{}` | `[{ id, description, range }]` |
-| `compose_add_instrument` | `{ id, patch, gainDb?, reverb? }` | `{ added\|updated, ok, errors }` |
+| `compose_patches` | `{ family? }` | `[{ id, kind: synth\|sampled, family, description, range, pan, licence, cached, source?, download_mb? }]` |
+| `compose_instrument` | `{ id }` | `{ id, keys_with_recordings, velocity_layers, round_robins, licence, hits? }` (downloads if needed) |
+| `compose_fetch_instruments` | `{ ids: [id...] \| ["all"] }` | `{ cache, fetched: [{ id, downloaded_bytes }] }` |
+| `compose_set_room` | `{ decaySecs?, predelayMs?, damping? }` | `{ room, ok, errors }` |
+| `compose_add_instrument` | `{ id, patch, gainDb?, reverb?, pan? }` | `{ added\|updated, ok, errors }` |
 | `compose_add_layer` | `{ id, minIntensity?, gainDb? }` | `{ added\|updated, ok, errors }` |
 | `compose_add_section` | `{ id, role: intro\|loop\|outro, bars, next? }` | `{ added\|updated, beats, ok, errors }` |
 | `compose_write_notes` | `{ section, layer, instrument, notes: [{ pitch? \| pitches?, start, length, velocity? }], mode? }` | `{ notes, written, ok, errors }` |
 | `compose_get` | `{}` | summary + document + validation |
-| `compose_preview` | `{ out: .wav\|.mp3, plan?: [{ section, bars?, intensity? }] }` | `{ out, plan, stats }` (peak/rms, per-step layers, warnings) |
-| `compose_export_audioforge` | `{ dir, plan? }` | `{ dir, files, stems, trim_db }` (`contracts/audioforge-music.md`) |
+| `compose_preview` | `{ out: .wav\|.mp3, plan?: [{ section, bars?, intensity? }] }` | `{ out, plan, stats }` (stereo; peak/rms, per-step layers, `instrument_rms_dbfs`, `loop_seams`, warnings) |
+| `compose_export_audioforge` | `{ dir, plan? }` | `{ dir, files, stems, trim_db, loop_seams, warnings }` (`contracts/audioforge-music.md`) |
 | `compose_save` / `compose_open` | `{ path }` | saved path / summary + validation |
 

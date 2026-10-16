@@ -11,7 +11,14 @@ if (cmd === "validate") {
   const errors = d.sections.length === 0 ? ["sections: need at least one loop section"] : [];
   console.log(JSON.stringify({ ok: errors.length === 0, errors }));
 } else if (cmd === "patches") {
-  console.log(JSON.stringify([{ id: "felt_piano", description: "stub", range: [36, 96] }]));
+  const rows = [
+    { id: "felt_piano", kind: "synth", family: "synth", description: "stub", range: [36, 96] },
+    { id: "violins", kind: "sampled", family: "strings", description: "stub", range: [55, 86] },
+  ];
+  const fam = flag("--family") ?? (doc === "--family" ? rest[0] : undefined);
+  console.log(JSON.stringify(rows.filter((r) => !fam || r.family === fam)));
+} else if (cmd === "instrument" || cmd === "fetch") {
+  console.log(JSON.stringify({ cmd, args: [doc, ...rest] }));
 } else if (cmd === "preview" || cmd === "export") {
   const plan = flag("--plan");
   console.log(JSON.stringify({ cmd, out: flag("--out"), plan: plan ? JSON.parse(await Bun.file(plan).text()) : null }));

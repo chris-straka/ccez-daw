@@ -15,13 +15,21 @@ import { dirname, join, resolve } from "node:path";
 
 const REPO = resolve(import.meta.dir, "../..");
 
+/** Where cargo puts binaries: $CARGO_TARGET_DIR when set, else `target/`. */
+export function targetDirs(): string[] {
+  const env = process.env["CARGO_TARGET_DIR"];
+  return env ? [resolve(REPO, env), join(REPO, "target")] : [join(REPO, "target")];
+}
+
 /** Resolve the CLI: $CCEZ_COMPOSE_BIN, a built binary, else `cargo run`. */
 export function composeCommand(): string[] {
   const env = process.env["CCEZ_COMPOSE_BIN"];
   if (env) return [env];
-  for (const profile of ["release", "debug"]) {
-    const bin = join(REPO, "target", profile, "ccez-compose");
-    if (existsSync(bin)) return [bin];
+  for (const dir of targetDirs()) {
+    for (const profile of ["release", "debug"]) {
+      const bin = join(dir, profile, "ccez-compose");
+      if (existsSync(bin)) return [bin];
+    }
   }
   return [
     "cargo",
@@ -71,9 +79,32 @@ export const ComposeNewInput = z.object({
 });
 export const InstrumentInput = z.object({
   id: z.string(),
-  patch: z.string().describe("see compose_patches"),
+  patch: z
+    .string()
+    .describe("an id from compose_patches: a sampled instrument (violins, flute, piano, harp, choir_aahs, timpani, bongos, ...) or a synth patch"),
   gainDb: z.number().optional(),
-  reverb: z.number().min(0).max(1).optional(),
+  reverb: z.number().min(0).max(1).optional().describe("send into the shared hall, 0-1 (default 0.25)"),
+  pan: z
+    .number()
+    .min(-1)
+    .max(1)
+    .optional()
+    .describe("stereo position -1 left .. 1 right (default: the instrument's orchestral seat)"),
+});
+export const PatchesInput = z.object({
+  family: z
+    .enum(["synth", "strings", "woodwinds", "brass", "keys", "plucked", "mallets", "choir", "percussion", "hand_drums"])
+    .optional()
+    .describe("only this family"),
+});
+export const InstrumentIdInput = z.object({ id: z.string().describe("an id from compose_patches") });
+export const FetchInput = z.object({
+  ids: z.array(z.string()).min(1).describe('sampled instrument ids, or ["all"]'),
+});
+export const RoomInput = z.object({
+  decaySecs: z.number().min(0.3).max(8).optional().describe("reverb tail RT60 in seconds (default 2.4)"),
+  predelayMs: z.number().min(0).max(120).optional().describe("gap before the reverb (default 22)"),
+  damping: z.number().min(0).max(1).optional().describe("0 bright stone .. 1 dark wood (default 0.45)"),
 });
 export const LayerInput = z.object({
   id: z.string(),
@@ -162,7 +193,8 @@ type Doc = {
   tempo: number;
   beats_per_bar: number;
   key: string;
-  instruments: { id: string; patch: string; gain_db: number; reverb: number }[];
+  instruments: { id: string; patch: string; gain_db: number; reverb: number; pan?: number }[];
+  room?: { decay_secs: number; predelay_ms: number; damping: number };
   layers: { id: string; min_intensity: number; gain_db: number }[];
   sections: { id: string; role: string; bars: number; next?: string }[];
   parts: {
@@ -235,8 +267,25 @@ export class ComposeStore {
 
   addInstrument(a: z.infer<typeof InstrumentInput>) {
     const d = this.need();
-    const r = upsert(d.instruments, { id: a.id, patch: a.patch, gain_db: a.gainDb ?? 0, reverb: a.reverb ?? 0.25 });
+    const inst: Doc["instruments"][number] = {
+      id: a.id,
+      patch: a.patch,
+      gain_db: a.gainDb ?? 0,
+      reverb: a.reverb ?? 0.25,
+    };
+    if (a.pan !== undefined) inst.pan = a.pan;
+    const r = upsert(d.instruments, inst);
     return { [r]: a.id, ...this.validate() };
+  }
+
+  setRoom(a: z.infer<typeof RoomInput>) {
+    const d = this.need();
+    d.room = {
+      decay_secs: a.decaySecs ?? d.room?.decay_secs ?? 2.4,
+      predelay_ms: a.predelayMs ?? d.room?.predelay_ms ?? 22,
+      damping: a.damping ?? d.room?.damping ?? 0.45,
+    };
+    return { room: d.room, ...this.validate() };
   }
 
   addLayer(a: z.infer<typeof LayerInput>) {
@@ -318,8 +367,16 @@ export class ComposeStore {
     return runCompose(args);
   }
 
-  patches(): unknown {
-    return runCompose(["patches"]);
+  patches(a: z.infer<typeof PatchesInput> = {}): unknown {
+    return runCompose(a.family ? ["patches", "--family", a.family] : ["patches"]);
+  }
+
+  instrument(a: z.infer<typeof InstrumentIdInput>): unknown {
+    return runCompose(["instrument", a.id]);
+  }
+
+  fetch(a: z.infer<typeof FetchInput>): unknown {
+    return runCompose(["fetch", ...a.ids]);
   }
 
   save(a: z.infer<typeof PathInput>) {
@@ -362,13 +419,36 @@ export function composeTools(store: ComposeStore) {
     },
     {
       name: "compose_patches",
-      description: "List instrument patches (id, sound, comfortable MIDI range).",
-      input: Empty,
-      run: () => store.patches(),
+      description:
+        "List every instrument you can name in compose_add_instrument: sampled orchestral instruments (strings sustain and pizzicato, woodwinds, brass, piano, harp, kalimba, mallets, wordless choir, orchestral and hand drums; CC0/MIT libraries) and the built-in synth patches. Each row: id, family, what it sounds good for, comfortable MIDI range, default pan, licence, and whether its samples are downloaded yet. Filter with family.",
+      input: PatchesInput,
+      run: (a: any) => store.patches(PatchesInput.parse(a ?? {})),
+    },
+    {
+      name: "compose_instrument",
+      description:
+        "Details of one instrument: keys that have recordings, velocity layers, round robins, licence; for drums, which MIDI key plays which hit (e.g. 60 = high bongo). Downloads the samples if needed.",
+      input: InstrumentIdInput,
+      run: (a: any) => store.instrument(InstrumentIdInput.parse(a)),
+    },
+    {
+      name: "compose_fetch_instruments",
+      description:
+        'Download sampled instruments into the local cache now (previews and exports also fetch on demand). ids: e.g. ["violins","flute"] or ["all"] (~1.8 GB). Every file is checked against its recorded SHA-256.',
+      input: FetchInput,
+      run: (a: any) => store.fetch(FetchInput.parse(a)),
+    },
+    {
+      name: "compose_set_room",
+      description:
+        "Set the hall every instrument shares (reverb sends go here): decaySecs (RT60), predelayMs, damping. Loops stay seamless: the tail folds onto the loop start.",
+      input: RoomInput,
+      run: (a: any) => store.setRoom(RoomInput.parse(a)),
     },
     {
       name: "compose_add_instrument",
-      description: "Add or replace an instrument: an id bound to a patch, with gainDb and reverb send (0-1).",
+      description:
+        "Add or replace an instrument: an id bound to a patch (see compose_patches), with gainDb, reverb send (0-1) and pan (-1..1; default its orchestral seat).",
       input: InstrumentInput,
       run: (a: any) => store.addInstrument(InstrumentInput.parse(a)),
     },
@@ -402,14 +482,14 @@ export function composeTools(store: ComposeStore) {
     {
       name: "compose_preview",
       description:
-        "Render a preview mix to .wav or .mp3 following a plan of {section, bars?, intensity?} steps; returns loudness per step, audible layers and warnings (you cannot listen, so read these).",
+        "Render a stereo preview mix to .wav or .mp3 following a plan of {section, bars?, intensity?} steps; returns loudness per step and per layer, each instrument's level while it plays (instrument_rms_dbfs, for balancing), loop-seam checks and warnings such as notes no recording covers (you cannot listen, so read these).",
       input: PreviewInput,
       run: (a: any) => store.preview(PreviewInput.parse(a)),
     },
     {
       name: "compose_export_audioforge",
       description:
-        "Export the audioforge interactive-music package (score.json, mix.json, events, 48 kHz stems, preview scene) to dir.",
+        "Export the audioforge interactive-music package (score.json, mix.json, events, 48 kHz stereo stems, preview scene) to dir; returns loop-seam checks per loop stem.",
       input: ExportAudioforgeInput,
       run: (a: any) => store.exportAudioforge(ExportAudioforgeInput.parse(a)),
     },
@@ -431,6 +511,9 @@ export function composeTools(store: ComposeStore) {
 export const COMPOSE_TOOL_NAMES = [
   "compose_new",
   "compose_patches",
+  "compose_instrument",
+  "compose_fetch_instruments",
+  "compose_set_room",
   "compose_add_instrument",
   "compose_add_layer",
   "compose_add_section",

@@ -5,13 +5,15 @@ import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { InMemoryBackend } from "../src/backend";
-import { ComposeStore, COMPOSE_TOOL_NAMES, parseNoteText, sequenceLength } from "../src/compose";
+import { ComposeStore, COMPOSE_TOOL_NAMES, parseNoteText, sequenceLength, targetDirs } from "../src/compose";
 import { createServer } from "../src/index";
 import { GameAudioStore } from "../src/gameaudio";
 
 const STUB = resolve(import.meta.dir, "fixtures/stub-compose");
 const REPO = resolve(import.meta.dir, "../..");
-const REAL = ["release", "debug"].map((p) => join(REPO, "target", p, "ccez-compose")).find(existsSync);
+const REAL = targetDirs()
+  .flatMap((d) => ["release", "debug"].map((p) => join(d, p, "ccez-compose")))
+  .find(existsSync);
 
 function withBin<T>(bin: string, f: () => T): T {
   const old = process.env["CCEZ_COMPOSE_BIN"];
@@ -93,6 +95,28 @@ describe("compose store (stub CLI)", () => {
     });
   }, SLOW);
 
+  test("instruments: family filter, details, fetch, pan and room reach the CLI", () => {
+    withBin(STUB, () => {
+      const s = new ComposeStore();
+      expect(s.patches({ family: "strings" })).toEqual([
+        { id: "violins", kind: "sampled", family: "strings", description: "stub", range: [55, 86] },
+      ]);
+      expect((s.patches() as unknown[]).length).toBe(2);
+      expect(s.instrument({ id: "bongos" })).toEqual({ cmd: "instrument", args: ["bongos"] });
+      expect(s.fetch({ ids: ["violins", "flute"] })).toEqual({ cmd: "fetch", args: ["violins", "flute"] });
+      s.newDoc({ name: "t", tempo: 90 });
+      s.addSection({ id: "calm", role: "loop", bars: 2 });
+      s.addInstrument({ id: "lead", patch: "flute", pan: -0.3 });
+      s.addInstrument({ id: "keys", patch: "piano" });
+      expect(s.doc!.instruments[0]).toEqual({ id: "lead", patch: "flute", gain_db: 0, reverb: 0.25, pan: -0.3 });
+      expect("pan" in s.doc!.instruments[1]!).toBe(false);
+      s.setRoom({ decaySecs: 3 });
+      expect(s.doc!.room).toEqual({ decay_secs: 3, predelay_ms: 22, damping: 0.45 });
+      s.setRoom({ damping: 0.8 });
+      expect(s.doc!.room).toEqual({ decay_secs: 3, predelay_ms: 22, damping: 0.8 });
+    });
+  }, SLOW);
+
   test("a missing CLI says how to build it", () => {
     withBin("/nonexistent/ccez-compose", () => {
       const s = new ComposeStore();
@@ -129,12 +153,22 @@ describe("compose tools over MCP", () => {
       if (r.isError) throw new Error(r.content[0].text);
       return JSON.parse(r.content[0].text);
     };
+    // The sampled catalog lists without downloading anything.
+    const strings = await call("compose_patches", { family: "strings" });
+    const violins = strings.find((p: any) => p.id === "violins");
+    expect(violins).toMatchObject({ kind: "sampled", family: "strings", licence: "CC0-1.0" });
+    expect(strings.some((p: any) => p.id === "violins_pizz")).toBe(true);
+    expect((await call("compose_patches", { family: "choir" }))[0].licence).toBe("MIT");
     const fixture = join(REPO, "contracts/fixtures/audioforge-tiny.composition.json");
     expect((await call("compose_open", { path: fixture })).ok).toBe(true);
     const dir = mkdtempSync(join(tmpdir(), "compose-e2e-"));
     dirs.push(dir);
     const prev = await call("compose_preview", { out: join(dir, "p.wav") });
     expect(prev.stats.peak_dbfs).toBeLessThanOrEqual(0);
+    expect(prev.stats.loop_seams.every((s: any) => s.seamless)).toBe(true);
+    expect(Object.keys(prev.stats.instrument_rms_dbfs).sort()).toEqual(["keys", "tick"]);
+    // Stereo: the WAV header says two channels.
+    expect(readFileSync(join(dir, "p.wav")).readUInt16LE(22)).toBe(2);
     expect(prev.stats.warnings).toEqual([]);
     expect(existsSync(join(dir, "p.wav"))).toBe(true);
     const rep = await call("compose_export_audioforge", { dir: join(dir, "pkg") });
