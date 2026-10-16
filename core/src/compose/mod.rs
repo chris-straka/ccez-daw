@@ -5,7 +5,7 @@
 //! off, `loop` sections the game switches between, an `outro` that plays
 //! once then goes silent) and adaptive *layers* (a bed that always plays,
 //! more layers that fade in as the game's intensity rises 1..=5). Every
-//! (section, layer) pair with notes renders to one mono stem; the game
+//! (section, layer) pair with notes renders to one stereo stem; the game
 //! runtime (audioforge, `~/Games/_audio/audioforge`) mixes the stems by game state.
 //!
 //! The document is plain JSON so agents (the MCP `compose_*` tools) and
@@ -20,13 +20,17 @@
 //!               "notes": [{ "pitch": "D4", "start": 0, "length": 2 }] }] }
 //! ```
 //!
-//! Pieces: [`synth`] (instrument patches), [`render`] (stems with loop
-//! tails folded onto the loop start, so loops are seamless by
-//! construction; a mono preview mixdown with stats agents can read), and
+//! Pieces: [`synth`] (built-in synth patches), [`library`] (sampled
+//! instruments from CC0/MIT libraries, fetched on demand and played by
+//! [`sampler`] from [`sfz`]/[`sf2`] maps), [`reverb`] (the shared stereo
+//! hall), [`render`] (stereo stems with loop tails folded onto the loop
+//! start, so loops are seamless by construction; a stereo preview mixdown
+//! with stats agents can read), and
 //! [`audioforge`] (the export package audioforge's interactive music
 //! loads: `score.json` + loop-kind events + stems + `mix.json`).
 
 pub mod audioforge;
+pub mod library;
 pub mod render;
 pub mod reverb;
 pub mod sampler;
@@ -63,6 +67,9 @@ pub struct Composition {
     pub sections: Vec<SectionDef>,
     #[serde(default)]
     pub parts: Vec<Part>,
+    /// The hall every instrument shares (default: [`reverb::Room::default`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<reverb::Room>,
 }
 
 fn schema_v1() -> u32 {
@@ -75,13 +82,47 @@ fn four() -> u32 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Instrument {
     pub id: String,
-    /// One of [`synth::PATCHES`].
+    /// A synth patch ([`synth::PATCHES`]), a sampled instrument
+    /// ([`library::CATALOG`]), or a local file: `sfz:<path>`,
+    /// `sf2:<path>#<bank>:<program>`.
     pub patch: String,
     #[serde(default)]
     pub gain_db: f32,
     /// Reverb send, [0, 1].
     #[serde(default = "default_reverb")]
     pub reverb: f32,
+    /// Stereo position, -1 (left) ..= 1 (right). Default: the sampled
+    /// instrument's orchestral seat, centre for synth patches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pan: Option<f32>,
+}
+
+/// What a patch id names.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PatchKind {
+    Synth(&'static synth::Patch),
+    Sampled(&'static library::Entry),
+    /// `sfz:`/`sf2:` file named by the composition.
+    Local,
+}
+
+pub fn patch_kind(id: &str) -> Option<PatchKind> {
+    if let Some(p) = synth::patch(id) {
+        return Some(PatchKind::Synth(p));
+    }
+    if let Some(e) = library::entry(id) {
+        return Some(PatchKind::Sampled(e));
+    }
+    (id.starts_with("sfz:") || id.starts_with("sf2:")).then_some(PatchKind::Local)
+}
+
+/// Every patch id an agent can pick (synth, then sampled).
+pub fn known_patch_ids() -> Vec<&'static str> {
+    synth::PATCHES
+        .iter()
+        .map(|p| p.id)
+        .chain(library::CATALOG.iter().map(|e| e.id))
+        .collect()
 }
 
 fn default_reverb() -> f32 {
@@ -233,7 +274,12 @@ impl Composition {
             layers: vec![],
             sections: vec![],
             parts: vec![],
+            room: None,
         }
+    }
+
+    pub fn room(&self) -> reverb::Room {
+        self.room.unwrap_or_default()
     }
 
     pub fn section(&self, id: &str) -> Option<&SectionDef> {
@@ -303,18 +349,29 @@ impl Composition {
                 e.push(format!("{kind} id {id:?} is defined twice"));
             }
         }
+        if let Some(room) = &self.room {
+            e.extend(room.validate());
+        }
         for i in &self.instruments {
-            if synth::patch(&i.patch).is_none() {
-                e.push(format!(
+            match patch_kind(&i.patch) {
+                None => e.push(format!(
                     "instrument {:?}: unknown patch {:?} (known: {})",
                     i.id,
                     i.patch,
-                    synth::PATCHES
-                        .iter()
-                        .map(|p| p.id)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
+                    known_patch_ids().join(", ")
+                )),
+                Some(PatchKind::Local) => {
+                    let path = i.patch[4..].rsplit_once('#').map_or(&i.patch[4..], |(p, _)| p);
+                    if !std::path::Path::new(path).is_file() {
+                        e.push(format!("instrument {:?}: no file at {path:?}", i.id));
+                    }
+                }
+                _ => {}
+            }
+            if let Some(p) = i.pan {
+                if !(-1.0..=1.0).contains(&p) {
+                    e.push(format!("instrument {:?}: pan {p} want -1..=1", i.id));
+                }
             }
             if !(0.0..=1.0).contains(&i.reverb) {
                 e.push(format!(

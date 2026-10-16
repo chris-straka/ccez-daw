@@ -9,7 +9,7 @@
 //!   score.json             # audioforge Score (sections, layers, intensity)
 //!   mix.json               # audioforge RuntimeConfig (buses + score)
 //!   events/music.<name>.<section>.<layer>.json   # loop-kind events
-//!   stems/<section>_<layer>.wav                  # 16-bit mono 48 kHz
+//!   stems/<section>_<layer>.wav                  # 16-bit stereo 48 kHz
 //!   scenes/preview.json    # audioforge scene playing the preview plan
 //!   composition.json       # the source document (re-open / re-export)
 //! ```
@@ -24,9 +24,8 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use super::render::{render_stems, PlanStep, RenderedStem};
+use super::render::{render_stems, seam_stats, PlanStep, RenderedStem, SeamStat};
 use super::{Composition, Role, SAMPLE_RATE};
-use crate::bounce::{encode_wav, Stem};
 
 pub const FORMAT: &str = "audioforge-music";
 pub const FORMAT_VERSION: u32 = 1;
@@ -153,6 +152,49 @@ pub fn preview_scene_json(c: &Composition, plan: &[PlanStep]) -> Value {
     })
 }
 
+/// Longest scene `af render` accepts (audioforge's scene loader).
+pub const AF_SCENE_MAX_SECS: f64 = 120.0;
+
+/// Stems are stereo (audioforge reads 1-2 channel WAVs; as of 2026-10
+/// it downmixes music stems to mono on load).
+pub const STEM_CHANNELS: u16 = 2;
+
+/// 16-bit PCM stereo WAV with a `smpl` loop chunk (`loop_end` 0 = none).
+pub fn encode_stem_wav(stem: &RenderedStem, loop_end: u32) -> Vec<u8> {
+    let frames = stem.interleaved();
+    let mut data = Vec::with_capacity(frames.len() * 2);
+    for s in &frames {
+        data.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes());
+    }
+    let mut smpl = Vec::new();
+    for v in [0u32, 0, 1_000_000_000 / SAMPLE_RATE, 60, 0, 0, 0, 1, 0] {
+        smpl.extend_from_slice(&v.to_le_bytes());
+    }
+    for v in [0u32, 0, 0, loop_end, 0, 0] {
+        smpl.extend_from_slice(&v.to_le_bytes());
+    }
+    let ch = STEM_CHANNELS;
+    let mut out = Vec::with_capacity(data.len() + 128);
+    out.extend_from_slice(b"RIFF");
+    let riff_len = 4 + 8 + 16 + 8 + smpl.len() + 8 + data.len();
+    out.extend_from_slice(&(riff_len as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&ch.to_le_bytes());
+    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    out.extend_from_slice(&(SAMPLE_RATE * 2 * ch as u32).to_le_bytes());
+    out.extend_from_slice(&(2 * ch).to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out.extend_from_slice(&data);
+    out.extend_from_slice(b"smpl");
+    out.extend_from_slice(&(smpl.len() as u32).to_le_bytes());
+    out.extend_from_slice(&smpl);
+    out
+}
+
 /// What [`export`] wrote.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ExportReport {
@@ -160,6 +202,9 @@ pub struct ExportReport {
     pub files: Vec<String>,
     pub stems: usize,
     pub trim_db: f32,
+    /// Per loop stem: the wrap-around join against the music's own steps.
+    pub loop_seams: Vec<SeamStat>,
+    pub warnings: Vec<String>,
 }
 
 /// Validate, render and write the package to `dir` (created if missing).
@@ -171,7 +216,8 @@ pub fn export(c: &Composition, plan: &[PlanStep], dir: &Path) -> Result<ExportRe
             errs.join("\n- ")
         ));
     }
-    let (stems, trim_db) = render_stems(c);
+    let rendered = render_stems(c)?;
+    let (stems, trim_db) = (&rendered.stems, rendered.trim_db);
     if stems.is_empty() {
         return Err("composition has no notes: nothing to export".into());
     }
@@ -187,17 +233,11 @@ pub fn export(c: &Composition, plan: &[PlanStep], dir: &Path) -> Result<ExportRe
     };
     let pretty = |v: &Value| (serde_json::to_string_pretty(v).expect("json") + "\n").into_bytes();
     let mut manifest_stems = Vec::new();
-    for s in &stems {
+    for s in stems {
         let rel = stem_path(&s.section, &s.layer);
         let looped = s.role == Role::Loop;
-        let stem = Stem {
-            name: rel.clone(),
-            sample_rate: SAMPLE_RATE,
-            samples: s.samples.clone(),
-            loop_start: 0,
-            loop_end: if looped { s.samples.len() as u32 } else { 0 },
-        };
-        write(rel.clone(), encode_wav(&stem))?;
+        let loop_end = if looped { s.frames() as u32 } else { 0 };
+        write(rel.clone(), encode_stem_wav(s, loop_end))?;
         let ev = event_name(c, &s.section, &s.layer);
         let event = json!({
             "name": ev,
@@ -223,10 +263,11 @@ pub fn export(c: &Composition, plan: &[PlanStep], dir: &Path) -> Result<ExportRe
             "length_beats": c.section_beats(sec),
             "loop_start_beats": if looped { json!(0.0) } else { Value::Null },
             "loop_end_beats": if looped { json!(c.section_beats(sec)) } else { Value::Null },
-            "frames": s.samples.len(),
+            "frames": s.frames(),
+            "channels": STEM_CHANNELS,
         }));
     }
-    write("score.json".into(), pretty(&score_json(c, &stems)))?;
+    write("score.json".into(), pretty(&score_json(c, stems)))?;
     let mix = json!({
         "sample_rate": SAMPLE_RATE,
         "seed": 1,
@@ -237,10 +278,15 @@ pub fn export(c: &Composition, plan: &[PlanStep], dir: &Path) -> Result<ExportRe
         "score": "score.json"
     });
     write("mix.json".into(), pretty(&mix))?;
-    write(
-        "scenes/preview.json".into(),
-        pretty(&preview_scene_json(c, plan)),
-    )?;
+    let scene = preview_scene_json(c, plan);
+    let mut warnings = rendered.warnings.clone();
+    let scene_secs = scene["duration_secs"].as_f64().unwrap_or(0.0);
+    if scene_secs > AF_SCENE_MAX_SECS {
+        warnings.push(format!(
+            "scenes/preview.json runs {scene_secs:.1} s; audioforge renders scenes up to {AF_SCENE_MAX_SECS} s, so pass a shorter plan to preview it there"
+        ));
+    }
+    write("scenes/preview.json".into(), pretty(&scene))?;
     write(
         "composition.json".into(),
         pretty(&serde_json::to_value(c).map_err(|e| e.to_string())?),
@@ -254,6 +300,8 @@ pub fn export(c: &Composition, plan: &[PlanStep], dir: &Path) -> Result<ExportRe
         "beats_per_bar": c.beats_per_bar,
         "key": c.key,
         "sample_rate": SAMPLE_RATE,
+        "channels": STEM_CHANNELS,
+        "instruments": instrument_credits(c),
         "score": "score.json",
         "mix": "mix.json",
         "events_dir": "events",
@@ -269,7 +317,28 @@ pub fn export(c: &Composition, plan: &[PlanStep], dir: &Path) -> Result<ExportRe
         stems: stems.len(),
         files,
         trim_db,
+        loop_seams: seam_stats(stems),
+        warnings,
     })
+}
+
+/// Per instrument: what it is and the licence of any samples in it, so a
+/// game's credits/licence page can be built from the package.
+pub fn instrument_credits(c: &Composition) -> Vec<Value> {
+    c.instruments
+        .iter()
+        .map(|i| match super::patch_kind(&i.patch) {
+            Some(super::PatchKind::Sampled(e)) => {
+                let s = super::library::source(e.source).expect("catalog source");
+                json!({ "id": i.id, "patch": i.patch, "kind": "sampled",
+                        "source": s.name, "licence": s.licence, "licence_url": s.licence_url })
+            }
+            Some(super::PatchKind::Local) => {
+                json!({ "id": i.id, "patch": i.patch, "kind": "local", "licence": "unknown (local file)" })
+            }
+            _ => json!({ "id": i.id, "patch": i.patch, "kind": "synth", "licence": "ccez-daw built-in synth (MIT)" }),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -281,8 +350,8 @@ mod tests {
     #[test]
     fn score_maps_roles_intensity_and_loop_points() {
         let c = tiny();
-        let (stems, _) = render_stems(&c);
-        let s = score_json(&c, &stems);
+        let r = render_stems(&c).unwrap();
+        let s = score_json(&c, &r.stems);
         assert_eq!(s["initial"], "intro");
         assert_eq!(s["sections"]["intro"]["once"], true);
         assert_eq!(s["sections"]["intro"]["next"], "calm");
@@ -302,6 +371,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let r = export(&c, &default_plan(&c), &dir).unwrap();
         assert_eq!(r.stems, 4);
+        assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+        let long = vec![
+            PlanStep { section: "calm".into(), bars: Some(64), intensity: 1 };
+            1
+        ];
+        let r2 = export(&c, &long, &dir).unwrap();
+        assert!(r2.warnings[0].contains("up to 120 s"), "{:?}", r2.warnings);
+        assert!(r.loop_seams.iter().all(|s| s.seamless), "{:?}", r.loop_seams);
+        // Stems are stereo 16-bit with the loop in a smpl chunk.
+        let wav = std::fs::read(dir.join("stems/calm_bed.wav")).unwrap();
+        let a = super::super::wavread::decode(&wav).unwrap();
+        assert_eq!((a.channels.len(), a.sample_rate, a.frames()), (2, 48_000, 4 * 48_000));
+        assert_eq!(a.sample_loop, Some((0, 4 * 48_000)));
+        let m: Value = serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(m["channels"], 2);
+        assert_eq!(m["instruments"][0]["kind"], "synth");
         for f in [
             "manifest.json",
             "score.json",

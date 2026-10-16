@@ -10,11 +10,11 @@ runtime; regenerate it with `scripts/export-audioforge-fixture.sh`.
 
 ```
 <dir>/
-  manifest.json        # format "audioforge-music", format_version 1; stems + sections
+  manifest.json        # format "audioforge-music", format_version 1; stems + sections + instrument licences
   score.json           # audioforge Score
   mix.json             # audioforge RuntimeConfig: buses master + music, score
   events/music.<name>.<section>.<layer>.json   # kind "loop", bus "music", one wav source
-  stems/<section>_<layer>.wav                  # 16-bit PCM mono 48 kHz (+ smpl loop chunk)
+  stems/<section>_<layer>.wav                  # 16-bit PCM stereo 48 kHz (+ smpl loop chunk)
   scenes/preview.json  # audioforge scene playing the preview plan
   composition.json     # the source composition (re-open, re-export)
 ```
@@ -41,9 +41,29 @@ once stems are the section length plus their trimmed ring-out tail. One
 shared trim (`manifest.trim_db`) puts the loudest section at full
 intensity near -1 dBFS.
 
+## Additive fields (2026-10-15)
+
+Stems became stereo (2 channels, interleaved) without a version bump:
+audioforge's WAV reader takes 1-2 channels, and every reader of v1 must
+too. The manifest grew, additively:
+
+- `channels`: 2 (top level) and `stems[].channels`.
+- `instruments`: one row per composition instrument, `{ id, patch, kind:
+  "sampled" | "synth" | "local", source?, licence, licence_url? }`, so a
+  game can credit sample libraries (FluidR3's MIT notice must ship with
+  choir stems; CC0 asks nothing).
+- `composition.json` may carry `instruments[].pan` and a top-level `room`
+  (`decay_secs`, `predelay_ms`, `damping`); both are optional.
+
+The export report (stdout of `ccez-compose export`) adds `loop_seams`
+(per loop stem: wrap-around step vs the music's 99.9th-percentile step,
+`seamless`) and `warnings`.
+
 ## Limits (v1)
 
-- Stems are mono (audioforge downmixes to mono and pans per layer).
+- audioforge (as of 2026-10-15) downmixes music stems to mono when it
+  plays them and pans per layer; the stereo image is in the files for
+  when it plays stereo sources.
 - One tempo per piece (audioforge's score-level `bpm`).
 - No stingers or per-transition rules: section switches cross-fade on the
   next bar; intensity changes fade over one beat from the next beat.

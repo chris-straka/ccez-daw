@@ -1,21 +1,29 @@
 # ga-compose: agents compose game music, audioforge plays it (2026-10-07)
 
 The game-music path, end to end: an agent writes notes through the MCP
-`compose_*` tools; core renders them with built-in synth patches into
-seamless loop stems; `ccez-compose export` writes an audioforge package
+`compose_*` tools; core renders them with sampled orchestral instruments
+(or the built-in synth patches) into seamless stereo loop stems;
+`ccez-compose export` writes an audioforge package
 (`contracts/audioforge-music.md`); audioforge plays it in a Bevy game with
 `MusicSection` / `MusicIntensity`.
 
 ## Pieces
 
 - `core/src/compose/` — `Composition` (sections: intro/loop/outro;
-  layers with `min_intensity` 1-5; instruments; parts of notes), `synth`
+  layers with `min_intensity` 1-5; instruments with `pan`; parts of
+  notes; an optional shared `room`), `library` (45 sampled instruments
+  from CC0/MIT libraries, downloaded on demand and checked by SHA-256:
+  `docs/notes/sample-libraries.md`), `sampler` + `sfz` + `sf2` (our own
+  multi-sample player: velocity layers, round robins, loops), `synth`
   (8 patches: felt_piano, warm_pad, strings, soft_bass, pizzicato,
-  celesta, clock_tick, low_drum), `render` (stems with release/reverb
-  tails folded onto the loop start; a preview mix with per-step and
-  per-layer loudness), `audioforge` (the package writer).
-- `core/src/bin/ccez-compose.rs` — `validate | preview | export | patches`,
-  one JSON object on stdout. MP3 previews go through `ffmpeg`.
+  celesta, clock_tick, low_drum), `reverb` (the shared stereo hall: early
+  reflections + an 8-line FDN), `render` (stereo stems with
+  release/reverb tails folded onto the loop start; a preview mix with
+  per-step, per-layer and per-instrument loudness and loop-seam checks),
+  `audioforge` (the package writer).
+- `core/src/bin/ccez-compose.rs` — `validate | preview | export | patches
+  | instrument | fetch | samples`, one JSON object on stdout. MP3 previews
+  go through `ffmpeg`, sample downloads through `curl`.
 - `mcp/src/compose.ts` — the tools; they shell out to the CLI. Agents
   without an MCP client: `bun run start:http` then
   `bun scripts/call.ts <tool> '<json>'` (or `@file.json`).
@@ -46,8 +54,20 @@ through the MCP server over HTTP:
    per step (`layer_rms_dbfs`). Still open: no spectrogram/picture tool.
 6. Open: the composition is not a DAW project. It doesn't show in the
    timeline, piano roll or mixer, and there is no palette action for it.
-7. Open: 8 synth patches are the whole palette (no samples or
-   soundfonts), which caps how good it can sound.
-8. Open: stems are mono (audioforge downmixes; pan is per layer).
+7. Closed (2026-10-15): sampled instruments. 45 of them (string
+   sections sustained and pizzicato, solo violin, flute, piccolo, oboe,
+   clarinet, bassoon, horn, trumpet, trombone, tuba, Kawai grand piano,
+   harp, kalimba, glockenspiel, marimba, xylophone, vibraphone, tubular
+   bells, wordless choir aahs/oohs, timpani, orchestral and hand drums)
+   from VSCO 2 CE and VCSL (CC0) and FluidR3_GM (MIT), with their
+   velocity layers and round robins; our own SFZ/SF2 sampler; local
+   `sfz:`/`sf2:` files work too. Proof: the example and a game theme
+   re-rendered (`examples/demo_main.sampled.composition.json`).
+8. Closed (2026-10-15): stems are stereo. Each instrument sits at a pan
+   position (default: its orchestral seat) and sends into one shared
+   stereo hall per stem; the hall's tail folds onto the loop start like
+   the releases, so loops stay seamless (`loop_seams` in preview and
+   export reports). audioforge loads the stereo stems (it still
+   downmixes music stems to mono when it plays them).
 9. Open: each mutation re-runs the Rust validator as a subprocess (fast
    normally, seconds on a loaded box).
