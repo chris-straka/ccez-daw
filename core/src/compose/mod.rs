@@ -29,8 +29,12 @@
 //! [`audioforge`] (the export package audioforge's interactive music
 //! loads: `score.json` + loop-kind events + stems + `mix.json`).
 
+pub mod arrange;
 pub mod audioforge;
+pub mod daw;
+pub mod fx;
 pub mod library;
+pub mod listen;
 pub mod render;
 pub mod reverb;
 pub mod sampler;
@@ -38,7 +42,11 @@ pub mod sf2;
 pub mod sfz;
 pub mod sha256;
 pub mod synth;
+pub mod theory;
+pub mod transcribe;
 pub mod wavread;
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -70,6 +78,13 @@ pub struct Composition {
     /// The hall every instrument shares (default: [`reverb::Room::default`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room: Option<reverb::Room>,
+    /// Named motifs, stated once and varied ([`theory::MotifOp`]); times
+    /// are beats from the motif's start. Not rendered by themselves.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub motifs: BTreeMap<String, Vec<Note>>,
+    /// Mastering for previews (full chain) and exports (static gain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub master: Option<fx::Master>,
 }
 
 fn schema_v1() -> u32 {
@@ -129,7 +144,7 @@ fn default_reverb() -> f32 {
     0.25
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct LayerDef {
     pub id: String,
     /// Lowest game intensity (1..=5) at which this layer sounds.
@@ -137,6 +152,15 @@ pub struct LayerDef {
     pub min_intensity: u8,
     #[serde(default)]
     pub gain_db: f32,
+    /// EQ on this layer's stems (low/high cut, shelves, a bell).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eq: Option<fx::LayerEq>,
+    /// Scales every reverb send on this layer, [0, 2] (default 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reverb: Option<f32>,
+    /// This layer's own hall (default: the composition's `room`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<reverb::Room>,
 }
 
 fn one() -> u8 {
@@ -275,11 +299,18 @@ impl Composition {
             sections: vec![],
             parts: vec![],
             room: None,
+            motifs: BTreeMap::new(),
+            master: None,
         }
     }
 
     pub fn room(&self) -> reverb::Room {
         self.room.unwrap_or_default()
+    }
+
+    /// The hall a layer's stems use: its own room, else the shared one.
+    pub fn layer_room(&self, layer: &LayerDef) -> reverb::Room {
+        layer.room.unwrap_or_else(|| self.room())
     }
 
     pub fn section(&self, id: &str) -> Option<&SectionDef> {
@@ -398,6 +429,28 @@ impl Composition {
                     "layer {:?}: gain_db {} want -60..=12",
                     l.id, l.gain_db
                 ));
+            }
+            if let Some(eq) = &l.eq {
+                e.extend(eq.validate(&format!("layer {:?}", l.id)));
+            }
+            if let Some(r) = l.reverb {
+                if !(0.0..=2.0).contains(&r) {
+                    e.push(format!("layer {:?}: reverb {r} want 0..=2 (a send scale)", l.id));
+                }
+            }
+            if let Some(room) = &l.room {
+                e.extend(room.validate().into_iter().map(|m| format!("layer {:?}: {m}", l.id)));
+            }
+        }
+        if let Some(m) = &self.master {
+            e.extend(m.validate());
+        }
+        for (name, notes) in &self.motifs {
+            if !valid_id(name) {
+                e.push(format!("motif {name:?}: want lowercase [a-z0-9_]+"));
+            }
+            if notes.is_empty() {
+                e.push(format!("motif {name:?}: no notes"));
             }
         }
         if !self.sections.iter().any(|s| s.role == Role::Loop) {

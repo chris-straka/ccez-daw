@@ -299,6 +299,77 @@ impl LufsMeter {
     }
 }
 
+/// Offline multichannel loudness (BS.1770: K-weighted channel energies
+/// summed, 400 ms blocks every 100 ms, absolute then relative gate).
+/// Returns `(integrated, short_term_curve, loudness_range)`: integrated
+/// LUFS (`None` on silence), the 3 s short-term loudness every second,
+/// and the EBU loudness range (LU, 10th..95th percentile of gated
+/// short-term values).
+pub fn analyse_offline(channels: &[&[f32]], sample_rate: f32) -> (Option<f32>, Vec<f32>, f32) {
+    let sr = sample_rate.max(1.0);
+    let n = channels.iter().map(|c| c.len()).min().unwrap_or(0);
+    let mut energy = vec![0.0f64; n];
+    for ch in channels {
+        let mut k = KWeight::design(sr);
+        for (e, &x) in energy.iter_mut().zip(ch.iter()) {
+            let y = k.run(x) as f64;
+            *e += y * y;
+        }
+    }
+    let hop = (HOP_SECS * sr).round().max(1.0) as usize;
+    let block = (BLOCK_SECS * sr).round().max(1.0) as usize;
+    // Prefix sums make every window O(1).
+    let mut pre = vec![0.0f64; n + 1];
+    for i in 0..n {
+        pre[i + 1] = pre[i] + energy[i];
+    }
+    let mean = |a: usize, b: usize| (pre[b] - pre[a]) / (b - a).max(1) as f64;
+    let mut blocks = Vec::new();
+    let mut s = 0;
+    while s + block <= n {
+        blocks.push(mean(s, s + block));
+        s += hop;
+    }
+    let abs_gate = 10f64.powf(((ABSOLUTE_GATE_LUFS - CALIBRATION_OFFSET_DB) / 10.0) as f64);
+    let above: Vec<f64> = blocks.iter().copied().filter(|&z| z > abs_gate).collect();
+    let integrated = if above.is_empty() {
+        None
+    } else {
+        let m = above.iter().sum::<f64>() / above.len() as f64;
+        let rel = m * 10f64.powf((RELATIVE_GATE_LU / 10.0) as f64);
+        let gated: Vec<f64> = above.into_iter().filter(|&z| z > rel).collect();
+        (!gated.is_empty()).then(|| lufs_of((gated.iter().sum::<f64>() / gated.len() as f64) as f32))
+    };
+    let st = (SHORT_TERM_SECS * sr).round() as usize;
+    let sec = sr.round() as usize;
+    let mut curve = Vec::new();
+    let mut st_vals = Vec::new();
+    let mut t = 0;
+    while t < n {
+        // The 3 s window ending at the end of this second.
+        let b = (t + sec).min(n);
+        let a = b.saturating_sub(st);
+        let ms = mean(a, b);
+        curve.push(lufs_of(ms as f32).max(-120.0));
+        if ms > abs_gate && b - a >= st.min(n) {
+            st_vals.push(ms);
+        }
+        t += sec;
+    }
+    let lra = {
+        let rel = if st_vals.is_empty() { 0.0 } else { st_vals.iter().sum::<f64>() / st_vals.len() as f64 * 0.01 };
+        let mut g: Vec<f32> = st_vals.into_iter().filter(|&z| z > rel).map(|z| lufs_of(z as f32)).collect();
+        g.sort_by(|a, b| a.total_cmp(b));
+        if g.len() >= 2 {
+            let at = |p: f32| g[((g.len() - 1) as f32 * p).round() as usize];
+            at(0.95) - at(0.10)
+        } else {
+            0.0
+        }
+    };
+    (integrated, curve, lra)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,6 +385,27 @@ mod tests {
         for chunk in samples.chunks(512) {
             m.process(chunk);
         }
+    }
+
+    #[test]
+    fn offline_stereo_matches_the_meter_and_reads_range() {
+        // A 1 kHz tone in both channels: offline integrated equals the
+        // mono meter's + 3 dB (two channels' energy).
+        let sr = 48_000.0;
+        let x = sine(1000.0, 0.1, sr, 6.0);
+        let mut m = LufsMeter::new(sr);
+        feed(&mut m, &x);
+        let mono = m.integrated_lufs().unwrap();
+        let (st, curve, lra) = analyse_offline(&[&x, &x], sr);
+        assert!((st.unwrap() - (mono + 3.01)).abs() < 0.1, "{st:?} vs {mono}");
+        assert_eq!(curve.len(), 6);
+        assert!(lra < 0.5, "steady tone has no range: {lra}");
+        // Quiet half then loud half: a wide loudness range.
+        let mut y = sine(1000.0, 0.01, sr, 10.0);
+        y.extend(sine(1000.0, 0.2, sr, 10.0));
+        let (_, _, lra) = analyse_offline(&[&y], sr);
+        assert!(lra > 15.0, "{lra}");
+        assert!(analyse_offline(&[&vec![0.0; 48_000]], sr).0.is_none());
     }
 
     #[test]

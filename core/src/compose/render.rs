@@ -148,7 +148,7 @@ fn render_pair(
             continue;
         };
         let g = db_to_gain(inst.gain_db);
-        let rev = inst.reverb;
+        let rev = (inst.reverb * layer.reverb.unwrap_or(1.0)).clamp(0.0, 2.0);
         let Some((voice, pan)) = voices.get(c, &part.instrument)? else {
             continue;
         };
@@ -200,7 +200,7 @@ fn render_pair(
         }
     }
     if send.iter().any(|ch| ch.iter().any(|s| *s != 0.0)) {
-        let (wl, wr) = super::reverb::process(&send[0], &send[1], SAMPLE_RATE, &c.room());
+        let (wl, wr) = super::reverb::process(&send[0], &send[1], SAMPLE_RATE, &c.layer_room(layer));
         for (d, w) in dry[0].iter_mut().zip(&wl) {
             *d += w;
         }
@@ -212,6 +212,9 @@ fn render_pair(
     // plays; a 30 Hz high-pass (linear, before the fold) clears it.
     for ch in &mut dry {
         highpass(ch, RUMBLE_HZ);
+        if let Some(eq) = &layer.eq {
+            eq.apply(ch, SAMPLE_RATE as f32);
+        }
     }
     Ok((dry, len))
 }
@@ -712,6 +715,28 @@ mod tests {
         let calm = r.stems.iter().find(|s| s.section == "calm" && s.layer == "bed").unwrap();
         let e = |x: &[f32]| x.iter().map(|v| v * v).sum::<f32>();
         assert!(e(&calm.right) < 1e-9 * e(&calm.left).max(1.0), "hard left, dry");
+    }
+
+    #[test]
+    fn layer_eq_and_reverb_shape_only_their_layer() {
+        let base = render_stems(&tiny()).unwrap();
+        let mut c = tiny();
+        c.layers[0].eq = Some(super::super::fx::LayerEq { high_cut_hz: Some(800.0), ..Default::default() });
+        c.layers[0].reverb = Some(0.0);
+        let r = render_stems(&c).unwrap();
+        let get = |r: &Rendered, s: &str, l: &str| r.stems.iter().find(|x| x.section == s && x.layer == l).unwrap().clone();
+        // High-frequency content of the bed drops (first difference = a crude high-pass).
+        let hf = |x: &[f32]| x.windows(2).map(|w| (w[1] - w[0]).powi(2)).sum::<f32>();
+        let lf = |x: &[f32]| x.iter().map(|v| v * v).sum::<f32>();
+        let (b0, b1) = (get(&base, "calm", "bed"), get(&r, "calm", "bed"));
+        assert!(hf(&b1.left) / lf(&b1.left) < 0.5 * hf(&b0.left) / lf(&b0.left), "low-pass darkens the bed");
+        // No reverb on the bed: with the hall gone, the two sides only
+        // differ by pan (a mono synth panned centre is identical L/R).
+        let diff: f32 = b1.left.iter().zip(&b1.right).map(|(a, b)| (a - b).abs()).sum();
+        assert!(diff < 1e-3, "dry bed is centred mono: {diff}");
+        let bdiff: f32 = b0.left.iter().zip(&b0.right).map(|(a, b)| (a - b).abs()).sum();
+        assert!(bdiff > 1.0, "with its send the bed is in the stereo hall: {bdiff}");
+        assert!(seam_stats(&r.stems).iter().all(|s| s.seamless));
     }
 
     #[test]
