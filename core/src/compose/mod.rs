@@ -222,7 +222,7 @@ fn default_velocity() -> f32 {
     0.8
 }
 
-fn de_pitch<'de, D: Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
+pub(crate) fn de_pitch<'de, D: Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum P {

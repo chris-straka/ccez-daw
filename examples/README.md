@@ -24,6 +24,19 @@
   bun mcp/scripts/island-travel-session.ts /tmp/island [reference.ogg] [lufs]
   ```
 
+- Five contrasting travel sketches (2026-10-16), each a calm and a
+  lively layer, written through the same tools where a stock pattern
+  won't do: 7/8 in G Lydian (marimba, solo violin), a swung F Mixolydian
+  bassoon stroll, a 3-against-4 vibraphone/marimba clockwork in Ab, a 6/8
+  E Dorian oboe-and-choir dusk piece, and a 5/4 march on a seven-note
+  acoustic-scale motif. Grooves the arranger has no pattern for (odd
+  meters, swing, cross-rhythms) are explicit notes; accompaniment that
+  would rub the tune is moved off it before writing:
+
+  ```sh
+  bun mcp/scripts/travel-sketches-session.ts /tmp/sketches [lufs] [only]
+  ```
+
 - `demo_main.sampled.composition.json`: the same notes and layers with
   sampled instruments (2026-10-15): piano, choir oohs, contrabass, cello
   pizzicato, vibraphone, violins, xylophone and timpani in place of the

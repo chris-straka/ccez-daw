@@ -598,11 +598,15 @@ pub struct VoicedChord {
 pub struct VoicingOpts {
     /// Upper voices (2..=5).
     pub voices: usize,
-    /// Upper voices stay within [low, high].
+    /// Upper voices stay within [low, high] (MIDI numbers or names like `G3`).
+    #[serde(deserialize_with = "super::de_pitch")]
     pub low: u8,
+    #[serde(deserialize_with = "super::de_pitch")]
     pub high: u8,
     /// Bass stays within [bass_low, bass_high].
+    #[serde(deserialize_with = "super::de_pitch")]
     pub bass_low: u8,
+    #[serde(deserialize_with = "super::de_pitch")]
     pub bass_high: u8,
 }
 
@@ -1330,6 +1334,12 @@ mod tests {
                 assert!(c.chord.pcs().contains(&(p % 12)));
             }
         }
+    }
+
+    #[test]
+    fn voicing_ranges_take_note_names() {
+        let o: VoicingOpts = serde_json::from_str(r#"{"voices":3,"low":"G3","high":79,"bass_low":"E1","bass_high":"D3"}"#).unwrap();
+        assert_eq!((o.low, o.high, o.bass_low, o.bass_high), (55, 79, 28, 50));
     }
 
     #[test]
