@@ -73,6 +73,7 @@ test("a composition opens on the timeline and in the piano roll", async ({ page 
   await expect(page.getByTestId("composition-status")).toHaveText(
     "composition: opened island_travel → 2 tracks (1 rendered clips, 1 MIDI clips) at 104 BPM",
   );
+  await expect(page.getByTestId("tempo-input")).toHaveValue("104");
   const calls = await ipcCalls(page);
   expect(calls.find((c) => c.cmd === "compose_open")?.args).toEqual({
     path: "/music/island_travel.composition.json",

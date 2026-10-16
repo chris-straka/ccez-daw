@@ -187,6 +187,7 @@ export default function App() {
     try {
       const p = await compose_open({ path });
       setProject(p);
+      setTempoDraft(String(p.tempo));
       setEngine("Stopped");
       setError(null);
       const midi = p.clips.filter((c) => c.kind === "Midi").length;

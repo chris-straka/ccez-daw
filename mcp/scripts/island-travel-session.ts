@@ -103,9 +103,9 @@ await call("compose_add_instrument", { id: "cello", patch: "cellos_pizz", reverb
 await call("compose_add_instrument", { id: "flute", patch: "flute", reverb: 0.3, pan: 0.2 });
 await call("compose_add_instrument", { id: "glock", patch: "glockenspiel", reverb: 0.4, pan: 0.3, gainDb: -4 });
 await call("compose_add_instrument", { id: "horn", patch: "horn", reverb: 0.4, pan: -0.3, gainDb: -3 });
-await call("compose_add_instrument", { id: "pizz", patch: "violins_pizz", reverb: 0.25, pan: -0.45, gainDb: -1 });
+await call("compose_add_instrument", { id: "pizz", patch: "violins_pizz", reverb: 0.25, pan: -0.45, gainDb: -3 });
 await call("compose_add_instrument", { id: "bongos", patch: "bongos", reverb: 0.15, pan: 0.15 });
-await call("compose_add_instrument", { id: "shaker", patch: "shaker", reverb: 0.15, pan: -0.3, gainDb: -5 });
+await call("compose_add_instrument", { id: "shaker", patch: "shaker", reverb: 0.15, pan: -0.3, gainDb: -1 });
 await call("compose_set_master", { lufs, ceilingDbtp: -1 });
 
 // --- Ears: what it sounds like, layer by layer, and against the reference.
