@@ -98,11 +98,22 @@ export default function App() {
     }
   }
 
+  /** Run a shell command; a bridge rejection lands in the status line. */
+  async function attempt(what: string, f: () => Promise<void>): Promise<void> {
+    try {
+      await f();
+    } catch (e) {
+      setError(`${what} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   async function togglePlay() {
     // Space stops a recording pass too (standard DAW behavior); starting a
     // take is the Record tab's Punch in / the `r` action's job.
-    if (engine() === "Playing" || engine() === "Recording") setEngine(await engine_stop({}));
-    else setEngine(await engine_play({}));
+    if (engine() === "Playing" || engine() === "Recording") await stop();
+    else await attempt("play", async () => {
+      setEngine(await engine_play({}));
+    });
   }
 
   // Global `record.punch` action (`r`, palette, native menu): show the
@@ -118,7 +129,9 @@ export default function App() {
   const [linked, setLinked] = createSignal(false);
 
   async function stop() {
-    setEngine(await engine_stop({}));
+    await attempt("stop", async () => {
+      setEngine(await engine_stop({}));
+    });
   }
 
   async function undo() {
@@ -147,8 +160,10 @@ export default function App() {
       setError(`tempo must be a number > 0 (got ${tempoDraft()})`);
       return;
     }
-    await engine_set_tempo({ tempo: bpm });
-    await refresh();
+    await attempt("set tempo", async () => {
+      await engine_set_tempo({ tempo: bpm });
+      await refresh();
+    });
   }
 
   async function save() {
@@ -157,8 +172,10 @@ export default function App() {
       setError("save needs a file path");
       return;
     }
-    await project_save({ path });
-    await refresh();
+    await attempt("save", async () => {
+      await project_save({ path });
+      await refresh();
+    });
   }
 
   async function open() {
@@ -167,16 +184,20 @@ export default function App() {
       setError("open needs a file path");
       return;
     }
-    setProject(await project_open({ path }));
-    setEngine("Stopped");
-    setError(null);
+    await attempt("open", async () => {
+      setProject(await project_open({ path }));
+      setEngine("Stopped");
+      setError(null);
+    });
   }
 
   async function newProject() {
     const name = projectName().trim() || "Untitled";
-    setProject(await project_new({ name }));
-    setEngine("Stopped");
-    setError(null);
+    await attempt("new project", async () => {
+      setProject(await project_new({ name }));
+      setEngine("Stopped");
+      setError(null);
+    });
   }
 
   async function patchTrack(
@@ -227,8 +248,11 @@ export default function App() {
     if (!a) return;
     if (id === "transport.play") {
       // Space / palette Play toggles like every other DAW; the engine
-      // signal updates inside togglePlay.
+      // signal updates inside togglePlay. Return before the shared refresh:
+      // play changes no project state, and a refresh would wipe a failure.
       await togglePlay();
+      setPaletteOpen(false);
+      return;
     } else if (id === "project.save") {
       // Ctrl+S / menu Save behave exactly like the Save button: the typed
       // path, or an honest error when there is none. Invoking project_save
@@ -241,6 +265,13 @@ export default function App() {
     } else if (id === "project.open") {
       // Menu Open behaves like the Open button (same typed-path rule).
       await open();
+      setPaletteOpen(false);
+      return;
+    } else if (id === "project.new" || id === "engine.set_tempo") {
+      // Menu / palette New and Set Tempo behave like their buttons: the
+      // typed name (or "Untitled") and the typed BPM. The bridge needs the
+      // argument and a menu click cannot supply one.
+      await (id === "project.new" ? newProject() : applyTempo());
       setPaletteOpen(false);
       return;
     } else if (id === "track.add") {
@@ -430,7 +461,8 @@ export default function App() {
     }
 
     const onKey = (e: KeyboardEvent) => {
-      if (paletteOpen()) return; // palette handles its own keys
+      // Palette and Shortcuts editor are modal and handle their own keys.
+      if (paletteOpen() || shortcutsOpen()) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) {
         if (e.key !== "Escape") return;
@@ -557,10 +589,7 @@ export default function App() {
           <span data-testid="transport-error" class="transport-error">{error()}</span>
         </Show>
       </header>
-      <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} onRan={(id) => {
-          if (!REPORTS_STATUS.has(id)) void refresh();
-        }}
-      />
+      <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} run={runAction} />
       <ShortcutEditor
         open={shortcutsOpen()}
         onClose={() => setShortcutsOpen(false)}
