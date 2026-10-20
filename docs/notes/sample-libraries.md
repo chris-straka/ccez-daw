@@ -55,7 +55,9 @@ FluidR3, the Debian package (`deb.debian.org` pool, then
 `sfz.rs` reads the SFZ subset these libraries use (headers cascade,
 `default_path`, key/velocity ranges, `seq_length`/`seq_position` round
 robins, `lorand`/`hirand`, velocity cross-fades, tune, offset, loops, amp
-envelope; release-trigger regions are skipped). `sf2.rs` reads one SF2
+envelope; release-trigger regions and CC-only regions (`hikey=-1` or
+`key=-1`) are skipped; `#define` names substitute longest first; a `<`
+with no closing `>` is a parse error naming the line). `sf2.rs` reads one SF2
 preset (zones, generators, loops). `sampler.rs` picks the regions for a
 note, skips each recording's leading silence so notes land on the beat,
 repitches with 4-point Hermite interpolation, applies the envelope, loops
