@@ -1,9 +1,9 @@
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { LOCAL_GUIDANCE, findAction, registerLocalActionHandler } from "./actions/registry";
+import { ACTIONS, LOCAL_GUIDANCE, findAction, registerLocalActionHandler } from "./actions/registry";
 import type { EngineState, Project } from "./generated/project";
 import { listen } from "@tauri-apps/api/event";
 import { eventToToken, loadCustomKeymap } from "./input/keybindings";
-import { createVimStore, handleKey, setVimContext } from "./input/vim";
+import { applyMotion, createVimStore, handleKey, setVimContext } from "./input/vim";
 import {
   contextForTab,
   elementIdForFocusAction,
@@ -454,6 +454,13 @@ export default function App() {
     registerLocalActionHandler("vim.mode.normal", () => setVimMode("normal"));
     registerLocalActionHandler("vim.mode.insert", () => setVimMode("insert"));
     registerLocalActionHandler("vim.mode.visual", () => setVimMode("visual"));
+    // Motions run from the palette / scripting move the same cursor `hjkl`
+    // does (keys apply them inside handleKey without reaching the registry).
+    for (const { id } of ACTIONS.filter((a) => a.id.startsWith("vim.motion."))) {
+      registerLocalActionHandler(id, () => {
+        if (applyMotion(vim, id)) setCursor(`${vim.cursor.track}:${vim.cursor.step}`);
+      });
+    }
     // Guidance actions (`LOCAL_GUIDANCE`): surface the text on every path.
     // The trailing refresh is skipped for these — it would wipe the error.
     for (const [gid, text] of Object.entries(LOCAL_GUIDANCE)) {
@@ -532,7 +539,7 @@ export default function App() {
           <span class={`vim-badge ${vimMode()}`}>
             {vimMode().toUpperCase()}
           </span>
-          <span class="transport-readout daw-numeric">{cursor()}</span>
+          <span data-testid="vim-cursor" class="transport-readout daw-numeric">{cursor()}</span>
         </div>
         <div class="tb-group" role="group" aria-label="Tempo">
           <input

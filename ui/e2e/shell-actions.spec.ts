@@ -48,6 +48,14 @@ test.describe("with the bridge", () => {
     await expect(page.getByTestId("transport-error")).toBeHidden();
   });
 
+  test("palette Vim motions move the cursor like their keys", async ({ page }) => {
+    await expect(page.getByTestId("vim-cursor")).toHaveText("0:0");
+    await palette(page, "Vim: Move Down");
+    await expect(page.getByTestId("vim-cursor")).toHaveText("1:0");
+    await palette(page, "Vim: Move Right");
+    await expect(page.getByTestId("vim-cursor")).toHaveText("1:1");
+  });
+
   test("global keys stay quiet while the Shortcuts editor is open", async ({ page }) => {
     await page.keyboard.press("?");
     const editor = page.getByRole("dialog", { name: "Shortcuts editor" });
