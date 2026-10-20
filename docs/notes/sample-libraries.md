@@ -62,6 +62,16 @@ repitches with 4-point Hermite interpolation, applies the envelope, loops
 sustained recordings with a cross-fade when a note outlasts them, and
 places the result on the stereo stage. Every render is deterministic.
 
+Pan law (stage `pan` and SFZ/SF2 region `pan`): the synths' constant-power
+law, `L = √2·cos θ`, `R = √2·sin θ` with `θ = (pan + 1)·π/4`, so centre is
+unity on both sides and hard left is +3 dB left, silent right. Sampled
+voices get the same two gains applied per channel: a mono recording
+(both channels identical) pans exactly like a synth, and a stereo
+recording gets a constant-power *balance* (each side keeps its own
+content; hard left keeps only the left channel). One law for everything,
+so moving an instrument between a synth and a sampled patch keeps its
+place and level.
+
 Each catalog entry carries a level calibration (`gain_db`, measured with
 `ccez-compose samples calibrate`: a mezzo note's first-second rms, sustains
 to about -22 dBFS, plucks and hits a little lower, peaks kept under
