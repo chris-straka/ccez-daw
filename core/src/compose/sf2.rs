@@ -62,6 +62,11 @@ fn layout(path: &Path) -> Result<Layout, String> {
                     }
                 }
                 b"pdta" => {
+                    // The LIST body is the 4-byte type tag plus the hydra;
+                    // refuse sizes the file can't hold (before allocating).
+                    if len < 4 || at + 8 + len > total {
+                        return Err(err(format!("bad pdta list size {len}")));
+                    }
                     let mut body = vec![0u8; len as usize - 4];
                     f.read_exact(&mut body).map_err(|e| err(e.to_string()))?;
                     pdta = Some(body);
@@ -94,6 +99,9 @@ fn sub_chunks(pdta: &[u8]) -> std::collections::HashMap<[u8; 4], &[u8]> {
 type Gens = Vec<(u16, [u8; 2])>;
 
 fn gens_of(bags: &[u8], gens: &[u8], bag: usize) -> Gens {
+    if (bag + 1) * 4 + 2 > bags.len() {
+        return Vec::new(); // bag index past the table: no generators
+    }
     let g0 = u16le(bags, bag * 4) as usize;
     let g1 = u16le(bags, (bag + 1) * 4) as usize;
     (g0..g1)
@@ -104,6 +112,11 @@ fn gens_of(bags: &[u8], gens: &[u8], bag: usize) -> Gens {
 
 fn amount(v: [u8; 2]) -> i32 {
     i16::from_le_bytes(v) as i32
+}
+
+/// An index generator (instrument, sampleID): an unsigned WORD.
+fn index(v: [u8; 2]) -> usize {
+    u16::from_le_bytes(v) as usize
 }
 
 const INSTRUMENT: u16 = 41;
@@ -180,8 +193,9 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
     let pool_frames = (l.smpl_len / 2) as u32;
     let mut out = Vec::new();
     for pz in zones(pbag, pgen, pb0, pb1, INSTRUMENT) {
-        let ii = amount(get(&pz, INSTRUMENT).unwrap()) as usize;
-        if (ii + 1) * 22 > inst.len() {
+        let ii = index(get(&pz, INSTRUMENT).unwrap());
+        // This record and the next (its bag range ends at the next's start).
+        if (ii + 2) * 22 > inst.len() {
             continue;
         }
         let (ib0, ib1) = (
@@ -193,7 +207,7 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
         // Preset generators add to the instrument's.
         let padd = |op: u16| get(&pz, op).map(amount).unwrap_or(0);
         for iz in zones(ibag, igen, ib0, ib1, SAMPLE_ID) {
-            let si = amount(get(&iz, SAMPLE_ID).unwrap()) as usize;
+            let si = index(get(&iz, SAMPLE_ID).unwrap());
             if (si + 1) * 46 > shdr.len() {
                 continue;
             }
@@ -210,7 +224,7 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
             let ls = u32le(s, 28) as i64 + ia(2) as i64 + 32_768 * ia(45) as i64;
             let le = u32le(s, 32) as i64 + ia(3) as i64 + 32_768 * ia(50) as i64;
             let rate = u32le(s, 36);
-            if end <= start || end as u64 > pool_frames as u64 || rate == 0 {
+            if start < 0 || end <= start || end as u64 > pool_frames as u64 || rate == 0 {
                 continue;
             }
             let orig = s[40] as f32;
@@ -234,7 +248,9 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
             r.lovel = lovel.max(1);
             r.hivel = hivel;
             r.keycenter = root;
-            r.tune = 100.0 * ia(51) as f32 + ia(52) as f32 - corr;
+            // chPitchCorrection is applied on playback (FluidSynth: root
+            // pitch = origpitch * 100 - correction, i.e. +correction).
+            r.tune = 100.0 * ia(51) as f32 + ia(52) as f32 + corr;
             r.keytrack = get(&iz, 56).map(amount).unwrap_or(100) as f32;
             // EMU/FluidSynth convention: attenuation counts 0.4 dB per cB.
             r.volume_db = -0.04 * ia(48) as f32;
@@ -272,6 +288,9 @@ pub fn read_slice(
     loop_start: u32,
     loop_end: u32,
 ) -> Result<Audio, String> {
+    if end <= start || loop_start < start || loop_end < start {
+        return Err(format!("{}: bad sample slice {start}..{end}", path.display()));
+    }
     let l = layout(path)?;
     let err = |e: std::io::Error| format!("{}: {e}", path.display());
     let mut f = std::fs::File::open(path).map_err(err)?;
@@ -319,9 +338,36 @@ pub(crate) mod tests {
         v
     }
 
+    /// Knobs for [`sf2_with`]: what a test needs to vary.
+    pub(crate) struct Spec {
+        /// The sample header's chPitchCorrection (cents).
+        pub corr: i8,
+        /// Empty instrument / sample headers before the real one, so the
+        /// preset and zone point at index `pad_inst` / `pad_samples`.
+        pub pad_inst: usize,
+        pub pad_samples: usize,
+        /// Write the terminal EOI instrument record.
+        pub eoi: bool,
+    }
+
+    impl Default for Spec {
+        fn default() -> Self {
+            Spec {
+                corr: 0,
+                pad_inst: 0,
+                pad_samples: 0,
+                eoi: true,
+            }
+        }
+    }
+
     /// A one-preset SF2: program 52 "Choir", one instrument zone (keys
-    /// 48-72, root 60, looped) over a 1 s 220 Hz... sine at 22.05 kHz.
+    /// 48-72, root 60, looped) over a 1 s middle-C sine at 22.05 kHz.
     pub(crate) fn tiny_sf2(path: &Path) {
+        sf2_with(path, &Spec::default())
+    }
+
+    pub(crate) fn sf2_with(path: &Path, spec: &Spec) {
         let sr = 22_050u32;
         let n = sr as usize;
         let mut pool: Vec<u8> = Vec::new();
@@ -344,23 +390,35 @@ pub(crate) mod tests {
             phdr.extend_from_slice(&[0u8; 12]);
         }
         let pbag = [0u16, 0, 1, 0].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-        let mut pgen = gen(INSTRUMENT, 0i16.to_le_bytes());
+        let mut pgen = gen(INSTRUMENT, (spec.pad_inst as u16).to_le_bytes());
         pgen.extend(gen(0, [0, 0]));
-        let mut inst = name20("ChoirInst");
+        let mut inst = Vec::new();
+        for _ in 0..spec.pad_inst {
+            inst.extend(name20("pad"));
+            inst.extend_from_slice(&0u16.to_le_bytes());
+        }
+        inst.extend(name20("ChoirInst"));
         inst.extend_from_slice(&0u16.to_le_bytes());
-        inst.extend(name20("EOI"));
-        inst.extend_from_slice(&1u16.to_le_bytes());
+        if spec.eoi {
+            inst.extend(name20("EOI"));
+            inst.extend_from_slice(&1u16.to_le_bytes());
+        }
         let ibag = [0u16, 0, 4, 0].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
         let mut igen = gen(KEY_RANGE, [48, 72]);
         igen.extend(gen(54, 1i16.to_le_bytes())); // loop
         igen.extend(gen(38, (-1200i16).to_le_bytes())); // release 0.5 s
-        igen.extend(gen(SAMPLE_ID, 0i16.to_le_bytes()));
+        igen.extend(gen(SAMPLE_ID, (spec.pad_samples as u16).to_le_bytes()));
         igen.extend(gen(0, [0, 0]));
-        let mut shdr = name20("sine");
+        let mut shdr = Vec::new();
+        for _ in 0..spec.pad_samples {
+            shdr.extend(name20("pad"));
+            shdr.extend_from_slice(&[0u8; 26]);
+        }
+        shdr.extend(name20("sine"));
         for v in [0u32, n as u32, 2205, n as u32 - 2205, sr] {
             shdr.extend_from_slice(&v.to_le_bytes());
         }
-        shdr.extend_from_slice(&[60, 0]);
+        shdr.extend_from_slice(&[60, spec.corr as u8]);
         shdr.extend_from_slice(&0u16.to_le_bytes());
         shdr.extend_from_slice(&1u16.to_le_bytes());
         shdr.extend(name20("EOS"));
@@ -413,5 +471,61 @@ pub(crate) mod tests {
         let late = &l[3 * 48_000..3 * 48_000 + 4800];
         assert!(late.iter().map(|x| x * x).sum::<f32>() / 4800.0 > 0.01);
         let _ = std::fs::remove_dir_all(p.parent().unwrap());
+    }
+
+    /// chPitchCorrection is applied on playback: +50 cents sounds sharp.
+    #[test]
+    fn pitch_correction_is_added() {
+        let p = std::env::temp_dir().join(format!("ccez-sf2-corr-{}/t.sf2", std::process::id()));
+        sf2_with(&p, &Spec { corr: 50, ..Spec::default() });
+        let rs = load_preset(&p, 0, 52).unwrap();
+        assert_eq!(rs[0].tune, 50.0);
+        let _ = std::fs::remove_dir_all(p.parent().unwrap());
+    }
+
+    /// Instrument and sample indices are WORDs: 32768 and up are valid.
+    #[test]
+    fn indices_past_i16_max_resolve() {
+        let p = std::env::temp_dir().join(format!("ccez-sf2-idx-{}/t.sf2", std::process::id()));
+        sf2_with(
+            &p,
+            &Spec {
+                pad_inst: 32_768,
+                pad_samples: 40_000,
+                ..Spec::default()
+            },
+        );
+        let rs = load_preset(&p, 0, 52).unwrap();
+        assert_eq!(rs.len(), 1);
+        assert_eq!((rs[0].lokey, rs[0].hikey), (48, 72));
+        let _ = std::fs::remove_dir_all(p.parent().unwrap());
+    }
+
+    /// Truncated tables and chunks are errors or skipped zones, never a
+    /// panic.
+    #[test]
+    fn malformed_files_do_not_panic() {
+        let dir = std::env::temp_dir().join(format!("ccez-sf2-bad-{}", std::process::id()));
+        // No terminal EOI record: the zone's bag range can't be read.
+        let p = dir.join("noeoi.sf2");
+        sf2_with(&p, &Spec { eoi: false, ..Spec::default() });
+        assert_eq!(load_preset(&p, 0, 52).unwrap(), vec![]);
+        // A pdta LIST shorter than its own type tag.
+        let mut body = b"sfbk".to_vec();
+        body.extend(list(b"sdta", &[chunk(b"smpl", &[0u8; 4])]));
+        body.extend(chunk(b"LIST", b"pd"));
+        let q = dir.join("tiny-pdta.sf2");
+        std::fs::write(&q, chunk(b"RIFF", &body)).unwrap();
+        assert!(presets(&q).is_err());
+        // A pdta LIST claiming 4 GB.
+        let mut body = b"sfbk".to_vec();
+        body.extend(list(b"sdta", &[chunk(b"smpl", &[0u8; 4])]));
+        body.extend_from_slice(b"LIST");
+        body.extend_from_slice(&u32::MAX.to_le_bytes());
+        body.extend_from_slice(b"pdta");
+        let q = dir.join("huge-pdta.sf2");
+        std::fs::write(&q, chunk(b"RIFF", &body)).unwrap();
+        assert!(presets(&q).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

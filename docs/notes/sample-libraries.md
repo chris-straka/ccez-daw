@@ -58,7 +58,9 @@ robins, `lorand`/`hirand`, velocity cross-fades, tune, offset, loops, amp
 envelope; release-trigger regions and CC-only regions (`hikey=-1` or
 `key=-1`) are skipped; `#define` names substitute longest first; a `<`
 with no closing `>` is a parse error naming the line). `sf2.rs` reads one SF2
-preset (zones, generators, loops). `sampler.rs` picks the regions for a
+preset (zones, generators, loops; each sample header's pitch correction
+is added on playback, as FluidSynth does; truncated tables are errors or
+skipped zones, never a crash). `sampler.rs` picks the regions for a
 note, skips each recording's leading silence so notes land on the beat,
 repitches with 4-point Hermite interpolation, applies the envelope, loops
 sustained recordings with a cross-fade when a note outlasts them, and
