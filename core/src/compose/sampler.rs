@@ -398,11 +398,9 @@ fn render_region(
     let env = r.env;
     let srf = sr as f32;
     let rel_k = (-6.9 / (release * srf)).exp(); // -60 dB over `release`
-    let mut rel_level = 1.0f32;
-    let mut pos = start as f64;
-    for i in 0..max_frames {
-        let t = i as f32 / srf;
-        let mut g = if env.attack > 0.0 && t < env.attack {
+    // Attack, hold, decay to sustain: the level `t` seconds into the note.
+    let level = |t: f32| -> f32 {
+        if env.attack > 0.0 && t < env.attack {
             t / env.attack
         } else if t < env.attack + env.hold {
             1.0
@@ -411,14 +409,23 @@ fn render_region(
             env.sustain + (1.0 - env.sustain) * (-4.6 * d).exp()
         } else {
             env.sustain
-        };
-        if !one_shot && i >= held {
+        }
+    };
+    // The release fades from wherever the envelope was at note-off (mid-
+    // attack included), not from a still-running attack or decay.
+    let off_level = level(held as f32 / srf);
+    let mut rel_level = 1.0f32;
+    let mut pos = start as f64;
+    for i in 0..max_frames {
+        let g = if !one_shot && i >= held {
             rel_level *= rel_k;
-            g *= rel_level;
             if rel_level < 1e-4 {
                 break;
             }
-        }
+            off_level * rel_level
+        } else {
+            level(i as f32 / srf)
+        };
         // Read (with the loop cross-fade when inside it).
         let (sl, sr2) = match looping {
             Some((a, b, xf)) => {
@@ -541,6 +548,29 @@ pub(crate) mod tests {
         let (l, _) = inst.render_note(60, 0.8, 0.1, 48_000, 0.0).unwrap();
         let first = l.iter().position(|x| x.abs() > 0.01).unwrap();
         assert!(first < 200, "sound starts {first} frames in (want < 200)");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn peak(x: &[f32]) -> f32 {
+        x.iter().fold(0f32, |m, s| m.max(s.abs()))
+    }
+
+    /// A note released mid-attack fades from where the attack got to; it
+    /// never keeps swelling after note-off.
+    #[test]
+    fn release_mid_attack_decays_from_the_note_off_level() {
+        let dir = std::env::temp_dir().join(format!("ccez-sampler-rel-{}", std::process::id()));
+        let p = sine_wav(&dir, "s.wav", 440.0, 2.0, 48_000);
+        let mut r = Region::new(SampleRef::Wav(p));
+        r.keycenter = 69.0;
+        r.env.attack = 1.0;
+        r.env.release = 5.0;
+        let mut inst = SampledInstrument::new(vec![r], PlayStyle::default());
+        let (l, _) = inst.render_note(69, 1.0, 0.2, 48_000, 0.0).unwrap();
+        let off = (0.2 * 48_000.0) as usize;
+        let before = peak(&l[off - 480..off]);
+        let after = peak(&l[off..]);
+        assert!(after <= before * 1.01, "swelled after note-off: {before} -> {after}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

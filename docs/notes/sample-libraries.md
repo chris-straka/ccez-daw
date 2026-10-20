@@ -62,7 +62,8 @@ preset (zones, generators, loops; each sample header's pitch correction
 is added on playback, as FluidSynth does; truncated tables are errors or
 skipped zones, never a crash). `sampler.rs` picks the regions for a
 note, skips each recording's leading silence so notes land on the beat,
-repitches with 4-point Hermite interpolation, applies the envelope, loops
+repitches with 4-point Hermite interpolation, applies the envelope (the
+release fades from the level at note-off, even mid-attack), loops
 sustained recordings with a cross-fade when a note outlasts them, and
 places the result on the stereo stage. Every render is deterministic.
 
