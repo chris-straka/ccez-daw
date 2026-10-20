@@ -31,8 +31,10 @@ common wrong answer.
   that invariant.
 - Global keys (`r`, `S`, `J`, `C`, `L`, `?`, `g`-chords) reach panel-owned
   state through bump-and-show nonce props (`punchNonce`, `launchNonce`,
-  …), never by lifting panel state into `App`. Nonce effects fire only on
-  change and only once the project has loaded.
+  …), never by lifting panel state into `App`. Nonces are `createNonce()`
+  (`ui/src/input/nonce.ts`): the panel effect calls `take()` only once the
+  project has loaded, and the consumed mark lives with the nonce so a tab
+  switch (which remounts the panel) never replays a handled press.
 - New IPC returning a state the shell displays (e.g. link membership)
   gets a visible indicator, not just a return value.
 

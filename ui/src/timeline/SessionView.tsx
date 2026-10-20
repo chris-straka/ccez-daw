@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import type { Nonce } from "../input/nonce";
 import type { Op, Project } from "../generated/project";
 import { op_apply } from "../tauri/commands";
 import {
@@ -39,9 +40,9 @@ export default function SessionView(props: {
   project: Project | null;
   applyOp?: (op: Op) => Promise<unknown>;
   /** Bump to launch the selected slot from the global `session.launch` action. */
-  launchNonce?: number;
+  launchNonce?: Nonce;
   /** Bump to record the pending jam from `session.jam_record`. */
-  jamNonce?: number;
+  jamNonce?: Nonce;
 }) {
   const doc = sampleTimelineDoc();
   const [quantKind, setQuantKind] = createSignal<QuantKind>("bar");
@@ -122,24 +123,14 @@ export default function SessionView(props: {
     launchSlot(slot.section_id, slot.track_id);
   }
 
-  // Global actions (`S` / `J`, palette, menus): run only on nonce changes,
+  // Global actions (`S` / `J`, palette, menus): run once per bump,
   // and only once the project has loaded (a key pressed during startup waits
   // for it instead of firing into nothing).
-  const [handledLaunch, setHandledLaunch] = createSignal(0);
   createEffect(() => {
-    const n = props.launchNonce ?? 0;
-    if (n !== 0 && n !== handledLaunch() && props.project) {
-      setHandledLaunch(n);
-      launchSelected();
-    }
+    if (props.project && props.launchNonce?.take()) launchSelected();
   });
-  const [handledJam, setHandledJam] = createSignal(0);
   createEffect(() => {
-    const n = props.jamNonce ?? 0;
-    if (n !== 0 && n !== handledJam() && props.project) {
-      setHandledJam(n);
-      void recordJam();
-    }
+    if (props.project && props.jamNonce?.take()) void recordJam();
   });
 
   async function recordJam(): Promise<void> {

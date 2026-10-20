@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
+import type { Nonce } from "../input/nonce";
 import type { ClipKind, EngineState, Op, Project } from "../generated/project";
 import { engine_position, engine_record, engine_stop, op_apply } from "../tauri/commands";
 import { sampleTimelineDoc, type Section } from "../timeline/model";
@@ -46,7 +47,7 @@ export default function RecordPanel(props: {
   /** Mirror transport changes into the shell (the panel starts/stops takes). */
   onTransport?: (s: EngineState) => void;
   /** Bump to toggle punch in/out from the global `record.punch` action. */
-  punchNonce?: number;
+  punchNonce?: Nonce;
 }) {
   const [armed, setArmed] = createSignal<string[]>([]);
   const [punchKind, setPunchKind] = createSignal<"manual" | "auto">("auto");
@@ -136,12 +137,10 @@ export default function RecordPanel(props: {
   });
 
   // Global `record.punch` action (`r`, palette, native menu): toggle the
-  // pass from anywhere. Runs only when the nonce changes.
-  const [handledNonce, setHandledNonce] = createSignal(0);
+  // pass from anywhere. Runs once per bump, and only once the project has
+  // loaded.
   createEffect(() => {
-    const n = props.punchNonce ?? 0;
-    if (n !== 0 && n !== handledNonce()) {
-      setHandledNonce(n);
+    if (props.project && props.punchNonce?.take()) {
       if (untrack(passStart) === null) void punchIn();
       else punchOut();
     }

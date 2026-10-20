@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import type { Nonce } from "../input/nonce";
 import type { Op, OpKind, Project } from "../generated/project";
 import { op_apply } from "../tauri/commands";
 import {
@@ -42,7 +43,7 @@ export default function BranchPanel(props: {
   applyOp?: (op: Op) => Promise<unknown>;
   store?: BranchStore;
   /** Bump to merge the compared branches from `branch.merge`. */
-  mergeNonce?: number;
+  mergeNonce?: Nonce;
 }) {
   const [store] = createSignal(props.store ?? new BranchStore());
   const [version, setVersion] = createSignal(0);
@@ -147,14 +148,10 @@ export default function BranchPanel(props: {
   }
 
   // Global `branch.merge` action (palette, Branch menu): merge the
-  // compared branches from anywhere. Runs only on nonce changes.
-  const [handledMerge, setHandledMerge] = createSignal(0);
+  // compared branches from anywhere. Runs once per bump, and only once the
+  // project has loaded.
   createEffect(() => {
-    const n = props.mergeNonce ?? 0;
-    if (n !== 0 && n !== handledMerge()) {
-      setHandledMerge(n);
-      void commitMerge();
-    }
+    if (props.project && props.mergeNonce?.take()) void commitMerge();
   });
 
   async function commitMerge(): Promise<void> {

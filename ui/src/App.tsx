@@ -14,6 +14,7 @@ import {
 import { sampleTimelineDoc } from "./timeline/model";
 import Palette from "./palette/Palette";
 import ShortcutEditor from "./input/Editor";
+import { createNonce } from "./input/nonce";
 import AutomationView from "./automation/AutomationView";
 import GroovePanel from "./groove/GroovePanel";
 import BrowserPalette from "./browser/Browser";
@@ -106,14 +107,14 @@ export default function App() {
 
   // Global `record.punch` action (`r`, palette, native menu): show the
   // Record tab and toggle the pass there (the panel owns armed tracks).
-  const [punchNonce, setPunchNonce] = createSignal(0);
+  const punchNonce = createNonce();
   // Same nonce pattern for the session/comp actions: the panels own jam,
   // selection, and picks; keys just bump and show the tab.
-  const [launchNonce, setLaunchNonce] = createSignal(0);
-  const [jamNonce, setJamNonce] = createSignal(0);
-  const [commitNonce, setCommitNonce] = createSignal(0);
-  const [grooveNonce, setGrooveNonce] = createSignal(0);
-  const [mergeNonce, setMergeNonce] = createSignal(0);
+  const launchNonce = createNonce();
+  const jamNonce = createNonce();
+  const commitNonce = createNonce();
+  const grooveNonce = createNonce();
+  const mergeNonce = createNonce();
   const [linked, setLinked] = createSignal(false);
 
   async function stop() {
@@ -355,27 +356,27 @@ export default function App() {
     registerLocalActionHandler("mixer.soloSelected", () => toggleStrip("solo"));
     registerLocalActionHandler("record.punch", () => {
       setWorkspaceTab("Record");
-      setPunchNonce((n) => n + 1);
+      punchNonce.bump();
     });
     registerLocalActionHandler("session.launch", () => {
       setWorkspaceTab("Session");
-      setLaunchNonce((n) => n + 1);
+      launchNonce.bump();
     });
     registerLocalActionHandler("session.jam_record", () => {
       setWorkspaceTab("Session");
-      setJamNonce((n) => n + 1);
+      jamNonce.bump();
     });
     registerLocalActionHandler("comp.commit", () => {
       setWorkspaceTab("Comp");
-      setCommitNonce((n) => n + 1);
+      commitNonce.bump();
     });
     registerLocalActionHandler("groove.apply", () => {
       setWorkspaceTab("Groove");
-      setGrooveNonce((n) => n + 1);
+      grooveNonce.bump();
     });
     // Branches live in an always-visible side panel: no tab switch needed.
     registerLocalActionHandler("branch.merge", () => {
-      setMergeNonce((n) => n + 1);
+      mergeNonce.bump();
     });
     registerLocalActionHandler("view.fullscreen", async () => {
       try {
@@ -596,8 +597,8 @@ export default function App() {
               <Panel title="Session">
                 <SessionView
                   project={project()}
-                  launchNonce={launchNonce()}
-                  jamNonce={jamNonce()}
+                  launchNonce={launchNonce}
+                  jamNonce={jamNonce}
                 />
               </Panel>
             </Show>
@@ -618,7 +619,7 @@ export default function App() {
             </Show>
             <Show when={workspaceTab() === "Groove"}>
               <Panel title="Groove">
-                <GroovePanel source={null} target={null} applyNonce={grooveNonce()} />
+                <GroovePanel source={null} target={null} applyNonce={grooveNonce} />
               </Panel>
             </Show>
             <Show when={workspaceTab() === "Record"}>
@@ -627,13 +628,13 @@ export default function App() {
                   project={project()}
                   engineState={engine()}
                   onTransport={setEngine}
-                  punchNonce={punchNonce()}
+                  punchNonce={punchNonce}
                 />
               </Panel>
             </Show>
             <Show when={workspaceTab() === "Comp"}>
               <Panel title="Comp">
-                <CompPanel project={project()} commitNonce={commitNonce()} />
+                <CompPanel project={project()} commitNonce={commitNonce} />
               </Panel>
             </Show>
           </div>
@@ -647,7 +648,7 @@ export default function App() {
             </div>
           </Panel>
           <Panel title="Branches">
-            <BranchPanel project={project()} mergeNonce={mergeNonce()} />
+            <BranchPanel project={project()} mergeNonce={mergeNonce} />
           </Panel>
           <Panel title="Devices">
             <DevicesPanel project={project()} />
