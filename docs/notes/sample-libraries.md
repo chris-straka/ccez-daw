@@ -63,9 +63,10 @@ is added on playback, as FluidSynth does; truncated tables are errors or
 skipped zones, never a crash). `sampler.rs` picks the regions for a
 note, skips each recording's leading silence so notes land on the beat,
 repitches with 4-point Hermite interpolation, applies the envelope (the
-release fades from the level at note-off, even mid-attack), loops
-sustained recordings with a cross-fade when a note outlasts them, and
-places the result on the stereo stage. Every render is deterministic.
+release fades from the level at note-off, even mid-attack), plays a
+recording's own loop points seamlessly (the interpolator's taps wrap from
+the loop end to the loop start), loops sustained recordings without loop
+points with a cross-fade when a note outlasts them, and places the result on the stereo stage. Every render is deterministic.
 
 Pan law (stage `pan` and SFZ/SF2 region `pan`): the synths' constant-power
 law, `L = √2·cos θ`, `R = √2·sin θ` with `θ = (pan + 1)·π/4`, so centre is

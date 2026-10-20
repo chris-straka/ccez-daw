@@ -208,10 +208,29 @@ pub fn pan_gains(pan: f32) -> (f32, f32) {
     )
 }
 
-fn hermite(x: &[f32], pos: f64) -> f32 {
+/// An explicit loop `[start, end)` as the interpolator sees it: taps at or
+/// past `end` read from `start` on, and once the loop has wrapped, taps
+/// before `start` read the loop's tail (what precedes them on every
+/// later pass).
+#[derive(Clone, Copy)]
+struct Wrap {
+    start: usize,
+    end: usize,
+    wrapped: bool,
+}
+
+fn hermite(x: &[f32], pos: f64, wrap: Option<Wrap>) -> f32 {
     let i = pos.floor() as isize;
     let t = (pos - i as f64) as f32;
-    let at = |k: isize| -> f32 {
+    let at = |mut k: isize| -> f32 {
+        if let Some(w) = wrap {
+            let (a, b) = (w.start as isize, w.end as isize);
+            if k >= b {
+                k -= b - a;
+            } else if w.wrapped && k < a {
+                k += b - a;
+            }
+        }
         if k < 0 || k as usize >= x.len() {
             0.0
         } else {
@@ -434,15 +453,23 @@ fn render_region(
                 if p >= b as f64 {
                     p = a as f64 + (p - a as f64) % len;
                 }
-                let (mut sl, mut sr2) = (hermite(left, p), hermite(right, p));
+                // Explicit loops wrap their taps; the cross-faded auto loop
+                // reads the real audio around its ends (the blend below
+                // makes that join continuous).
+                let wrap = (xf == 0).then_some(Wrap {
+                    start: a,
+                    end: b,
+                    wrapped: pos >= b as f64,
+                });
+                let (mut sl, mut sr2) = (hermite(left, p, wrap), hermite(right, p, wrap));
                 // Approaching the loop end, blend in the audio before the
                 // loop start so the wrap is continuous.
                 let to_end = b as f64 - p;
                 if xf > 0 && pos >= a as f64 && to_end < xf as f64 && (p - len) >= 0.0 {
                     let w = (1.0 - to_end / xf as f64) as f32;
                     let (wa, wb) = ((1.0 - w).sqrt(), w.sqrt());
-                    sl = sl * wa + hermite(left, p - len) * wb;
-                    sr2 = sr2 * wa + hermite(right, p - len) * wb;
+                    sl = sl * wa + hermite(left, p - len, None) * wb;
+                    sr2 = sr2 * wa + hermite(right, p - len, None) * wb;
                 }
                 (sl, sr2)
             }
@@ -450,7 +477,7 @@ fn render_region(
                 if pos >= n_src as f64 {
                     break;
                 }
-                (hermite(left, pos), hermite(right, pos))
+                (hermite(left, pos, None), hermite(right, pos, None))
             }
         };
         let gg = g * gain;
@@ -571,6 +598,37 @@ pub(crate) mod tests {
         let before = peak(&l[off - 480..off]);
         let after = peak(&l[off..]);
         assert!(after <= before * 1.01, "swelled after note-off: {before} -> {after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// While an explicit loop plays, the interpolator's taps wrap from the
+    /// loop end to the loop start: no click each pass, whether the loop
+    /// ends at the last frame or audio follows it.
+    #[test]
+    fn interpolation_wraps_inside_explicit_loops() {
+        let dir = std::env::temp_dir().join(format!("ccez-sampler-wrap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 100 cycles of a 1 kHz cosine (seamless over 0..4800), then
+        // `trailer` frames of silence.
+        for trailer in [0usize, 200] {
+            let mut s: Vec<f32> = (0..4_800)
+                .map(|i| 0.5 * (std::f32::consts::TAU * i as f32 / 48.0).cos())
+                .collect();
+            s.resize(4_800 + trailer, 0.0);
+            let p = dir.join(format!("cos{trailer}.wav"));
+            std::fs::write(&p, wavread::encode_pcm16(48_000, &[s])).unwrap();
+            let mut r = Region::new(SampleRef::Wav(p));
+            r.keycenter = 69.0;
+            r.tune = 13.0; // fractional read positions
+            r.loop_mode = LoopMode::Loop;
+            r.loop_points = Some((0, 4_800));
+            let mut inst = SampledInstrument::new(vec![r], PlayStyle::default());
+            let (l, _) = inst.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
+            // The cosine itself never steps more than 0.5 * 2π/48 ≈ 0.066.
+            let held = &l[..48_000];
+            let worst = held.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0f32, f32::max);
+            assert!(worst < 0.07, "trailer {trailer}: step {worst} at the loop seam");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
