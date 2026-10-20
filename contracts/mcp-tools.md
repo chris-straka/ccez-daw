@@ -22,6 +22,16 @@ op log with actor `mcp` (undoable by design). `session_launch` and
 `link_join` are evaluation-only (a launch plan / a session clock read —
 never writes, like `gameaudio_audition`).
 
+Semantics match core: `automation_set_point` upserts (an exact-beat point
+is replaced, points stay ascending, `apply_automation_point`);
+`session_jam_record` and `branch_merge` validate the whole batch (shape
+and parseable `value_json`) before appending, so a bad entry writes
+nothing; `groove_apply` names the copy `<clipId>~groove-<name>` (the UI
+`grooveCommitOp` id) and rejects a repeat while that copy is live (core
+`DuplicateTarget`); `link_join` validates `tempo` before it creates the
+session. Undo picks the newest op not already undone and reverses
+`ClipAdded` and `AutomationPointSet` alike (`Engine::undo`).
+
 | Tool | Action | Input |
 |---|---|---|
 | `automation_set_point` | `automation.point_set` | `{ lane, beat, value, node?, param? }` |

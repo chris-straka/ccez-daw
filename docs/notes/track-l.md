@@ -29,8 +29,13 @@ surfaces reuse addresses; they don't mint new verbs.
   (snake_case field names copied from the generated project shapes, so the
   MCP surface can't drift from the UI) plus the op log. `addClip` / `setParam`
   validate (finite numbers, `lengthBeats > 0`, known track) and append
-  `ClipAdded` / `ParamSet` ops; `undo()` mirrors `op_undo` (reverts the
-  `ClipAdded`, records an `UndoMarker`, returns the undone seq). Swap this
+  `ClipAdded` / `ParamSet` ops; `undo()` mirrors core `Engine::undo`
+  (picks the newest op that is neither a marker nor already undone,
+  records an `UndoMarker`, rebuilds state by replaying the live ops onto
+  the base so `ClipAdded` and `AutomationPointSet` both reverse, returns
+  the undone seq). Like `Engine::apply`, each mutation is staged before
+  the log is touched; batch tools (`session_jam_record`, `branch_merge`)
+  validate the whole batch first, so a bad entry writes nothing. Swap this
   class for a Tauri/core-backed one without touching tool shapes.
 - `mcp/src/tools.ts` — unchanged frozen `TOOLS` table (six names mirroring
   `contracts/mcp-tools.md` → `contracts/action-registry.md`), plus the
