@@ -58,8 +58,15 @@ The frozen v0 `contracts/mcp-tools.md` list is untouched. GA-5 adds rows
 |---|---|---|
 | `gameaudio_list_cues` | cues in project | `{ projectId }` |
 | `gameaudio_audition` | posts a `GameStateSnapshot`, returns audible layer/event ids | `{ state, values }` |
-| `gameaudio_trigger_sfx` | triggers one `SfxEvent` by id (audition only) | `{ eventId }` |
+| `gameaudio_trigger_sfx` | triggers one `SfxEvent` by id (audition only) | `{ eventId, values? }` (`values: [{ param, value }]` feeds the event's RTPC bindings; omitted, the last audition snapshot's values are used) |
 | `gameaudio_export` | builds + validates an `ExportPackage` | `{ name, cueIds, bankIds }` |
 
 No export ships with validator errors; `gameaudio_export` returns the
 validator report either way (errors as data, not silence).
+
+These tools are MCP-only, like the `compose_*` tools: the `action` ids
+their `mcp/src/tools.ts` rows carry (`gameaudio.list_cues`,
+`gameaudio.audition_cue`, `gameaudio.trigger_event`,
+`gameaudio.export_bank`) name a verb family, not action-registry entries.
+No palette row, keybinding, or menu item runs them; the shell's game-audio
+panels (`ui/src/gameaudio/`) are a separate UI over the same model.

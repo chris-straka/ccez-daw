@@ -2,8 +2,8 @@
  * Track L: MCP backend seam.
  *
  * The MCP server runs as its own Bun process, so it cannot `invoke` Tauri
- * commands directly. This module is the seam where the six frozen tools
- * (`contracts/mcp-tools.md`) meet the op log (`contracts/op-log-format.md`):
+ * commands directly. This module is the seam where the project tools
+ * (`contracts/mcp-tools.md`: the frozen six plus the coverage rows) meet the op log (`contracts/op-log-format.md`):
  * every mutating call appends an ordinary op with actor `"mcp"`, so MCP
  * output is undoable by design via `undo()` (mirrors `op_undo`), exactly
  * like script output (`script:<name>`) from Track K.

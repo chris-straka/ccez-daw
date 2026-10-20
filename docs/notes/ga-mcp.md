@@ -43,7 +43,9 @@ has, which states wake them.
   frozen v0 six stay first and byte-identical in order). Tool names are the
   frozen `export-package.md` rows; each `action` id uses the
   `gameaudio.*` verb family (`list_cues`, `audition_cue`, `trigger_event`,
-  `export_bank`).
+  `export_bank`). These ids are MCP-side names, not action-registry
+  entries: the tools are MCP-only, like `compose_*`
+  (`contracts/export-package.md`).
 - `mcp/src/backend.ts` — one additive op kind (`GameAudioExported`) plus
   `logGameAudioExport()`: a *green* export lands one ordinary op under actor
   `gameaudio:export`. Red reports return as data and write nothing.

@@ -15,6 +15,25 @@ Track L wires handlers to the op log). Each tool mirrors one registry action.
 Validation (Track L): an MCP client lists tracks and adds a clip, then undoes
 it — the op appears in the log with actor `mcp`.
 
+## Additive game-audio tools (MCP-only)
+
+`gameaudio_list_cues`, `gameaudio_audition`, `gameaudio_trigger_sfx` and
+`gameaudio_export` (inputs and semantics: `contracts/export-package.md`,
+"Game-audio MCP tools") sit between the v0 six and the coverage rows. Like
+the `compose_*` tools below they have no action-registry entry: their
+`gameaudio.*` action ids are MCP-side names only, with no palette row,
+keybinding, or menu item.
+
+## Registry actions without an MCP tool
+
+Not every registry action is reachable over MCP. `project.new`,
+`project.open`, `project.save`, `project.undo`, `project.redo`,
+`track.add`, `track.delete`, `engine.set_tempo`, `op.apply`,
+`clip.delete` and `clip.duplicate` (and UI-only local rows such as
+`app.*`, `edit.*`, `view.*`, `vim.*`) run from the palette, vim layer, scripting API or
+menu only. MCP output stays undoable through the op log (`UndoMarker`),
+but there is no undo tool.
+
 ## Additive post-v0 coverage tools
 
 Each mirrors one action-registry entry above; every mutation lands in the

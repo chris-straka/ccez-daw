@@ -101,7 +101,8 @@ export const TOOL_NAMES = [
 /**
  * GA-5 game-audio tool names (contracts/export-package.md, "Game-audio MCP
  * tools" rows). New names only — the six v0 names above are untouched and
- * stay first, so prefix checks on the frozen list keep passing.
+ * stay first, so prefix checks on the frozen list keep passing. MCP-only:
+ * their `gameaudio.*` action ids below are not action-registry entries.
  */
 export const GAMEAUDIO_TOOL_NAMES = [
   "gameaudio_list_cues",
