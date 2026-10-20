@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.3
       - uses: dtolnay/rust-toolchain@stable
       # typegen builds ccez-core, which links ALSA (cpal) and libxcb
       # (vst3-host's X11 editor support).
@@ -38,9 +38,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          # Pinned to the Bun the repo is developed on: 1.4.3 resolves Solid's
-          # JSX dev runtime to solid.js and the ui tests that import .tsx fail.
-          bun-version: 1.4.2
+          # Pinned for reproducible runs. Bun has no Solid JSX transform, so
+          # unit tests must not reach a .tsx module (ui/tests/no-jsx.test.ts).
+          bun-version: 1.4.3
       - run: bun install --frozen-lockfile
       - run: bun run check
         working-directory: ui
@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.3
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
         working-directory: ui
@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.3
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxcb1-dev
       - run: bun install --frozen-lockfile

@@ -1,19 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { decodeClip, encodeClip, type MidiClip } from "../src/pianoroll/model";
 import { createNote } from "../src/pianoroll/store";
+import { layoutClip, stepForY, systemTop, xForBeat, yForStep } from "../src/notation/layout";
 import {
   accidentalGlyph,
   diatonicIndex,
-  layoutClip,
   ledgerLines,
   naturalPitchAtStep,
   pitchName,
   staffStep,
-  stepForY,
-  systemTop,
-  xForBeat,
-  yForStep,
-} from "../src/notation";
+} from "../src/notation/pitch";
 import {
   createNoteAtStep,
   deleteSelection,
@@ -23,7 +19,7 @@ import {
   shiftSelectionBeats,
   toggleSelect,
   transposeSelection,
-} from "../src/notation";
+} from "../src/notation/selection";
 
 function emptyClip(): MidiClip {
   return { length_beats: 8, notes: [] };
