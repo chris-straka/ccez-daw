@@ -58,6 +58,30 @@ export function runCompose(args: string[]): unknown {
   return JSON.parse(r.stdout);
 }
 
+/**
+ * MIDI number for a pitch, mirroring core `compose::parse_pitch` /
+ * `de_pitch` exactly (C4 = 60, `#`/`b` accidentals, octaves -1..=9,
+ * integers 0..=127), so a pitch the Rust CLI cannot read is rejected here
+ * before it ever reaches the document.
+ */
+export function midiPitch(p: string | number): number {
+  if (typeof p === "number") {
+    if (!Number.isInteger(p) || p < 0 || p > 127) throw new Error(`pitch ${p} is outside MIDI 0..=127`);
+    return p;
+  }
+  const t = String(p).trim();
+  const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[t.charAt(0).toUpperCase()];
+  if (base === undefined) throw new Error(`pitch ${JSON.stringify(p)}: want a note name like D4 or F#3`);
+  let rest = t.slice(1);
+  let acc = 0;
+  if (rest.startsWith("#")) [acc, rest] = [1, rest.slice(1)];
+  else if (rest.startsWith("b")) [acc, rest] = [-1, rest.slice(1)];
+  if (!/^[+-]?\d+$/.test(rest)) throw new Error(`pitch ${JSON.stringify(p)}: missing octave (want e.g. D4)`);
+  const n = (Number(rest) + 1) * 12 + base + acc;
+  if (n < 0 || n > 127) throw new Error(`pitch ${JSON.stringify(p)} is outside MIDI 0..=127`);
+  return n;
+}
+
 export const PitchSchema = z.union([z.string(), z.number().int().min(0).max(127)]);
 export const NoteSchema = z.object({
   pitch: PitchSchema.optional().describe('MIDI number or name like "D4", "F#3", "Bb2" (C4 = 60)'),
@@ -237,6 +261,23 @@ export class ComposeStore {
     return this.doc;
   }
 
+  /**
+   * Run one mutation transactionally: snapshot the document, apply `f`
+   * (which mutates and validates), and restore the snapshot if anything
+   * throws, so one bad call (e.g. something the Rust CLI cannot load)
+   * can never leave the session holding an unreadable document.
+   */
+  private mutate<T>(f: (d: Doc) => T): T {
+    const d = this.need();
+    const snapshot = structuredClone(d);
+    try {
+      return f(d);
+    } catch (e) {
+      this.doc = snapshot;
+      throw e;
+    }
+  }
+
   private flush(): string {
     writeFileSync(this.scratch, JSON.stringify(this.need(), null, 2));
     return this.scratch;
@@ -266,45 +307,49 @@ export class ComposeStore {
   }
 
   addInstrument(a: z.infer<typeof InstrumentInput>) {
-    const d = this.need();
-    const inst: Doc["instruments"][number] = {
-      id: a.id,
-      patch: a.patch,
-      gain_db: a.gainDb ?? 0,
-      reverb: a.reverb ?? 0.25,
-    };
-    if (a.pan !== undefined) inst.pan = a.pan;
-    const r = upsert(d.instruments, inst);
-    return { [r]: a.id, ...this.validate() };
+    return this.mutate((d) => {
+      const inst: Doc["instruments"][number] = {
+        id: a.id,
+        patch: a.patch,
+        gain_db: a.gainDb ?? 0,
+        reverb: a.reverb ?? 0.25,
+      };
+      if (a.pan !== undefined) inst.pan = a.pan;
+      const r = upsert(d.instruments, inst);
+      return { [r]: a.id, ...this.validate() };
+    });
   }
 
   setRoom(a: z.infer<typeof RoomInput>) {
-    const d = this.need();
-    d.room = {
-      decay_secs: a.decaySecs ?? d.room?.decay_secs ?? 2.4,
-      predelay_ms: a.predelayMs ?? d.room?.predelay_ms ?? 22,
-      damping: a.damping ?? d.room?.damping ?? 0.45,
-    };
-    return { room: d.room, ...this.validate() };
+    return this.mutate((d) => {
+      d.room = {
+        decay_secs: a.decaySecs ?? d.room?.decay_secs ?? 2.4,
+        predelay_ms: a.predelayMs ?? d.room?.predelay_ms ?? 22,
+        damping: a.damping ?? d.room?.damping ?? 0.45,
+      };
+      return { room: d.room, ...this.validate() };
+    });
   }
 
   addLayer(a: z.infer<typeof LayerInput>) {
-    const d = this.need();
-    const r = upsert(d.layers, { id: a.id, min_intensity: a.minIntensity ?? 1, gain_db: a.gainDb ?? 0 });
-    return { [r]: a.id, ...this.validate() };
+    return this.mutate((d) => {
+      const r = upsert(d.layers, { id: a.id, min_intensity: a.minIntensity ?? 1, gain_db: a.gainDb ?? 0 });
+      return { [r]: a.id, ...this.validate() };
+    });
   }
 
   addSection(a: z.infer<typeof SectionInput>) {
-    const d = this.need();
-    const s: Doc["sections"][number] = { id: a.id, role: a.role, bars: a.bars };
-    if (a.next !== undefined) s.next = a.next;
-    const r = upsert(d.sections, s);
-    const beats = a.bars * d.beats_per_bar;
-    return { [r]: a.id, beats, ...this.validate() };
+    return this.mutate((d) => {
+      const s: Doc["sections"][number] = { id: a.id, role: a.role, bars: a.bars };
+      if (a.next !== undefined) s.next = a.next;
+      const r = upsert(d.sections, s);
+      const beats = a.bars * d.beats_per_bar;
+      return { [r]: a.id, beats, ...this.validate() };
+    });
   }
 
   writeNotes(a: z.infer<typeof WriteNotesInput>) {
-    const d = this.need();
+    this.need();
     const given: NoteInput[] = [...(a.notes ?? [])];
     if (a.text !== undefined) {
       const once = parseNoteText(a.text, 0);
@@ -314,23 +359,28 @@ export class ComposeStore {
       }
     }
     if (given.length === 0) throw new Error("give notes or text");
+    // Every pitch (explicit or from text) is checked against core's rules
+    // here, before the document is touched.
     const notes = given.flatMap((n) => {
       const pitches = n.pitches ?? (n.pitch !== undefined ? [n.pitch] : []);
       if (pitches.length === 0) throw new Error(`note at beat ${n.start}: give pitch or pitches`);
       return pitches.map((p) => {
+        midiPitch(p);
         const out: Doc["parts"][number]["notes"][number] = { pitch: p, start: n.start, length: n.length };
         if (n.velocity !== undefined) out.velocity = n.velocity;
         return out;
       });
     });
-    let part = d.parts.find((p) => p.section === a.section && p.layer === a.layer && p.instrument === a.instrument);
-    if (!part) {
-      part = { section: a.section, layer: a.layer, instrument: a.instrument, notes: [] };
-      d.parts.push(part);
-    }
-    if ((a.mode ?? "replace") === "replace") part.notes = notes;
-    else part.notes.push(...notes);
-    return { notes: part.notes.length, written: notes.length, ...this.validate() };
+    return this.mutate((d) => {
+      let part = d.parts.find((p) => p.section === a.section && p.layer === a.layer && p.instrument === a.instrument);
+      if (!part) {
+        part = { section: a.section, layer: a.layer, instrument: a.instrument, notes: [] };
+        d.parts.push(part);
+      }
+      if ((a.mode ?? "replace") === "replace") part.notes = notes;
+      else part.notes.push(...notes);
+      return { notes: part.notes.length, written: notes.length, ...this.validate() };
+    });
   }
 
   summary() {
@@ -388,6 +438,7 @@ export class ComposeStore {
 
   open(a: z.infer<typeof PathInput>) {
     const doc = JSON.parse(readFileSync(resolve(a.path), "utf8")) as Doc;
+    const previous = this.doc;
     this.doc = {
       ...doc,
       beats_per_bar: doc.beats_per_bar ?? 4,
@@ -397,7 +448,13 @@ export class ComposeStore {
       sections: doc.sections ?? [],
       parts: doc.parts ?? [],
     };
-    return { ...this.summary(), ...this.validate() };
+    // A file the CLI cannot load must not replace the working document.
+    try {
+      return { ...this.summary(), ...this.validate() };
+    } catch (e) {
+      this.doc = previous;
+      throw e;
+    }
   }
 
   private writePlan(plan: z.infer<typeof PlanStepSchema>[]): string {

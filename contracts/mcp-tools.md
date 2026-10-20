@@ -50,7 +50,12 @@ document (`core/src/compose`, JSON) and runs core's `ccez-compose` CLI
 (`$CCEZ_COMPOSE_BIN`, else `target/{release,debug}/ccez-compose`, else
 `cargo run`) for validation, rendering and export. There is no UI panel
 or registry action for these yet; the composition is not a timeline
-project. Every mutation returns `{ ok, errors }` from the Rust validator.
+project. Every mutation returns `{ ok, errors, pending }` from the Rust
+validator. Mutations are transactional: pitches are checked against core's
+`parse_pitch` rules (names like `F#3`, integers 0..=127) before the
+document changes, and a mutation (or `compose_open`) whose validation
+throws restores the previous document, so one bad call never leaves the
+session holding a document the CLI cannot load.
 
 | Tool | Input | Returns |
 |---|---|---|
@@ -62,7 +67,7 @@ project. Every mutation returns `{ ok, errors }` from the Rust validator.
 | `compose_add_instrument` | `{ id, patch, gainDb?, reverb?, pan? }` | `{ added\|updated, ok, errors }` |
 | `compose_add_layer` | `{ id, minIntensity?, gainDb? }` | `{ added\|updated, ok, errors }` |
 | `compose_add_section` | `{ id, role: intro\|loop\|outro, bars, next? }` | `{ added\|updated, beats, ok, errors }` |
-| `compose_write_notes` | `{ section, layer, instrument, notes: [{ pitch? \| pitches?, start, length, velocity? }], mode? }` | `{ notes, written, ok, errors }` |
+| `compose_write_notes` | `{ section, layer, instrument, notes?: [{ pitch? \| pitches?, start, length, velocity? }], text?, start?, repeat?, mode?: replace\|append }` (give `notes` or `text`; `text` is `PITCH[/LEN][@VEL]` tokens from beat `start`, chords `D3+F3/2`, rests `r/2`, written `repeat` times) | `{ notes, written, ok, errors }` |
 | `compose_get` | `{}` | summary + document + validation |
 | `compose_preview` | `{ out: .wav\|.mp3, plan?: [{ section, bars?, intensity? }] }` | `{ out, plan, stats }` (stereo; peak/rms, per-step layers, `instrument_rms_dbfs`, `loop_seams`, warnings) |
 | `compose_export_audioforge` | `{ dir, plan? }` | `{ dir, files, stems, trim_db, loop_seams, warnings }` (`contracts/audioforge-music.md`) |
