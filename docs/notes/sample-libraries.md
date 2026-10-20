@@ -68,6 +68,14 @@ recording's own loop points seamlessly (the interpolator's taps wrap from
 the loop end to the loop start), loops sustained recordings without loop
 points with a cross-fade when a note outlasts them, and places the result on the stereo stage. Every render is deterministic.
 
+Loops follow the SFZ defaults: unset `loop_start`/`loop_end` are the
+WAV's own `smpl` loop, and an unset `loop_mode` is `loop_continuous` when
+the file has a loop (`no_loop` otherwise). A loop the author put in the
+file (or wrote as opcodes) always wins over the sustain style's
+cross-faded 35-85% auto-loop, which only covers recordings with no loop
+at all. Hits (one-shot style or `loop_mode=one_shot`) ring their
+recording once and ignore a file loop.
+
 Pan law (stage `pan` and SFZ/SF2 region `pan`): the synths' constant-power
 law, `L = √2·cos θ`, `R = √2·sin θ` with `θ = (pan + 1)·π/4`, so centre is
 unity on both sides and hard left is +3 dB left, silent right. Sampled

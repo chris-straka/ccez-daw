@@ -43,6 +43,9 @@ pub enum LoopMode {
     OneShot,
     /// Loop `loop_points` while the note sounds.
     Loop,
+    /// SFZ's default (no `loop_mode`): loop if the recording carries its
+    /// own loop (a WAV `smpl` chunk), else play once.
+    FromFile,
 }
 
 /// Amplitude envelope, seconds (sustain is a level 0..1).
@@ -160,8 +163,9 @@ impl Region {
 /// How the composer plays an instrument's regions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayStyle {
-    /// Sustained recordings without loop points get a cross-faded loop
-    /// when a note outlasts them (strings, winds, choir).
+    /// Sustained recordings without loop points (neither the region's
+    /// nor the WAV's own `smpl` loop) get a cross-faded loop over 35-85%
+    /// of the recording when a note outlasts it (strings, winds, choir).
     pub auto_loop: bool,
     /// Floor on the release time (s), so short library releases don't
     /// chop chords dry.
@@ -380,6 +384,14 @@ fn render_region(
     let cents = (pitch as f32 - r.keycenter) * r.keytrack + r.tune;
     let step = 2f64.powf(cents as f64 / 1200.0) * audio.sample_rate as f64 / sr as f64;
     let one_shot = style.one_shot || r.loop_mode == LoopMode::OneShot;
+    // SFZ defaults: unset loop points are the file's own loop, and an
+    // unset loop mode loops when the file has one (hits still ring once).
+    let loop_points = r.loop_points.or(audio.sample_loop);
+    let loop_mode = match r.loop_mode {
+        LoopMode::FromFile if audio.sample_loop.is_some() && !one_shot => LoopMode::Loop,
+        LoopMode::FromFile => LoopMode::NoLoop,
+        m => m,
+    };
     let release = r.env.release.max(style.min_release).max(0.005);
     let vel_db = 40.0 * (vel as f32 / 127.0).log10() * r.veltrack;
     let gain = db_gain(r.volume_db + vel_db) * r.xfade_gain(vel);
@@ -388,7 +400,7 @@ fn render_region(
     // Loop region: explicit points, else an auto cross-fade loop when a
     // sustained note outlasts its recording.
     let src_needed = (held as f64 + release as f64 * sr as f64) * step;
-    let looping = match (r.loop_mode, r.loop_points) {
+    let looping = match (loop_mode, loop_points) {
         (LoopMode::Loop, Some((a, b))) if b > a + 64 && b <= n_src => Some((a, b, 0usize)),
         _ if style.auto_loop && !one_shot && src_needed > (n_src - start) as f64 => {
             let len = n_src - start;
@@ -629,6 +641,63 @@ pub(crate) mod tests {
             let worst = held.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0f32, f32::max);
             assert!(worst < 0.07, "trailer {trailer}: step {worst} at the loop seam");
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `wav` with a `smpl` chunk carrying one forward loop (end inclusive,
+    /// as the spec stores it).
+    fn with_smpl_loop(mut wav: Vec<u8>, start: u32, end_incl: u32) -> Vec<u8> {
+        let mut body = vec![0u8; 36];
+        body[28..32].copy_from_slice(&1u32.to_le_bytes());
+        for v in [0u32, 0, start, end_incl, 0, 0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        wav.extend_from_slice(b"smpl");
+        wav.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        wav.extend(body);
+        let riff = (wav.len() - 8) as u32;
+        wav[4..8].copy_from_slice(&riff.to_le_bytes());
+        wav
+    }
+
+    /// SFZ defaults: with no `loop_mode`/`loop_start`/`loop_end`, a WAV's
+    /// own `smpl` loop plays (`loop_continuous`), and it wins over the
+    /// sustain style's 35-85% auto-loop. One-shot hits ignore it.
+    #[test]
+    fn a_files_own_loop_is_the_default() {
+        let dir = std::env::temp_dir().join(format!("ccez-sampler-smpl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 50 ms of 1 kHz (seamless, looped by the file), then 50 ms of
+        // silence the auto-loop would cycle through.
+        let mut s: Vec<f32> = (0..2_400)
+            .map(|i| 0.5 * (std::f32::consts::TAU * i as f32 / 48.0).cos())
+            .collect();
+        s.resize(4_800, 0.0);
+        let p = dir.join("looped.wav");
+        std::fs::write(&p, with_smpl_loop(wavread::encode_pcm16(48_000, &[s]), 0, 2_399)).unwrap();
+        let regions = super::super::sfz::parse("<region> sample=looped.wav key=69", &dir).unwrap();
+        assert_eq!(regions[0].loop_mode, LoopMode::FromFile);
+        let sus = PlayStyle {
+            auto_loop: true,
+            min_release: 0.0,
+            one_shot: false,
+        };
+        let mut inst = SampledInstrument::new(regions.clone(), sus);
+        let (l, _) = inst.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
+        assert!(l.len() >= 48_000, "{}", l.len());
+        let quietest = l[4_800..45_600]
+            .chunks(480)
+            .map(|w| (w.iter().map(|x| x * x).sum::<f32>() / w.len() as f32).sqrt())
+            .fold(f32::MAX, f32::min);
+        assert!(quietest > 0.3, "the file loop sounds throughout (quietest 10 ms: {quietest})");
+        // A hit rings its recording once: no loop.
+        let ring = PlayStyle {
+            one_shot: true,
+            ..PlayStyle::default()
+        };
+        let mut hit = SampledInstrument::new(regions, ring);
+        let (l, _) = hit.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
+        assert!(peak(&l[2_500..]) < 1e-3, "one-shot plays the silence after the loop");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

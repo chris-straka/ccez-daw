@@ -218,8 +218,12 @@ fn region(o: &Ops, control: &Ops, dir: &Path) -> Result<Option<Region>, String> 
     r.loop_mode = match g("loop_mode") {
         Some("one_shot") => LoopMode::OneShot,
         Some("loop_continuous") | Some("loop_sustain") => LoopMode::Loop,
-        _ => LoopMode::NoLoop,
+        Some("no_loop") => LoopMode::NoLoop,
+        // Unset: loop_continuous if the WAV has its own loop, else no_loop
+        // (decided when the recording is read).
+        _ => LoopMode::FromFile,
     };
+    // Unset loop_start/loop_end default to the file's loop at render time.
     if let (Some(a), Some(b)) = (
         g("loop_start").and_then(num),
         g("loop_end").and_then(num),
