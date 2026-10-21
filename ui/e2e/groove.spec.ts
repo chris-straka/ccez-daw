@@ -56,5 +56,7 @@ test("with no MIDI clips the tab says so", async ({ page }) => {
   await mockTauri(page, { projectName: "empty", tracks: [{ id: "t1", name: "Keys" }], clips: [] });
   await page.goto("/");
   await page.getByTestId("tab-Groove").click();
-  await expect(page.getByTestId("groove-panel")).toContainText("No MIDI clips");
+  await expect(page.getByTestId("groove-no-clips")).toContainText("No MIDI clips");
+  await page.getByTestId("groove-apply").click();
+  await expect(page.getByTestId("groove-status")).toContainText("pool is empty");
 });

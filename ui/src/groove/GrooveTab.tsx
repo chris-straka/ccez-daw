@@ -49,40 +49,44 @@ export default function GrooveTab(props: {
     await asset_store({ key, kind: "midi", bytes });
   }
 
+  // The panel stays mounted with no clips: `groove.apply` still reports
+  // (empty pool, no target) instead of going silent.
   return (
-    <Show
-      when={clips().length > 0}
-      fallback={
-        <div data-testid="groove-panel" class="session-dim">
-          No MIDI clips to groove — add one on the Timeline.
+    <>
+      <Show
+        when={clips().length > 0}
+        fallback={
+          <div data-testid="groove-no-clips" class="session-dim">
+            No MIDI clips to groove — add one on the Timeline.
+          </div>
+        }
+      >
+        <div class="form-row">
+          <label>
+            Feel from
+            <select
+              data-testid="groove-source"
+              value={sourceId()}
+              onInput={(e) => setSourceId(e.currentTarget.value)}
+              style={{ "margin-left": "4px" }}
+            >
+              <option value="">demo phrase</option>
+              <For each={clips()}>{(c) => <option value={c.id}>{c.name}</option>}</For>
+            </select>
+          </label>
+          <label>
+            Apply to
+            <select
+              data-testid="groove-target"
+              value={target()?.id ?? ""}
+              onInput={(e) => setTargetId(e.currentTarget.value)}
+              style={{ "margin-left": "4px" }}
+            >
+              <For each={clips()}>{(c) => <option value={c.id}>{c.name}</option>}</For>
+            </select>
+          </label>
         </div>
-      }
-    >
-      <div class="form-row">
-        <label>
-          Feel from
-          <select
-            data-testid="groove-source"
-            value={sourceId()}
-            onInput={(e) => setSourceId(e.currentTarget.value)}
-            style={{ "margin-left": "4px" }}
-          >
-            <option value="">demo phrase</option>
-            <For each={clips()}>{(c) => <option value={c.id}>{c.name}</option>}</For>
-          </select>
-        </label>
-        <label>
-          Apply to
-          <select
-            data-testid="groove-target"
-            value={target()?.id ?? ""}
-            onInput={(e) => setTargetId(e.currentTarget.value)}
-            style={{ "margin-left": "4px" }}
-          >
-            <For each={clips()}>{(c) => <option value={c.id}>{c.name}</option>}</For>
-          </select>
-        </label>
-      </div>
+      </Show>
       <GroovePanel
         source={midiOf(source())}
         sourceName={source()?.name}
@@ -93,6 +97,6 @@ export default function GrooveTab(props: {
         persist={persist}
         applyNonce={props.applyNonce}
       />
-    </Show>
+    </>
   );
 }
