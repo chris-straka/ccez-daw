@@ -73,6 +73,8 @@ pub const ENUMS: &[EnumDef] = &[
             "UndoMarker",
             // Automation editing (additive): upsert one lane point.
             "AutomationPointSet",
+            // Game-audio export record (additive): log-only, no state change.
+            "GameAudioExported",
         ],
     },
     // Track J (additive): browser library kinds. Existing entries untouched.

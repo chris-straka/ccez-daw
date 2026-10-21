@@ -43,6 +43,7 @@ export const MergeOpSchema = z.object({
     "TempoSet",
     "UndoMarker",
     "AutomationPointSet",
+    "GameAudioExported",
   ]),
   target: z.string(),
   value_json: z.string(),

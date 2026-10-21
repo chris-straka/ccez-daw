@@ -7,10 +7,10 @@ vim-style keybindings, and AI-assisted editing.
 The approved plan lives at
 `.agents/plans/2026-09-12-tauri-daw.md`. Frozen v0 contracts live in
 [`contracts/`](./contracts/README.md). Everything since the freeze is
-additive: one op kind (`AutomationPointSet`, `contracts/op-log-format.md`),
-eight IPC commands (the "Additive extensions" rows in
-`contracts/ipc-table.md`), and new MCP tool rows (`contracts/mcp-tools.md`);
-no frozen row has changed.
+additive: two op kinds (`AutomationPointSet` and the log-only
+`GameAudioExported` record, `contracts/op-log-format.md`), eight IPC
+commands (the "Additive extensions" rows in `contracts/ipc-table.md`), and
+new MCP tool rows (`contracts/mcp-tools.md`); no frozen row has changed.
 
 ## What it does
 

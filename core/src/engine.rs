@@ -113,7 +113,8 @@ impl From<serde_json::Error> for EngineError {
 pub type Result<T> = std::result::Result<T, EngineError>;
 
 /// `true` for the frozen actor set: `ui`, `mcp`, `ai:<sidecar>`,
-/// `script:<name>`. All AI output lands as ordinary `ai:*` ops so it stays
+/// `script:<name>`, plus the additive `gameaudio:<tool>` (game-audio MCP
+/// export records). All AI output lands as ordinary `ai:*` ops so it stays
 /// undoable by design.
 pub fn valid_actor(actor: &str) -> bool {
     actor == "ui"
@@ -121,6 +122,9 @@ pub fn valid_actor(actor: &str) -> bool {
         || actor.strip_prefix("ai:").is_some_and(|s| !s.is_empty())
         || actor
             .strip_prefix("script:")
+            .is_some_and(|s| !s.is_empty())
+        || actor
+            .strip_prefix("gameaudio:")
             .is_some_and(|s| !s.is_empty())
 }
 
@@ -198,9 +202,33 @@ pub fn apply_op_to_project(project: &mut Project, op: &Op) -> Result<()> {
         OpKind::AutomationPointSet => {
             apply_automation_point(project, op)?;
         }
+        OpKind::GameAudioExported => check_game_audio_export(op)?,
         OpKind::UndoMarker => {}
     }
     Ok(())
+}
+
+/// `GameAudioExported` is a log-only record: validate the payload the MCP
+/// writes (`{"packageName": <non-empty string>, "stemCount": <u64>}`) so no
+/// poison entry lands, and touch no project state.
+fn check_game_audio_export(op: &Op) -> Result<()> {
+    let bad = || {
+        EngineError::BadPayload(format!(
+            "GameAudioExported needs {{\"packageName\": <name>, \"stemCount\": <n>}}: {}",
+            op.value_json
+        ))
+    };
+    let v: serde_json::Value = serde_json::from_str(&op.value_json).map_err(|_| bad())?;
+    let named = v
+        .get("packageName")
+        .and_then(|n| n.as_str())
+        .is_some_and(|n| !n.is_empty());
+    let counted = v.get("stemCount").and_then(|n| n.as_u64()).is_some();
+    if named && counted {
+        Ok(())
+    } else {
+        Err(bad())
+    }
 }
 
 /// `AutomationPointSet` payloads: `{"beat": <n>, "value": <n>}`, plus
@@ -1040,6 +1068,84 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// The MCP's game-audio export (`logGameAudioExport` in
+    /// `mcp/src/backend.ts`) writes this exact line: actor
+    /// `gameaudio:export`, kind `GameAudioExported`, target = package name,
+    /// payload `{"packageName", "stemCount"}`. Core must read it from the
+    /// middle of a log (a non-tail bad line is `CorruptLog`), replay it as a
+    /// state no-op, apply fresh ones, and undo them across a restart.
+    #[test]
+    fn game_audio_exported_op_from_mcp_reads_replays_and_undoes() {
+        let dir = scratch("gaexport");
+        {
+            let mut e = Engine::create(&dir, Project::sample()).expect("create");
+            e.apply("ui", OpKind::TempoSet, "tempo", "128.0").expect("t");
+        }
+        let mcp_line = r#"{"seq":2,"actor":"gameaudio:export","kind":"GameAudioExported","target":"demo-v1","value_json":"{\"packageName\":\"demo-v1\",\"stemCount\":2}"}"#;
+        let after_line = r#"{"seq":3,"actor":"ui","kind":"ParamSet","target":"trk_music:volume","value_json":"0.25"}"#;
+        {
+            use std::io::Write;
+            let mut log = fs::OpenOptions::new()
+                .append(true)
+                .open(ops_path(&dir))
+                .expect("ops.jsonl");
+            writeln!(log, "{mcp_line}").expect("append mcp line");
+            writeln!(log, "{after_line}").expect("append ui line");
+        }
+        let mut e = Engine::open(&dir).expect("a log the MCP wrote must open");
+        assert_eq!(e.log().len(), 3);
+        let exported = &e.log()[1];
+        assert_eq!(exported.actor, "gameaudio:export");
+        assert_eq!(exported.target, "demo-v1");
+        // Round-trips byte-identically to the MCP's JSON.stringify output.
+        assert_eq!(serde_json::to_string(exported).expect("ser"), mcp_line);
+        // Log-only: replay changed nothing but the surrounding ops.
+        assert_eq!(e.project().tempo, 128.0);
+        let vol = |e: &Engine| {
+            e.project().tracks.iter().find(|t| t.id == "trk_music").expect("track").volume
+        };
+        assert_eq!(vol(&e), 0.25);
+
+        // A fresh export applies as a state no-op and undo marks it undone.
+        let kind = exported.kind.clone();
+        assert_eq!(kind, OpKind::GameAudioExported);
+        let before = e.project().clone();
+        let payload = "{\"packageName\":\"demo-v2\",\"stemCount\":0}";
+        let seq = e
+            .apply("gameaudio:export", kind.clone(), "demo-v2", payload)
+            .expect("apply export record");
+        assert_eq!(seq, 4);
+        assert_eq!(e.project(), &before);
+        assert_eq!(e.undo().expect("undo export"), 4);
+        assert_eq!(e.project(), &before);
+        assert_eq!(e.undone_seqs(), vec![4]);
+        // Bad payloads and empty tool names never enter the log.
+        for bad in [
+            "forte",
+            "{}",
+            "{\"packageName\": \"\", \"stemCount\": 1}",
+            "{\"packageName\": \"p\", \"stemCount\": -1}",
+        ] {
+            assert!(
+                matches!(
+                    e.apply("gameaudio:export", kind.clone(), "p", bad),
+                    Err(EngineError::BadPayload(_))
+                ),
+                "payload {bad} must refuse"
+            );
+        }
+        assert!(matches!(
+            e.apply("gameaudio:", kind.clone(), "p", payload),
+            Err(EngineError::BadActor(_))
+        ));
+        drop(e);
+        let e = Engine::open(&dir).expect("reopen");
+        assert_eq!(e.project(), &before);
+        assert_eq!(e.undone_seqs(), vec![4]);
+        assert_eq!(e.live_ops().len(), 3);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn undo_redo_round_trip_in_memory() {
         let dir = scratch("undoredo");
@@ -1191,10 +1297,10 @@ mod tests {
 
     #[test]
     fn actor_rules_match_the_frozen_contract() {
-        for good in ["ui", "mcp", "ai:sidecar", "ai:x:y", "script:seed"] {
+        for good in ["ui", "mcp", "ai:sidecar", "ai:x:y", "script:seed", "gameaudio:export"] {
             assert!(valid_actor(good), "{good}");
         }
-        for bad in ["", "human", "ai:", "script:", "UI", "ai"] {
+        for bad in ["", "human", "ai:", "script:", "UI", "ai", "gameaudio:", "gameaudio"] {
             assert!(!valid_actor(bad), "{bad}");
         }
     }

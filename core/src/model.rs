@@ -152,6 +152,12 @@ pub enum OpKind {
     /// payload must also carry `"node"` and `"param"` (the `node:param`
     /// address) and the lane is created. Replays deterministically.
     AutomationPointSet,
+    /// Log-only record of a validated game-audio export package (written by
+    /// the MCP's `gameaudio_export` under actor `gameaudio:export`).
+    /// `target` is the package name; payload is
+    /// `{"packageName": <string>, "stemCount": <n>}`. Changes no project
+    /// state: replay is a no-op and undo just marks it undone.
+    GameAudioExported,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

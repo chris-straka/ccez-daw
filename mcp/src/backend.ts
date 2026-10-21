@@ -421,6 +421,7 @@ export class InMemoryBackend {
       "TempoSet",
       "UndoMarker",
       "AutomationPointSet",
+      "GameAudioExported",
     ];
     // Pass 1: validate the whole batch (shape + parseable payload) before
     // the log is touched, so a bad op mid-batch leaves nothing applied.

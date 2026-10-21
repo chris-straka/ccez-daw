@@ -48,7 +48,11 @@ has, which states wake them.
   (`contracts/export-package.md`).
 - `mcp/src/backend.ts` — one additive op kind (`GameAudioExported`) plus
   `logGameAudioExport()`: a *green* export lands one ordinary op under actor
-  `gameaudio:export`. Red reports return as data and write nothing.
+  `gameaudio:export`. Red reports return as data and write nothing. Core
+  defines the kind too (`OpKind::GameAudioExported`, a log-only state
+  no-op; `gameaudio:<tool>` is a valid actor), so a log the MCP wrote opens
+  in core — see `contracts/op-log-format.md`; `mcp/tests/oplog-contract.test.ts`
+  checks the MCP's kinds/actors against the generated `OpKindSchema`.
 - `mcp/src/index.ts` — four appended input schemas + one shared
   `GameAudioStore` per server (including the per-request servers on the
   stateless HTTP path, so audition state survives across requests).

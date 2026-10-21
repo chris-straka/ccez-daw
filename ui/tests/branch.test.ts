@@ -58,6 +58,7 @@ describe("branch workflow: list, compare, preview, commit", () => {
       ["TempoSet", "tempo"],
       ["AutomationPointSet", "automation"],
       ["UndoMarker", "marker"],
+      ["GameAudioExported", "marker"],
     ];
     for (const [kind, want] of cases) {
       expect(classifyOp(op(1, kind, "t", "0"))).toBe(want);
