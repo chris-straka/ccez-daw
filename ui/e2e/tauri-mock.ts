@@ -193,6 +193,13 @@ export function installInBrowser(canned: CannedBackend): void {
         return null;
       case "param_set":
         return null;
+      // Typed like the bridge: an empty store and a parked playhead.
+      case "asset_list":
+        return [];
+      case "asset_load":
+        return [];
+      case "engine_position":
+        return 0;
       case "op_apply":
       case "op_undo":
       case "op_redo":
