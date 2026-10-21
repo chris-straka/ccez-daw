@@ -89,6 +89,10 @@ pub struct Region {
     pub volume_db: f32,
     /// -1 (left) ..= 1 (right).
     pub pan: f32,
+    /// One side of an SF2 linked stereo pair: the recording is a channel,
+    /// not a mono source, so hard pan puts it at unity on its own side
+    /// (the constant-power law over √2) instead of +3 dB.
+    pub stereo_half: bool,
     /// Round robin: this region plays on pass `seq_position` of `seq_length`.
     pub seq_length: u32,
     pub seq_position: u32,
@@ -119,6 +123,7 @@ impl Region {
             xfade: None,
             volume_db: 0.0,
             pan: 0.0,
+            stereo_half: false,
             seq_length: 1,
             seq_position: 1,
             lorand: 0.0,
@@ -210,6 +215,18 @@ pub fn pan_gains(pan: f32) -> (f32, f32) {
         std::f32::consts::SQRT_2 * a.cos(),
         std::f32::consts::SQRT_2 * a.sin(),
     )
+}
+
+/// A region's channel gains: [`pan_gains`] for a mono source; for one
+/// side of a stereo pair, the same law scaled so hard pan is unity.
+fn region_gains(r: &Region) -> (f32, f32) {
+    let (l, rt) = pan_gains(r.pan);
+    if r.stereo_half {
+        let k = std::f32::consts::FRAC_1_SQRT_2;
+        (l * k, rt * k)
+    } else {
+        (l, rt)
+    }
 }
 
 /// An explicit loop `[start, end)` as the interpolator sees it: taps at or
@@ -395,7 +412,7 @@ fn render_region(
     let release = r.env.release.max(style.min_release).max(0.005);
     let vel_db = 40.0 * (vel as f32 / 127.0).log10() * r.veltrack;
     let gain = db_gain(r.volume_db + vel_db) * r.xfade_gain(vel);
-    let (pl, pr) = pan_gains(r.pan);
+    let (pl, pr) = region_gains(r);
     let held = (dur.max(0.0) * sr as f32) as usize;
     // Loop region: explicit points, else an auto cross-fade loop when a
     // sustained note outlasts its recording.

@@ -86,6 +86,15 @@ content; hard left keeps only the left channel). One law for everything,
 so moving an instrument between a synth and a sampled patch keeps its
 place and level.
 
+SF2 linked stereo pairs (a left sample, type 4, and a right sample, type
+2) are the two channels of one stereo recording, not two mono sources:
+their region pan uses the same law divided by √2 (`L = cos θ`,
+`R = sin θ`), so the hard-panned halves each play at unity on their own
+channel, the level the same content has as a stereo WAV at centre. (With
+the mono law each side came out +3.01 dB hot; `sf2.rs`
+`stereo_pairs_play_at_the_level_of_a_stereo_wav` measures it.) Mono SF2
+zones and SFZ region `pan` keep the mono law.
+
 Each catalog entry carries a level calibration (`gain_db`, measured with
 `ccez-compose samples calibrate`: a mezzo note's first-second rms, sustains
 to about -22 dBFS, plucks and hits a little lower, peaks kept under

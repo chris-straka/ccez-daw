@@ -255,6 +255,10 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
             // EMU/FluidSynth convention: attenuation counts 0.4 dB per cB.
             r.volume_db = -0.04 * ia(48) as f32;
             let pan = ia(17) as f32 / 500.0;
+            // Linked left (4) / right (2) samples are the two channels of
+            // one stereo recording, hard-panned unless the file says
+            // otherwise; each plays at unity on its own side.
+            r.stereo_half = matches!(stype, 2 | 4);
             r.pan = match (stype, pan) {
                 (4, p) if p == 0.0 => -1.0,
                 (2, p) if p == 0.0 => 1.0,
@@ -348,6 +352,10 @@ pub(crate) mod tests {
         pub pad_samples: usize,
         /// Write the terminal EOI instrument record.
         pub eoi: bool,
+        /// Two zones over a linked stereo pair (left sample type 4, right
+        /// type 2, no pan generator) instead of one mono zone: the left
+        /// side is the 0.5 sine, the right a 0.25 sine at 392 Hz.
+        pub stereo: bool,
     }
 
     impl Default for Spec {
@@ -357,6 +365,7 @@ pub(crate) mod tests {
                 pad_inst: 0,
                 pad_samples: 0,
                 eoi: true,
+                stereo: false,
             }
         }
     }
@@ -367,15 +376,29 @@ pub(crate) mod tests {
         sf2_with(path, &Spec::default())
     }
 
+    /// The 16-bit frames [`sf2_with`] writes: `amp` sine at `hz`, 1 s at
+    /// 22.05 kHz.
+    pub(crate) fn sine_i16(amp: f32, hz: f32) -> Vec<i16> {
+        let sr = 22_050f32;
+        (0..22_050)
+            .map(|i| (amp * (std::f32::consts::TAU * hz * i as f32 / sr).sin() * 32767.0) as i16)
+            .collect()
+    }
+
     pub(crate) fn sf2_with(path: &Path, spec: &Spec) {
         let sr = 22_050u32;
         let n = sr as usize;
-        let mut pool: Vec<u8> = Vec::new();
-        for i in 0..n {
-            let v = (0.5 * (std::f32::consts::TAU * 261.63 * i as f32 / sr as f32).sin() * 32767.0) as i16;
-            pool.extend_from_slice(&v.to_le_bytes());
+        let mut sides = vec![sine_i16(0.5, 261.63)];
+        if spec.stereo {
+            sides.push(sine_i16(0.25, 392.0));
         }
-        pool.extend(std::iter::repeat_n(0u8, 92)); // 46 zero frames after a sample
+        let mut pool: Vec<u8> = Vec::new();
+        for side in &sides {
+            for v in side {
+                pool.extend_from_slice(&v.to_le_bytes());
+            }
+            pool.extend(std::iter::repeat_n(0u8, 92)); // 46 zero frames after a sample
+        }
         let gen = |op: u16, v: [u8; 2]| {
             let mut b = op.to_le_bytes().to_vec();
             b.extend_from_slice(&v);
@@ -401,26 +424,43 @@ pub(crate) mod tests {
         inst.extend_from_slice(&0u16.to_le_bytes());
         if spec.eoi {
             inst.extend(name20("EOI"));
-            inst.extend_from_slice(&1u16.to_le_bytes());
+            inst.extend_from_slice(&(sides.len() as u16).to_le_bytes());
         }
-        let ibag = [0u16, 0, 4, 0].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
-        let mut igen = gen(KEY_RANGE, [48, 72]);
-        igen.extend(gen(54, 1i16.to_le_bytes())); // loop
-        igen.extend(gen(38, (-1200i16).to_le_bytes())); // release 0.5 s
-        igen.extend(gen(SAMPLE_ID, (spec.pad_samples as u16).to_le_bytes()));
+        // One zone (four generators) per sample; the EOI's bag follows.
+        let ibag = (0..=sides.len() as u16)
+            .flat_map(|z| [4 * z, 0])
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<u8>>();
+        let mut igen = Vec::new();
+        for z in 0..sides.len() {
+            igen.extend(gen(KEY_RANGE, [48, 72]));
+            igen.extend(gen(54, 1i16.to_le_bytes())); // loop
+            igen.extend(gen(38, (-1200i16).to_le_bytes())); // release 0.5 s
+            igen.extend(gen(SAMPLE_ID, ((spec.pad_samples + z) as u16).to_le_bytes()));
+        }
         igen.extend(gen(0, [0, 0]));
         let mut shdr = Vec::new();
         for _ in 0..spec.pad_samples {
             shdr.extend(name20("pad"));
             shdr.extend_from_slice(&[0u8; 26]);
         }
-        shdr.extend(name20("sine"));
-        for v in [0u32, n as u32, 2205, n as u32 - 2205, sr] {
-            shdr.extend_from_slice(&v.to_le_bytes());
+        for z in 0..sides.len() {
+            let at = (z * (n + 46)) as u32;
+            shdr.extend(name20("sine"));
+            for v in [at, at + n as u32, at + 2205, at + n as u32 - 2205, sr] {
+                shdr.extend_from_slice(&v.to_le_bytes());
+            }
+            shdr.extend_from_slice(&[60, spec.corr as u8]);
+            // sampleLink, sampleType: mono (1), or left (4) / right (2)
+            // linked to each other.
+            let (link, stype) = match (spec.stereo, z) {
+                (false, _) => (0, 1u16),
+                (true, 0) => (spec.pad_samples + 1, 4),
+                (true, _) => (spec.pad_samples, 2),
+            };
+            shdr.extend_from_slice(&(link as u16).to_le_bytes());
+            shdr.extend_from_slice(&stype.to_le_bytes());
         }
-        shdr.extend_from_slice(&[60, spec.corr as u8]);
-        shdr.extend_from_slice(&0u16.to_le_bytes());
-        shdr.extend_from_slice(&1u16.to_le_bytes());
         shdr.extend(name20("EOS"));
         shdr.extend_from_slice(&[0u8; 26]);
         let pdta = list(
@@ -457,6 +497,7 @@ pub(crate) mod tests {
         let r = &rs[0];
         assert_eq!((r.lokey, r.hikey, r.keycenter), (48, 72, 60.0));
         assert_eq!(r.loop_mode, LoopMode::Loop);
+        assert!(!r.stereo_half, "a mono sample pans as a mono source");
         assert!((r.env.release - 0.5).abs() < 1e-3, "{:?}", r.env);
         assert!(load_preset(&p, 0, 1).is_err());
         let SampleRef::Sf2 { start, end, rate, loop_start, loop_end, .. } = r.sample.clone() else {
@@ -481,6 +522,46 @@ pub(crate) mod tests {
         let rs = load_preset(&p, 0, 52).unwrap();
         assert_eq!(rs[0].tune, 50.0);
         let _ = std::fs::remove_dir_all(p.parent().unwrap());
+    }
+
+    /// A linked stereo pair plays each side at unity on its own channel:
+    /// the same level as that stereo content from a stereo WAV at centre
+    /// (where the pan law is unity), not +3 dB from hard-panning each half.
+    #[test]
+    fn stereo_pairs_play_at_the_level_of_a_stereo_wav() {
+        use super::super::sampler::{SampledInstrument, PlayStyle};
+        use super::super::wavread;
+        let dir = std::env::temp_dir().join(format!("ccez-sf2-stereo-{}", std::process::id()));
+        let p = dir.join("t.sf2");
+        sf2_with(&p, &Spec { stereo: true, ..Spec::default() });
+        let rs = load_preset(&p, 0, 52).unwrap();
+        assert_eq!(rs.len(), 2, "{rs:?}");
+        assert_eq!((rs[0].pan, rs[1].pan), (-1.0, 1.0));
+        let sides = [sine_i16(0.5, 261.63), sine_i16(0.25, 392.0)];
+        let chans: Vec<Vec<f32>> = sides
+            .iter()
+            .map(|s| s.iter().map(|&v| v as f32 / 32768.0).collect())
+            .collect();
+        let w = dir.join("t.wav");
+        std::fs::write(&w, wavread::encode_pcm16(22_050, &chans)).unwrap();
+        let mut wr = Region::new(SampleRef::Wav(w));
+        wr.keycenter = 60.0;
+        let sr = 22_050;
+        let mut sf = SampledInstrument::new(rs, PlayStyle::default());
+        let mut wav = SampledInstrument::new(vec![wr], PlayStyle::default());
+        let a = sf.render_note(60, 1.0, 0.3, sr, 0.0).unwrap();
+        let b = wav.render_note(60, 1.0, 0.3, sr, 0.0).unwrap();
+        // Held part only (the two releases differ).
+        let rms = |x: &[f32]| {
+            let x = &x[2_205..6_615];
+            (x.iter().map(|s| s * s).sum::<f32>() / x.len() as f32).sqrt()
+        };
+        for (side, (x, y)) in [("left", (&a.0, &b.0)), ("right", (&a.1, &b.1))] {
+            let db = 20.0 * (rms(x) / rms(y)).log10();
+            eprintln!("{side}: sf2 rms {:.4}, wav rms {:.4}, {db:+.2} dB", rms(x), rms(y));
+            assert!(db.abs() < 0.05, "{side}: the SF2 pair is {db:+.2} dB against the WAV");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Instrument and sample indices are WORDs: 32768 and up are valid.
