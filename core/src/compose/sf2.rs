@@ -267,7 +267,8 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
             let modes = get(&iz, 54).map(amount).unwrap_or(0);
             if modes == 1 || modes == 3 {
                 r.loop_mode = LoopMode::Loop;
-                r.loop_points = Some(((ls - start).max(0) as usize, (le - start).max(0) as usize));
+                r.loop_start = Some((ls - start).max(0) as usize);
+                r.loop_end = Some((le - start).max(0) as usize);
             }
             let sustain_cb = (get(&iz, 37).map(amount).unwrap_or(0) + padd(37)).clamp(0, 1440);
             r.env = Env {

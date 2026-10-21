@@ -68,9 +68,15 @@ recording's own loop points seamlessly (the interpolator's taps wrap from
 the loop end to the loop start), loops sustained recordings without loop
 points with a cross-fade when a note outlasts them, and places the result on the stereo stage. Every render is deterministic.
 
-Loops follow the SFZ defaults: unset `loop_start`/`loop_end` are the
-WAV's own `smpl` loop, and an unset `loop_mode` is `loop_continuous` when
-the file has a loop (`no_loop` otherwise). A loop the author put in the
+Loops follow the SFZ defaults, each loop point on its own: an unset
+`loop_start` is the WAV's own `smpl` loop start (else frame 0), an unset
+`loop_end` the `smpl` loop end (else the last frame), so a region that
+sets only one of them keeps it and fills in the other. A region that sets
+neither plays the `smpl` loop, or has no loop points when the file has
+none. An unset `loop_mode` is `loop_continuous` when the file has a loop
+(`no_loop` otherwise), so a lone `loop_start`/`loop_end` over a WAV
+without `smpl` loops only under an explicit `loop_mode`. SF2 zones set
+both points from their sample header (or neither, when not looped). A loop the author put in the
 file (or wrote as opcodes) always wins over the sustain style's
 cross-faded 35-85% auto-loop, which only covers recordings with no loop
 at all. Hits (one-shot style or `loop_mode=one_shot`) ring their

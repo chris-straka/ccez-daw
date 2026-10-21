@@ -223,13 +223,13 @@ fn region(o: &Ops, control: &Ops, dir: &Path) -> Result<Option<Region>, String> 
         // (decided when the recording is read).
         _ => LoopMode::FromFile,
     };
-    // Unset loop_start/loop_end default to the file's loop at render time.
-    if let (Some(a), Some(b)) = (
-        g("loop_start").and_then(num),
-        g("loop_end").and_then(num),
-    ) {
-        r.loop_points = Some((a.max(0.0) as usize, (b.max(0.0) as usize).saturating_add(1)));
-    }
+    // Each side on its own; an unset one defaults (file loop, else the
+    // recording's edge) when the recording is read. `loop_end` is
+    // inclusive in SFZ, exclusive here.
+    r.loop_start = g("loop_start").and_then(num).map(|a| a.max(0.0) as usize);
+    r.loop_end = g("loop_end")
+        .and_then(num)
+        .map(|b| (b.max(0.0) as usize).saturating_add(1));
     r.env = Env {
         attack: g("ampeg_attack").and_then(num).unwrap_or(0.0),
         hold: g("ampeg_hold").and_then(num).unwrap_or(0.0),

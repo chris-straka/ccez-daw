@@ -41,7 +41,7 @@ pub enum LoopMode {
     NoLoop,
     /// Play the whole recording regardless of note length (drums).
     OneShot,
-    /// Loop `loop_points` while the note sounds.
+    /// Loop `loop_start..loop_end` while the note sounds.
     Loop,
     /// SFZ's default (no `loop_mode`): loop if the recording carries its
     /// own loop (a WAV `smpl` chunk), else play once.
@@ -103,7 +103,11 @@ pub struct Region {
     pub offset: usize,
     pub end: Option<usize>,
     pub loop_mode: LoopMode,
-    pub loop_points: Option<(usize, usize)>,
+    /// Loop start / end (exclusive) in frames, each set on its own; an
+    /// unset side resolves when the recording is read (see
+    /// `loop_span`).
+    pub loop_start: Option<usize>,
+    pub loop_end: Option<usize>,
     pub env: Env,
     /// 0..1: how much velocity scales loudness (SFZ amp_veltrack / 100).
     pub veltrack: f32,
@@ -131,7 +135,8 @@ impl Region {
             offset: 0,
             end: None,
             loop_mode: LoopMode::NoLoop,
-            loop_points: None,
+            loop_start: None,
+            loop_end: None,
             env: Env::default(),
             veltrack: 1.0,
         }
@@ -227,6 +232,19 @@ fn region_gains(r: &Region) -> (f32, f32) {
     } else {
         (l, rt)
     }
+}
+
+/// The loop a region plays over a recording of `n_src` frames, by the
+/// SFZ defaults, each side on its own: an unset start is the file
+/// loop's start (else frame 0), an unset end the file loop's end (else
+/// the last frame). With neither set nor a file loop there is none.
+fn loop_span(r: &Region, file: Option<(usize, usize)>, n_src: usize) -> Option<(usize, usize)> {
+    if r.loop_start.is_none() && r.loop_end.is_none() {
+        return file;
+    }
+    let start = r.loop_start.or(file.map(|f| f.0)).unwrap_or(0);
+    let end = r.loop_end.or(file.map(|f| f.1)).unwrap_or(n_src);
+    Some((start, end))
 }
 
 /// An explicit loop `[start, end)` as the interpolator sees it: taps at or
@@ -401,9 +419,10 @@ fn render_region(
     let cents = (pitch as f32 - r.keycenter) * r.keytrack + r.tune;
     let step = 2f64.powf(cents as f64 / 1200.0) * audio.sample_rate as f64 / sr as f64;
     let one_shot = style.one_shot || r.loop_mode == LoopMode::OneShot;
-    // SFZ defaults: unset loop points are the file's own loop, and an
-    // unset loop mode loops when the file has one (hits still ring once).
-    let loop_points = r.loop_points.or(audio.sample_loop);
+    // SFZ defaults: unset loop points come from the file's own loop, and
+    // an unset loop mode loops when the file has one (hits still ring
+    // once).
+    let loop_points = loop_span(r, audio.sample_loop, n_src);
     let loop_mode = match r.loop_mode {
         LoopMode::FromFile if audio.sample_loop.is_some() && !one_shot => LoopMode::Loop,
         LoopMode::FromFile => LoopMode::NoLoop,
@@ -650,7 +669,8 @@ pub(crate) mod tests {
             r.keycenter = 69.0;
             r.tune = 13.0; // fractional read positions
             r.loop_mode = LoopMode::Loop;
-            r.loop_points = Some((0, 4_800));
+            r.loop_start = Some(0);
+            r.loop_end = Some(4_800);
             let mut inst = SampledInstrument::new(vec![r], PlayStyle::default());
             let (l, _) = inst.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
             // The cosine itself never steps more than 0.5 * 2π/48 ≈ 0.066.
@@ -716,6 +736,79 @@ pub(crate) mod tests {
         let (l, _) = hit.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
         assert!(peak(&l[2_500..]) < 1e-3, "one-shot plays the silence after the loop");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The rms a 1 s held note settles to when `opcodes` play a recording
+    /// of three 30 ms segments of a 1 kHz cosine, A (0.1), B (0.5) and C
+    /// (0.9) at frames 0, 1440 and 2880, optionally carrying a `smpl` loop
+    /// over B. Looping A+B settles to 0.255, B alone 0.354, B+C 0.515; no
+    /// loop at all is `None` (the note ends with the recording).
+    fn settled_loop_rms(name: &str, opcodes: &str, smpl: bool) -> Option<f32> {
+        let dir = std::env::temp_dir().join(format!("ccez-sampler-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let s: Vec<f32> = (0..4_320)
+            .map(|i| {
+                let amp = [0.1, 0.5, 0.9][i / 1_440];
+                amp * (std::f32::consts::TAU * i as f32 / 48.0).cos()
+            })
+            .collect();
+        let mut wav = wavread::encode_pcm16(48_000, &[s]);
+        if smpl {
+            wav = with_smpl_loop(wav, 1_440, 2_879);
+        }
+        std::fs::write(dir.join("abc.wav"), wav).unwrap();
+        let text = format!("<region> sample=abc.wav key=69 {opcodes}");
+        let regions = super::super::sfz::parse(&text, &dir).unwrap();
+        let mut inst = SampledInstrument::new(regions, PlayStyle::default());
+        let (l, _) = inst.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        if l.len() < 48_000 {
+            return None;
+        }
+        // Ten passes of a two-segment loop (twenty of a one-segment one).
+        let w = &l[8_640..8_640 + 28_800];
+        Some((w.iter().map(|x| x * x).sum::<f32>() / w.len() as f32).sqrt())
+    }
+
+    fn assert_loops(got: Option<f32>, want: f32, what: &str) {
+        let got = got.unwrap_or_else(|| panic!("{what}: did not loop"));
+        assert!((got - want).abs() < 0.02, "{what}: settled rms {got:.3}, want {want:.3}");
+    }
+
+    // SFZ defaults each loop point on its own: an unset `loop_start` is
+    // the file loop's start (else 0), an unset `loop_end` the file loop's
+    // end (else the last frame).
+    const AB: f32 = 0.255;
+    const B: f32 = 0.354;
+    const BC: f32 = 0.515;
+
+    /// No file loop: `loop_start` alone loops to the last frame.
+    #[test]
+    fn loop_start_alone_loops_to_the_last_frame() {
+        let got = settled_loop_rms("ls", "loop_mode=loop_continuous loop_start=1440", false);
+        assert_loops(got, BC, "loop_start=1440, no file loop: 1440..end");
+    }
+
+    /// No file loop: `loop_end` alone loops from frame 0.
+    #[test]
+    fn loop_end_alone_loops_from_the_first_frame() {
+        let got = settled_loop_rms("le", "loop_mode=loop_continuous loop_end=2879", false);
+        assert_loops(got, AB, "loop_end=2879, no file loop: 0..2880");
+    }
+
+    /// Over a file loop, `loop_start` alone keeps the file's loop end.
+    #[test]
+    fn loop_start_alone_keeps_the_file_loop_end() {
+        assert_loops(settled_loop_rms("f", "", true), B, "file loop alone");
+        let got = settled_loop_rms("fls", "loop_start=0", true);
+        assert_loops(got, AB, "loop_start=0 over the file loop: 0..2880");
+    }
+
+    /// Over a file loop, `loop_end` alone keeps the file's loop start.
+    #[test]
+    fn loop_end_alone_keeps_the_file_loop_start() {
+        let got = settled_loop_rms("fle", "loop_end=4319", true);
+        assert_loops(got, BC, "loop_end=4319 over the file loop: 1440..4320");
     }
 
     #[test]
