@@ -140,8 +140,8 @@ export const ACTIONS: ActionDef[] = [
   localAction("mixer.muteSelected", "Mixer: Mute Selected Strip"),
   localAction("mixer.soloSelected", "Mixer: Solo Selected Strip"),
   // --- IPC-backed (additive post-v0 coverage; still frozen IPC surface) ---
-  // `automation.point_set` builds one `AutomationPointSet` op (the single
-  // additive `OpKind` past the v0 freeze) and sends it through the frozen
+  // `automation.point_set` builds one `AutomationPointSet` op (an additive
+  // `OpKind` past the v0 freeze) and sends it through the frozen
   // `op_apply`, so it is undoable and survives restart like every other op.
   {
     id: "automation.point_set",
