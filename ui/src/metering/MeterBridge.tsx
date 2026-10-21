@@ -111,7 +111,7 @@ export default function MeterBridge(props: {
           peak {peak().toFixed(2)} · rms {rmsDb().toFixed(1)} dBFS · hold {hold().toFixed(2)}
         </span>
         <Show when={clipped()}>
-          <button onClick={clearClip} class="clear-clip-btn" title="A block hit full scale">
+          <button data-testid="meter-clear-clip" onClick={clearClip} class="clear-clip-btn" title="A block hit full scale">
             CLIP — clear
           </button>
         </Show>
@@ -130,7 +130,7 @@ export default function MeterBridge(props: {
       <div class="session-controls">
         <label class="mixer-label">
           target (LUFS)
-          <input
+          <input data-testid="meter-target-lufs"
             type="number"
             min="-70"
             max="-4"
@@ -142,7 +142,7 @@ export default function MeterBridge(props: {
         </label>
         <label class="mixer-label">
           true-peak ceiling (dBFS)
-          <input
+          <input data-testid="meter-ceiling"
             type="number"
             min="-12"
             max="0"
@@ -152,7 +152,7 @@ export default function MeterBridge(props: {
             style={{ width: "64px" }}
           />
         </label>
-        <button onClick={normalize}>Normalize bounce</button>
+        <button data-testid="meter-normalize" onClick={normalize}>Normalize bounce</button>
         <span class="mixer-foot">{preview()}</span>
         <Show when={note()}>
           <span class="meter-note">{note()}</span>

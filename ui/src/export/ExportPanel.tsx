@@ -465,7 +465,7 @@ export default function ExportPanel(props: {
                   {it.status}: {it.detail}
                 </span>
                 <Show when={it.status === "error"}>
-                  <button
+                  <button data-testid={`export-requeue-${it.id}`}
                     class="slot-btn silent"
                     onClick={() => setItems((prev) => setItemStatus(prev, it.id, "queued", "re-queued"))}
                   >

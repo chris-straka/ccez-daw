@@ -14,8 +14,9 @@ use ccez_core::audio::graph::AudioGraph;
 use ccez_core::audio::render::RenderGraph;
 use ccez_core::audio::TransportController;
 use ccez_core::engine::Engine;
+use ccez_core::ipc::ENGINE_STATE_CHANGED;
 use ccez_core::model::{Clip, EngineState, Op, OpKind, ParamAddress, Project, Track};
-use tauri::{Manager, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 struct AppState {
     engine: Mutex<Engine>,
@@ -82,6 +83,35 @@ fn push_graph_if_playing(state: &State<AppState>) {
     }
 }
 
+/// Announce a transport change: emit `engine_state_changed` (core
+/// `ipc::ENGINE_STATE_CHANGED`) with the state the transport now reads,
+/// only when it differs from `before`. Every command that can move the
+/// transport calls this, so the shell's engine badge follows changes from
+/// any source (keys, palette, menu, project switches) and no-ops stay quiet.
+fn announce_engine_state<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &State<AppState>,
+    before: EngineState,
+) {
+    let Ok(after) = state.transport.lock().map(|t| t.engine_state()) else {
+        return;
+    };
+    if after != before {
+        if let Err(e) = app.emit(ENGINE_STATE_CHANGED, &after) {
+            eprintln!("{ENGINE_STATE_CHANGED}: emit failed ({e})");
+        }
+    }
+}
+
+/// Stop the transport ahead of a project switch; returns the prior state
+/// for [`announce_engine_state`].
+fn stop_for_switch(state: &State<AppState>) -> Result<EngineState, String> {
+    let transport = state.transport.lock().map_err(|_| poisoned("transport"))?;
+    let before = transport.engine_state();
+    transport.stop();
+    Ok(before)
+}
+
 /// Reserve a separate directory before creating a new project's durable files.
 fn create_fresh_project(root: &Path, name: &str) -> Result<Engine, String> {
     std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
@@ -113,16 +143,17 @@ fn sync_project_tempo(state: &State<AppState>) {
 }
 
 #[tauri::command]
-fn project_new(name: String, state: State<AppState>) -> Result<Project, String> {
+fn project_new<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+    state: State<AppState>,
+) -> Result<Project, String> {
     let engine = create_fresh_project(&state.projects_root, &name)?;
     let project = engine.project().clone();
-    state
-        .transport
-        .lock()
-        .map_err(|_| poisoned("transport"))?
-        .stop();
+    let before = stop_for_switch(&state)?;
     *state.engine.lock().map_err(|_| poisoned("engine"))? = engine;
     sync_project_tempo(&state);
+    announce_engine_state(&app, &state, before);
     Ok(project)
 }
 
@@ -147,16 +178,17 @@ fn project_save(path: String, state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn project_open(path: String, state: State<AppState>) -> Result<Project, String> {
+fn project_open<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+    state: State<AppState>,
+) -> Result<Project, String> {
     let engine = Engine::open(Path::new(&path)).map_err(|e| e.to_string())?;
     let project = engine.project().clone();
-    state
-        .transport
-        .lock()
-        .map_err(|_| poisoned("transport"))?
-        .stop();
+    let before = stop_for_switch(&state)?;
     *state.engine.lock().map_err(|_| poisoned("engine"))? = engine;
     sync_project_tempo(&state);
+    announce_engine_state(&app, &state, before);
     Ok(project)
 }
 
@@ -299,13 +331,16 @@ fn asset_list(state: State<AppState>) -> Vec<ccez_core::engine::AssetEntry> {
 /// driving the deterministic renderer, degrading to the null device on
 /// headless/CI machines with no audio hardware. The current project graph
 /// is pushed first so play renders the song, never silence. Never panics —
-/// a half-broken hardware layer reports `Stopped` instead.
+/// a half-broken hardware layer reports `Stopped` instead. A real change
+/// emits `engine_state_changed`.
 #[tauri::command]
-fn engine_play(state: State<AppState>) -> EngineState {
+fn engine_play<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> EngineState {
     let transport = state.transport.lock().expect("transport lock");
-    match transport.play() {
+    let before = transport.engine_state();
+    let started = transport.play();
+    drop(transport);
+    let reported = match started {
         Ok(s) => {
-            drop(transport);
             push_graph(&state);
             s
         }
@@ -313,25 +348,36 @@ fn engine_play(state: State<AppState>) -> EngineState {
             eprintln!("engine_play: audio stream failed ({e}); staying stopped");
             EngineState::Stopped
         }
-    }
+    };
+    announce_engine_state(&app, &state, before);
+    reported
 }
 
-/// Stop the realtime transport: closes/suspends the output stream.
+/// Stop the realtime transport: closes/suspends the output stream. A real
+/// change emits `engine_state_changed`.
 #[tauri::command]
-fn engine_stop(state: State<AppState>) -> EngineState {
-    state.transport.lock().expect("transport lock").stop()
+fn engine_stop<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> EngineState {
+    let transport = state.transport.lock().expect("transport lock");
+    let before = transport.engine_state();
+    let stopped = transport.stop();
+    drop(transport);
+    announce_engine_state(&app, &state, before);
+    stopped
 }
 
 /// Start a recording pass: the transport runs (song audible for context)
 /// with the state reading Recording, arming the punch/take path. Degrades
 /// to the null device like `engine_play`; a half-broken hardware layer
-/// reports `Stopped` instead of panicking.
+/// reports `Stopped` instead of panicking. A real change emits
+/// `engine_state_changed`.
 #[tauri::command]
-fn engine_record(state: State<AppState>) -> EngineState {
+fn engine_record<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> EngineState {
     let transport = state.transport.lock().expect("transport lock");
-    match transport.record() {
+    let before = transport.engine_state();
+    let started = transport.record();
+    drop(transport);
+    let reported = match started {
         Ok(s) => {
-            drop(transport);
             push_graph(&state);
             s
         }
@@ -339,7 +385,9 @@ fn engine_record(state: State<AppState>) -> EngineState {
             eprintln!("engine_record: audio stream failed ({e}); staying stopped");
             EngineState::Stopped
         }
-    }
+    };
+    announce_engine_state(&app, &state, before);
+    reported
 }
 
 /// Join/leave the Link session clock (`link.join` action, `L` key):
@@ -553,6 +601,10 @@ mod regression_tests {
         }
     }
 
+    fn app(fixture: &Fixture) -> tauri::AppHandle<MockRuntime> {
+        fixture.app.handle().clone()
+    }
+
     impl Drop for Fixture {
         fn drop(&mut self) {
             self.app
@@ -611,9 +663,9 @@ mod regression_tests {
         let expected = serde_json::to_value(original.project()).unwrap();
         let log_before = std::fs::read(saved.join("ops.jsonl")).unwrap();
         let state = fixture.app.state::<AppState>();
-        project_open(saved.to_string_lossy().into_owned(), state.clone()).unwrap();
+        project_open(app(&fixture), saved.to_string_lossy().into_owned(), state.clone()).unwrap();
         state.transport.lock().unwrap().play_null();
-        let fresh = project_new("Fresh".into(), state.clone()).unwrap();
+        let fresh = project_new(app(&fixture), "Fresh".into(), state.clone()).unwrap();
         assert_eq!(fresh.name, "Fresh");
         assert_eq!(
             state.transport.lock().unwrap().engine_state(),
@@ -685,6 +737,47 @@ mod regression_tests {
         assert_eq!(state.engine.lock().unwrap().next_seq(), 1);
     }
 
+    /// Every transport change reaches the shell's engine badge through
+    /// `engine_state_changed` (core `ipc::ENGINE_STATE_CHANGED`) carrying
+    /// the new state; a command that leaves the state alone stays quiet.
+    /// The transport runs on the null device so no hardware is involved.
+    #[test]
+    fn transport_commands_emit_engine_state_changed() {
+        use tauri::Listener;
+        let fixture = Fixture::new();
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        fixture
+            .app
+            .listen(ccez_core::ipc::ENGINE_STATE_CHANGED, move |ev| {
+                let _ = tx.send(ev.payload().to_string());
+            });
+        let heard = || rx.try_iter().collect::<Vec<_>>();
+        let state = fixture.app.state::<AppState>();
+        // Recording from a running transport flips state without a stream.
+        state.transport.lock().unwrap().play_null();
+        assert_eq!(engine_record(app(&fixture), state.clone()), EngineState::Recording);
+        assert_eq!(heard(), ["\"Recording\""]);
+        // Already running: play is a no-op and must not emit.
+        assert_eq!(engine_play(app(&fixture), state.clone()), EngineState::Recording);
+        assert!(heard().is_empty());
+        assert_eq!(engine_stop(app(&fixture), state.clone()), EngineState::Stopped);
+        assert_eq!(heard(), ["\"Stopped\""]);
+        engine_stop(app(&fixture), state.clone());
+        assert!(heard().is_empty());
+        // Opening or creating a project stops a running transport.
+        let saved = fixture.root.join("other");
+        Engine::create(&saved, Project::new("other", "Other")).unwrap();
+        state.transport.lock().unwrap().record_null();
+        project_open(app(&fixture), saved.to_string_lossy().into_owned(), state.clone()).unwrap();
+        assert_eq!(heard(), ["\"Stopped\""]);
+        state.transport.lock().unwrap().play_null();
+        project_new(app(&fixture), "Fresh".into(), state.clone()).unwrap();
+        assert_eq!(heard(), ["\"Stopped\""]);
+        // A stopped project switch is no transport change.
+        project_new(app(&fixture), "Again".into(), state.clone()).unwrap();
+        assert!(heard().is_empty());
+    }
+
     #[test]
     fn opening_project_stops_previous_transport() {
         let fixture = Fixture::new();
@@ -692,7 +785,7 @@ mod regression_tests {
         Engine::create(&saved, Project::new("other", "Other")).unwrap();
         let state = fixture.app.state::<AppState>();
         state.transport.lock().unwrap().record_null();
-        project_open(saved.to_string_lossy().into_owned(), state.clone()).unwrap();
+        project_open(app(&fixture), saved.to_string_lossy().into_owned(), state.clone()).unwrap();
         assert_eq!(
             state.transport.lock().unwrap().engine_state(),
             EngineState::Stopped

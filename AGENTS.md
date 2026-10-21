@@ -31,8 +31,10 @@ common wrong answer.
   that invariant.
 - Global keys (`r`, `S`, `J`, `C`, `L`, `?`, `g`-chords) reach panel-owned
   state through bump-and-show nonce props (`punchNonce`, `launchNonce`,
-  …), never by lifting panel state into `App`. Nonce effects fire only on
-  change and only once the project has loaded.
+  …), never by lifting panel state into `App`. Nonces are `createNonce()`
+  (`ui/src/input/nonce.ts`): the panel effect calls `take()` only once the
+  project has loaded, and the consumed mark lives with the nonce so a tab
+  switch (which remounts the panel) never replays a handled press.
 - New IPC returning a state the shell displays (e.g. link membership)
   gets a visible indicator, not just a return value.
 
@@ -57,7 +59,8 @@ common wrong answer.
 
 ## UI conventions
 
-- Every interactive element gets a `data-testid`. Status lines report
+- Every interactive element gets a `data-testid` (`ui/tests/testids.test.ts`
+  fails the build otherwise). Status lines report
   what happened (`record: take 1 → take_x`), never "done".
 - Headless-safe: Tauri calls in panels fail into honest status text so
   the shell runs in a plain browser.

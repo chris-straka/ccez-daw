@@ -45,7 +45,7 @@ export default function BrowserPalette(props: {
 
   return (
     <div>
-      <input
+      <input data-testid="browser-search"
         class="browser-search"
         placeholder="Search samples, presets, plugins, projects…"
         aria-label="Browser search"
@@ -55,7 +55,7 @@ export default function BrowserPalette(props: {
       <div class="browser-tabs">
         <For each={KINDS}>
           {(k) => (
-            <button
+            <button data-testid={`browser-kind-${k}`}
               aria-pressed={kind() === k}
               classList={{ active: kind() === k }}
               onClick={() => setKind(k)}

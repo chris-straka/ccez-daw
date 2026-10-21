@@ -69,5 +69,9 @@ through the MCP server over HTTP:
    the releases, so loops stay seamless (`loop_seams` in preview and
    export reports). audioforge loads the stereo stems (it still
    downmixes music stems to mono when it plays them).
+   Fixed 2026-10-20: the stage pan was only applied to synth voices;
+   sampled instruments (catalog seats and `pan` overrides alike) now
+   take the same constant-power law, as a balance for stereo
+   recordings (see `sample-libraries.md`, "Pan law").
 9. Open: each mutation re-runs the Rust validator as a subprocess (fast
    normally, seconds on a loaded box).

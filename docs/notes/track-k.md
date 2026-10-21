@@ -44,10 +44,11 @@ work — the first `g` waits instead of firing).
 - `ui/src/palette/model.ts` — pure palette logic: `filterActions`
   (subsequence fuzzy match over title + id) and `runPaletteAction` (runs ANY
   registry action by id). `Palette.tsx` is a thin Solid view (fuzzy input,
-  ↑/↓/Enter/Esc) over these.
+  ↑/↓/Enter/Esc) over these; in the shell it runs rows through `App`'s
+  `runAction` (its `run` prop), so a row behaves exactly like its key/menu.
 - `ui/src/App.tsx` — wires it together: registers the real local handlers
   (mode label, palette open), attaches one global `keydown` listener that
-  yields to the palette and to text inputs, and shows `-- NORMAL --` plus the
+  yields to the palette, the Shortcuts editor, and text inputs, and shows `-- NORMAL --` plus the
   `track:step` cursor in the header.
 
 ## 3. Default bindings (all remappable)

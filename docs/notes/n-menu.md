@@ -72,6 +72,9 @@ to descriptors, so these are palette-safe until Track K wires behavior.
 ## For Track K
 
 Wire `menu-action` → registry run (snippet above) and real handlers for the
-16 additive local actions. Suggested: `edit.*` → focused-field
-`document.execCommand`/clipboard fallback; `view.*` → window zoom/fullscreen;
-`app.*`/`help.*` → dialogs + docs URL.
+16 additive local actions. Suggested: `view.*` → window zoom/fullscreen;
+`app.*`/`help.*` → dialogs + docs URL. `edit.*` landed in
+`ui/src/input/edit.ts`: the shell ignores the Edit menu's sync event (the
+OS role already acted; re-running it would paste twice), and palette /
+scripting runs act on the last focused text field through the async
+clipboard, reporting `edit: copied N chars` and friends.

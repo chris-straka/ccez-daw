@@ -86,7 +86,8 @@ const MODE_ACTIONS: Record<string, VimMode> = {
   "vim.mode.visual": "visual",
 };
 
-function applyMotion(store: VimStore, action: string): boolean {
+/** Apply a `vim.motion.*` action to the cursor; false for any other id. */
+export function applyMotion(store: VimStore, action: string): boolean {
   switch (action) {
     case "vim.motion.left":
       store.cursor = moveCursor(store.cursor, store.grid, "left");

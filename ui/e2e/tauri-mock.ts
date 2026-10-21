@@ -164,9 +164,13 @@ export function installInBrowser(canned: CannedBackend): void {
     }
     switch (cmd) {
       case "project_get":
+        return cannedProject();
       case "project_new":
+        // Faithful to the bridge: these reject a call missing its argument.
+        if (typeof args["name"] !== "string") throw new Error("missing field `name`");
+        return cannedProject();
       case "project_open":
-      case "track_list":
+        if (typeof args["path"] !== "string") throw new Error("missing field `path`");
         return cannedProject();
       case "engine_play":
         return "Playing";
@@ -182,10 +186,20 @@ export function installInBrowser(canned: CannedBackend): void {
       case "engine_stop":
         return "Stopped";
       case "engine_set_tempo":
+        if (typeof args["tempo"] !== "number") throw new Error("missing field `tempo`");
         return null;
       case "project_save":
+        if (typeof args["path"] !== "string") throw new Error("missing field `path`");
+        return null;
       case "param_set":
         return null;
+      // Typed like the bridge: an empty store and a parked playhead.
+      case "asset_list":
+        return [];
+      case "asset_load":
+        return [];
+      case "engine_position":
+        return 0;
       case "op_apply":
       case "op_undo":
       case "op_redo":

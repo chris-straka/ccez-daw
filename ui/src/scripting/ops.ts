@@ -77,7 +77,7 @@ export function paramSetOp(actor: string, node: string, param: string, value: nu
 }
 
 /**
- * Build an `AutomationPointSet` op (the one additive `OpKind` past the v0
+ * Build an `AutomationPointSet` op (an additive `OpKind` past the v0
  * freeze): upsert one `(beat, value)` point on `laneId`. Lane creation
  * (`laneExists: false`) also carries the `node:param` address, per
  * `contracts/op-log-format.md`; updates carry just beat+value.

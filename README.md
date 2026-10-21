@@ -6,8 +6,11 @@ vim-style keybindings, and AI-assisted editing.
 
 The approved plan lives at
 `.agents/plans/2026-09-12-tauri-daw.md`. Frozen v0 contracts live in
-[`contracts/`](./contracts/README.md) (one additive extension since the
-freeze: the `AutomationPointSet` op — see `contracts/op-log-format.md`).
+[`contracts/`](./contracts/README.md). Everything since the freeze is
+additive: two op kinds (`AutomationPointSet` and the log-only
+`GameAudioExported` record, `contracts/op-log-format.md`), eight IPC
+commands (the "Additive extensions" rows in `contracts/ipc-table.md`), and
+new MCP tool rows (`contracts/mcp-tools.md`); no frozen row has changed.
 
 ## What it does
 
@@ -30,7 +33,8 @@ freeze: the `AutomationPointSet` op — see `contracts/op-log-format.md`).
   compensation, plugin scan lists, crash recovery with watchdog, ARA
   document model wired to bounce.
 - **Shell** — command palette, vim keybindings, shortcut editor, one action
-  registry driving palette/vim/scripting/menu/MCP alike, dark studio theme.
+  registry driving palette/vim/scripting/menu (MCP tools mirror a subset of
+  it), dark studio theme.
 
 ## Layout
 
@@ -39,8 +43,13 @@ freeze: the `AutomationPointSet` op — see `contracts/op-log-format.md`).
   shapes) plus the Rust→TS typegen step.
 - `ui/` — SolidJS + TypeScript (strict) + Vite + Bun frontend. Never hand-writes
   contract types; imports them from `ui/src/generated/`.
-- `mcp/` — Bun/TS MCP server on the official MCP TS SDK. Tools mirror the
-  action registry (every feature since v0 has palette/vim/menu/MCP parity).
+- `mcp/` — Bun/TS MCP server on the official MCP TS SDK (32 tools). Each
+  registry-backed tool mirrors one action id (the v0 six plus the post-v0
+  coverage rows); the `gameaudio_*` and `compose_*` tools are MCP-only.
+  Not every registry action has a tool: `project.new/open/save/undo/redo`,
+  `track.add/delete`, `engine.set_tempo`, `op.apply` and
+  `clip.delete/duplicate` are palette/vim/menu only
+  (`contracts/mcp-tools.md`).
 - `contracts/` — frozen v0 human-readable contracts (IPC table, op-log format,
   action registry, MCP tool list).
 

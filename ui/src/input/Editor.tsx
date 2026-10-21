@@ -109,15 +109,15 @@ export default function ShortcutEditor(props: {
         >
           <div class="session-controls">
             <strong>Shortcuts</strong>
-            <input
+            <input data-testid="shortcuts-search"
               ref={searchEl}
               placeholder="Search keys or actions…"
               value={query()}
               onInput={(e) => setQuery(e.currentTarget.value)}
               style={{ flex: 1 }}
             />
-            <button onClick={reset}>Reset to defaults</button>
-            <button onClick={props.onClose}>Close</button>
+            <button data-testid="shortcuts-reset" onClick={reset}>Reset to defaults</button>
+            <button data-testid="shortcuts-close" onClick={props.onClose}>Close</button>
           </div>
           <Show when={notice()}>
             <p class="editor-notice">{notice()}</p>
@@ -140,14 +140,14 @@ export default function ShortcutEditor(props: {
                   <span class="editor-action" title={formatBinding(b)}>
                     {b.action} <small>({b.mode}/{b.context})</small>
                   </span>
-                  <input
+                  <input data-testid={`shortcuts-remap-input-${b.action}`}
                     placeholder="new keys"
                     aria-label={`Remap ${b.action}`}
                     value={drafts()[b.action] ?? ""}
                     onInput={(e) => setDrafts((d) => ({ ...d, [b.action]: e.currentTarget.value }))}
                     style={{ width: "90px" }}
                   />
-                  <button onClick={() => applyRemap(b.action)}>Remap</button>
+                  <button data-testid={`shortcuts-remap-${b.action}`} onClick={() => applyRemap(b.action)}>Remap</button>
                 </li>
               )}
             </For>

@@ -7,7 +7,7 @@ import {
   pruneSelection,
   selectOnly,
   toggleSelect,
-} from "../src/notation";
+} from "../src/notation/selection";
 import {
   emptyStaffFor,
   midiClips,
@@ -15,7 +15,7 @@ import {
   resolveScoreClip,
   scoreCommitOp,
   writeScoreClip,
-} from "../src/notation";
+} from "../src/notation/score";
 import { sampleProject } from "../src/project/sample";
 
 function midiClip(id: string, name: string): Clip {

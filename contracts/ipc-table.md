@@ -46,3 +46,15 @@ them for real (the pre-wiring stubs are gone):
 | `engine_state_changed` | `EngineState` | transport state change |
 | `param_changed` | `ParamAddress` | after `param_set` (`node:param`) |
 | `op_applied` | `Op` | every op-log append |
+
+### Who emits
+
+- `engine_state_changed` — the shell's transport commands in
+  `src-tauri/src/lib.rs` (`engine_play`, `engine_stop`, `engine_record`, and
+  `project_new` / `project_open`, which stop a running transport) emit it
+  with the state the transport now reads, only when that state actually
+  changed (a no-op `engine_stop` or a play during a take stays quiet). The
+  name comes from `ccez_core::ipc::ENGINE_STATE_CHANGED`. The shell's engine
+  badge (`ui/src/App.tsx`) listens for it.
+- `project_changed`, `param_changed`, `op_applied` — declared but not yet
+  emitted by the shell; the UI refreshes from command return values.

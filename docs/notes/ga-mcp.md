@@ -43,10 +43,16 @@ has, which states wake them.
   frozen v0 six stay first and byte-identical in order). Tool names are the
   frozen `export-package.md` rows; each `action` id uses the
   `gameaudio.*` verb family (`list_cues`, `audition_cue`, `trigger_event`,
-  `export_bank`).
+  `export_bank`). These ids are MCP-side names, not action-registry
+  entries: the tools are MCP-only, like `compose_*`
+  (`contracts/export-package.md`).
 - `mcp/src/backend.ts` — one additive op kind (`GameAudioExported`) plus
   `logGameAudioExport()`: a *green* export lands one ordinary op under actor
-  `gameaudio:export`. Red reports return as data and write nothing.
+  `gameaudio:export`. Red reports return as data and write nothing. Core
+  defines the kind too (`OpKind::GameAudioExported`, a log-only state
+  no-op; `gameaudio:<tool>` is a valid actor), so a log the MCP wrote opens
+  in core — see `contracts/op-log-format.md`; `mcp/tests/oplog-contract.test.ts`
+  checks the MCP's kinds/actors against the generated `OpKindSchema`.
 - `mcp/src/index.ts` — four appended input schemas + one shared
   `GameAudioStore` per server (including the per-request servers on the
   stateless HTTP path, so audition state survives across requests).

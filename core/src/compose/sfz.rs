@@ -3,7 +3,9 @@
 //! whose opcodes cascade down, `default_path`, key and velocity ranges,
 //! round robins (`seq_length`/`seq_position`, `lorand`/`hirand`),
 //! velocity cross-fades, tuning, offsets, loops and the amp envelope.
-//! Release-trigger regions are skipped (the composer has no key-up noise);
+//! Release-trigger and CC-only (`hikey=-1`) regions are skipped (the
+//! composer has no key-up noise or controllers); `#define $NAME` values
+//! substitute longest name first; a `<` without `>` is an error;
 //! unknown opcodes are ignored.
 
 use std::collections::BTreeMap;
@@ -15,11 +17,12 @@ type Ops = BTreeMap<String, String>;
 
 /// Split SFZ text into (header, opcodes) blocks. Values may contain
 /// spaces (`sample=Strings\Violin Section\a.wav`): a value runs until the
-/// next `name=` or header.
-fn blocks(text: &str) -> Vec<(String, Ops)> {
+/// next `name=` or header. A `<` without its `>` is an error.
+fn blocks(text: &str) -> Result<Vec<(String, Ops)>, String> {
     let mut out: Vec<(String, Ops)> = Vec::new();
-    let mut defines: Vec<(String, String)> = Vec::new();
-    for raw in text.lines() {
+    // `#define $NAME value`; a later define of the same name wins.
+    let mut defines: BTreeMap<String, String> = BTreeMap::new();
+    for (ln, raw) in text.lines().enumerate() {
         let line = match raw.find("//") {
             Some(i) => &raw[..i],
             None => raw,
@@ -27,12 +30,15 @@ fn blocks(text: &str) -> Vec<(String, Ops)> {
         if let Some(rest) = line.trim().strip_prefix("#define") {
             let mut it = rest.split_whitespace();
             if let (Some(k), Some(v)) = (it.next(), it.next()) {
-                defines.push((k.to_string(), v.to_string()));
+                defines.insert(k.to_string(), v.to_string());
             }
             continue;
         }
+        // Longest names first, so `$VEL` never clobbers part of `$VEL2`.
+        let mut by_len: Vec<(&String, &String)> = defines.iter().collect();
+        by_len.sort_by_key(|(k, _)| std::cmp::Reverse(k.len()));
         let mut line = line.to_string();
-        for (k, v) in &defines {
+        for (k, v) in by_len {
             line = line.replace(k.as_str(), v);
         }
         // Headers can share a line with opcodes: `<region> sample=a.wav`.
@@ -44,6 +50,9 @@ fn blocks(text: &str) -> Vec<(String, Ops)> {
                     out.push((rest[1..e].trim().to_string(), Ops::new()));
                     rest = &rest[e + 1..];
                     continue;
+                }
+                (Some(0), None) => {
+                    return Err(format!("line {}: unterminated header {:?}", ln + 1, rest.trim()));
                 }
                 (Some(s), _) => (&rest[..s], &rest[s..]),
                 _ => (rest, ""),
@@ -76,7 +85,7 @@ fn blocks(text: &str) -> Vec<(String, Ops)> {
             rest = next;
         }
     }
-    out
+    Ok(out)
 }
 
 /// A key: MIDI number or a note name (`c4` = 60, `f#3`, `eb2`).
@@ -99,7 +108,7 @@ pub fn parse(text: &str, dir: &Path) -> Result<Vec<Region>, String> {
     let mut master = Ops::new();
     let mut group = Ops::new();
     let mut regions = Vec::new();
-    for (header, ops) in blocks(text) {
+    for (header, ops) in blocks(text)? {
         match header.as_str() {
             "control" => control.extend(ops),
             "global" => {
@@ -143,6 +152,11 @@ fn region(o: &Ops, control: &Ops, dir: &Path) -> Result<Option<Region>, String> 
     let path: PathBuf = dir.join(rel);
     let mut r = Region::new(SampleRef::Wav(path));
     let g = |k: &str| o.get(k).map(String::as_str);
+    // `hikey=-1` / `key=-1`: never triggered by a key (CC-only regions).
+    let negative = |k: &str| g(k).and_then(num).is_some_and(|v| v < 0.0);
+    if negative("hikey") || negative("key") {
+        return Ok(None);
+    }
     if let Some(k) = g("key").and_then(key) {
         r.lokey = k;
         r.hikey = k;
@@ -199,19 +213,23 @@ fn region(o: &Ops, control: &Ops, dir: &Path) -> Result<Option<Region>, String> 
         r.offset = v.max(0.0) as usize;
     }
     if let Some(v) = g("end").and_then(num) {
-        r.end = Some(v.max(0.0) as usize + 1);
+        r.end = Some((v.max(0.0) as usize).saturating_add(1));
     }
     r.loop_mode = match g("loop_mode") {
         Some("one_shot") => LoopMode::OneShot,
         Some("loop_continuous") | Some("loop_sustain") => LoopMode::Loop,
-        _ => LoopMode::NoLoop,
+        Some("no_loop") => LoopMode::NoLoop,
+        // Unset: loop_continuous if the WAV has its own loop, else no_loop
+        // (decided when the recording is read).
+        _ => LoopMode::FromFile,
     };
-    if let (Some(a), Some(b)) = (
-        g("loop_start").and_then(num),
-        g("loop_end").and_then(num),
-    ) {
-        r.loop_points = Some((a as usize, b as usize + 1));
-    }
+    // Each side on its own; an unset one defaults (file loop, else the
+    // recording's edge) when the recording is read. `loop_end` is
+    // inclusive in SFZ, exclusive here.
+    r.loop_start = g("loop_start").and_then(num).map(|a| a.max(0.0) as usize);
+    r.loop_end = g("loop_end")
+        .and_then(num)
+        .map(|b| (b.max(0.0) as usize).saturating_add(1));
     r.env = Env {
         attack: g("ampeg_attack").and_then(num).unwrap_or(0.0),
         hold: g("ampeg_hold").and_then(num).unwrap_or(0.0),
@@ -289,5 +307,44 @@ mod tests {
         .unwrap();
         assert_eq!(rs[0].xfade, Some((0, 64, 100, 127)));
         assert!(parse("<bogus> a=1", Path::new("")).is_err());
+    }
+
+    /// Malformed text is an error that names the line, never a hang.
+    #[test]
+    fn unterminated_headers_are_errors() {
+        let e = parse("<region sample=a.wav key=60\n", Path::new("")).unwrap_err();
+        assert!(e.contains("line 1") && e.contains("unterminated"), "{e}");
+        let e = parse("<region> sample=a.wav\nkey=60 volume=<3\n", Path::new("")).unwrap_err();
+        assert!(e.contains("line 2"), "{e}");
+        // Huge numbers saturate instead of overflowing.
+        let rs = parse("<region> sample=a.wav end=1e30 loop_start=0 loop_end=1e30", Path::new("")).unwrap();
+        assert_eq!(rs[0].end, Some(usize::MAX));
+    }
+
+    #[test]
+    fn defines_replace_longest_name_first_and_redefine() {
+        let rs = parse(
+            "#define $VEL 10\n#define $VEL2 90\n#define $K 50\n#define $K 60\n\
+             <region> sample=a.wav lovel=$VEL hivel=$VEL2 key=$K",
+            Path::new(""),
+        )
+        .unwrap();
+        assert_eq!((rs[0].lovel, rs[0].hivel), (10, 90));
+        assert_eq!(rs[0].lokey, 60, "a later #define wins");
+    }
+
+    /// `hikey=-1` (or `key=-1`): the region is never key-triggered (it
+    /// answers CCs only), so the composer skips it rather than mapping it
+    /// to key 0.
+    #[test]
+    fn negative_keys_mean_not_key_triggered() {
+        let rs = parse(
+            "<region> sample=cc.wav lokey=-1 hikey=-1\n<region> sample=k.wav key=-1\n\
+             <region> sample=a.wav lokey=-1 hikey=40",
+            Path::new(""),
+        )
+        .unwrap();
+        assert_eq!(rs.len(), 1, "{rs:?}");
+        assert_eq!((rs[0].lokey, rs[0].hikey), (0, 40));
     }
 }

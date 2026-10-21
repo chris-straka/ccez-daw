@@ -169,7 +169,11 @@ fn render_pair(
                     if l.is_empty() {
                         silent += 1;
                     }
-                    (l, r)
+                    // Same gains, per channel: a mono recording (L == R)
+                    // pans exactly like a synth; a stereo one gets a
+                    // constant-power balance. Centre is unity either way.
+                    let scale = |x: Vec<f32>, g: f32| x.into_iter().map(|s| s * g).collect::<Vec<f32>>();
+                    (scale(l, pl), scale(r, pr))
                 }
             };
             for (ch, buf) in [l, r].into_iter().enumerate() {
@@ -712,6 +716,35 @@ mod tests {
         let calm = r.stems.iter().find(|s| s.section == "calm" && s.layer == "bed").unwrap();
         let e = |x: &[f32]| x.iter().map(|v| v * v).sum::<f32>();
         assert!(e(&calm.right) < 1e-9 * e(&calm.left).max(1.0), "hard left, dry");
+    }
+
+    /// Sampled instruments take the stage pan too, with the synths' law:
+    /// hard left leaves the right side silent, centre is unity.
+    #[test]
+    fn pan_places_a_sampled_instrument_on_the_stage() {
+        let dir = std::env::temp_dir().join(format!("ccez-render-pan-{}", std::process::id()));
+        super::super::sampler::tests::sine_wav(&dir, "c4.wav", 261.63, 2.0, 44_100);
+        let sfz = dir.join("t.sfz");
+        std::fs::write(&sfz, "<region> sample=c4.wav lokey=0 hikey=127 pitch_keycenter=60\n").unwrap();
+        let mut c = tiny();
+        c.instruments[0].patch = format!("sfz:{}", sfz.display());
+        c.instruments[0].reverb = 0.0;
+        let bed = |c: &Composition| {
+            let r = render_stems(c).unwrap();
+            let s = r.stems.into_iter().find(|s| s.section == "calm" && s.layer == "bed").unwrap();
+            let e = |x: &[f32]| x.iter().map(|v| (v * v) as f64).sum::<f64>();
+            (e(&s.left), e(&s.right))
+        };
+        c.instruments[0].pan = Some(0.0);
+        let (l0, r0) = bed(&c);
+        assert!(l0 > 1.0 && (l0 - r0).abs() < 1e-6 * l0, "centre is balanced: {l0} {r0}");
+        c.instruments[0].pan = Some(-1.0);
+        let (l, r) = bed(&c);
+        assert!(r < 1e-9 * l, "hard left, dry: {l} {r}");
+        c.instruments[0].pan = Some(0.5);
+        let (l, r) = bed(&c);
+        assert!(r > 2.0 * l, "half right leans right: {l} {r}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

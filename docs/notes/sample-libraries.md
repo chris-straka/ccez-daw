@@ -55,12 +55,51 @@ FluidR3, the Debian package (`deb.debian.org` pool, then
 `sfz.rs` reads the SFZ subset these libraries use (headers cascade,
 `default_path`, key/velocity ranges, `seq_length`/`seq_position` round
 robins, `lorand`/`hirand`, velocity cross-fades, tune, offset, loops, amp
-envelope; release-trigger regions are skipped). `sf2.rs` reads one SF2
-preset (zones, generators, loops). `sampler.rs` picks the regions for a
+envelope; release-trigger regions and CC-only regions (`hikey=-1` or
+`key=-1`) are skipped; `#define` names substitute longest first; a `<`
+with no closing `>` is a parse error naming the line). `sf2.rs` reads one SF2
+preset (zones, generators, loops; each sample header's pitch correction
+is added on playback, as FluidSynth does; truncated tables are errors or
+skipped zones, never a crash). `sampler.rs` picks the regions for a
 note, skips each recording's leading silence so notes land on the beat,
-repitches with 4-point Hermite interpolation, applies the envelope, loops
-sustained recordings with a cross-fade when a note outlasts them, and
-places the result on the stereo stage. Every render is deterministic.
+repitches with 4-point Hermite interpolation, applies the envelope (the
+release fades from the level at note-off, even mid-attack), plays a
+recording's own loop points seamlessly (the interpolator's taps wrap from
+the loop end to the loop start), loops sustained recordings without loop
+points with a cross-fade when a note outlasts them, and places the result on the stereo stage. Every render is deterministic.
+
+Loops follow the SFZ defaults, each loop point on its own: an unset
+`loop_start` is the WAV's own `smpl` loop start (else frame 0), an unset
+`loop_end` the `smpl` loop end (else the last frame), so a region that
+sets only one of them keeps it and fills in the other. A region that sets
+neither plays the `smpl` loop, or has no loop points when the file has
+none. An unset `loop_mode` is `loop_continuous` when the file has a loop
+(`no_loop` otherwise), so a lone `loop_start`/`loop_end` over a WAV
+without `smpl` loops only under an explicit `loop_mode`. SF2 zones set
+both points from their sample header (or neither, when not looped). A loop the author put in the
+file (or wrote as opcodes) always wins over the sustain style's
+cross-faded 35-85% auto-loop, which only covers recordings with no loop
+at all. Hits (one-shot style or `loop_mode=one_shot`) ring their
+recording once and ignore a file loop.
+
+Pan law (stage `pan` and SFZ/SF2 region `pan`): the synths' constant-power
+law, `L = √2·cos θ`, `R = √2·sin θ` with `θ = (pan + 1)·π/4`, so centre is
+unity on both sides and hard left is +3 dB left, silent right. Sampled
+voices get the same two gains applied per channel: a mono recording
+(both channels identical) pans exactly like a synth, and a stereo
+recording gets a constant-power *balance* (each side keeps its own
+content; hard left keeps only the left channel). One law for everything,
+so moving an instrument between a synth and a sampled patch keeps its
+place and level.
+
+SF2 linked stereo pairs (a left sample, type 4, and a right sample, type
+2) are the two channels of one stereo recording, not two mono sources:
+their region pan uses the same law divided by √2 (`L = cos θ`,
+`R = sin θ`), so the hard-panned halves each play at unity on their own
+channel, the level the same content has as a stereo WAV at centre. (With
+the mono law each side came out +3.01 dB hot; `sf2.rs`
+`stereo_pairs_play_at_the_level_of_a_stereo_wav` measures it.) Mono SF2
+zones and SFZ region `pan` keep the mono law.
 
 Each catalog entry carries a level calibration (`gain_db`, measured with
 `ccez-compose samples calibrate`: a mezzo note's first-second rms, sustains

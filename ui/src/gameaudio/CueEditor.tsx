@@ -126,7 +126,7 @@ export default function Cues(props: {
                 <For each={states()}>
                   {(s) => (
                     <td>
-                      <input
+                      <input data-testid={`cue-matrix-${l.id}-${s}`}
                         type="checkbox"
                         checked={matrix()[l.id]?.[s] ?? false}
                         onChange={() => touch((d) => toggleLayerState(d, l.id, s))}
@@ -135,7 +135,7 @@ export default function Cues(props: {
                   )}
                 </For>
                 <td>
-                  <input
+                  <input data-testid={`cue-layer-volume-${l.id}`}
                     type="number"
                     min={0}
                     max={4}
@@ -145,14 +145,14 @@ export default function Cues(props: {
                   />
                 </td>
                 <td>
-                  <button onClick={() => touch((d) => removeLayer(d, l.id))}>Remove</button>
+                  <button data-testid={`cue-layer-remove-${l.id}`} onClick={() => touch((d) => removeLayer(d, l.id))}>Remove</button>
                 </td>
               </tr>
             )}
           </For>
         </tbody>
       </table>
-      <button onClick={addLayerUi}>Add layer</button>
+      <button data-testid="cue-layer-add" onClick={addLayerUi}>Add layer</button>
 
       <h3>Transition rules</h3>
       <ul>
@@ -160,18 +160,18 @@ export default function Cues(props: {
           {(t) => (
             <li>
               {t.from_state} → {t.to_state}: {describeTransition(t)}{" "}
-              <button onClick={() => touch((d) => removeTransition(d, t.from_state, t.to_state))}>Remove</button>
+              <button data-testid={`cue-rule-remove-${t.from_state}-${t.to_state}`} onClick={() => touch((d) => removeTransition(d, t.from_state, t.to_state))}>Remove</button>
             </li>
           )}
         </For>
       </ul>
       <div>
-        <input value={from()} onInput={(e) => setFrom(e.currentTarget.value)} placeholder="from state" />
-        <input value={to()} onInput={(e) => setTo(e.currentTarget.value)} placeholder="to state" />
-        <select value={kind()} onChange={(e) => setKind(e.currentTarget.value as TransitionKind)}>
+        <input data-testid="cue-rule-from" value={from()} onInput={(e) => setFrom(e.currentTarget.value)} placeholder="from state" />
+        <input data-testid="cue-rule-to" value={to()} onInput={(e) => setTo(e.currentTarget.value)} placeholder="to state" />
+        <select data-testid="cue-rule-kind" value={kind()} onChange={(e) => setKind(e.currentTarget.value as TransitionKind)}>
           <For each={TRANSITION_KINDS}>{(k) => <option value={k}>{k}</option>}</For>
         </select>
-        <button onClick={addRuleUi}>Add / replace rule</button>
+        <button data-testid="cue-rule-add" onClick={addRuleUi}>Add / replace rule</button>
         <p>
           Preview {from()} → {to()}: {describeTransition(transitionFor(draft(), from(), to()))}
         </p>
@@ -191,7 +191,7 @@ export default function Cues(props: {
       </Show>
 
       <div>
-        <button onClick={commit}>Commit</button> <button onClick={roundTrip}>Round-trip check</button>
+        <button data-testid="cue-commit" onClick={commit}>Commit</button> <button data-testid="cue-round-trip" onClick={roundTrip}>Round-trip check</button>
       </div>
       <Show when={note()}>
         <p>{note()}</p>

@@ -1,9 +1,9 @@
 import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { LOCAL_GUIDANCE, findAction, registerLocalActionHandler } from "./actions/registry";
+import { ACTIONS, LOCAL_GUIDANCE, findAction, registerLocalActionHandler } from "./actions/registry";
 import type { EngineState, Project } from "./generated/project";
 import { listen } from "@tauri-apps/api/event";
 import { eventToToken, loadCustomKeymap } from "./input/keybindings";
-import { createVimStore, handleKey, setVimContext } from "./input/vim";
+import { applyMotion, createVimStore, handleKey, setVimContext } from "./input/vim";
 import {
   contextForTab,
   elementIdForFocusAction,
@@ -14,8 +14,11 @@ import {
 import { sampleTimelineDoc } from "./timeline/model";
 import Palette from "./palette/Palette";
 import ShortcutEditor from "./input/Editor";
+import { createNonce } from "./input/nonce";
+import { EDIT_ACTIONS, domEditField, runEdit } from "./input/edit";
 import AutomationView from "./automation/AutomationView";
-import GroovePanel from "./groove/GroovePanel";
+import GrooveTab from "./groove/GrooveTab";
+import { GroovePool } from "./groove/model";
 import BrowserPalette from "./browser/Browser";
 import { deviceClassOf, findNativePreset, presetParamOps } from "./browser/presets";
 import type { LibraryItem } from "./generated/project";
@@ -84,7 +87,7 @@ export default function App() {
   });
 
   /** Local actions whose handler leaves its answer in the status line. */
-  const REPORTS_STATUS = new Set(["app.update.check", "app.update.install"]);
+  const REPORTS_STATUS = new Set(["app.update.check", "app.update.install", ...EDIT_ACTIONS]);
 
   async function refresh() {
     try {
@@ -97,27 +100,42 @@ export default function App() {
     }
   }
 
+  /** Run a shell command; a bridge rejection lands in the status line. */
+  async function attempt(what: string, f: () => Promise<void>): Promise<void> {
+    try {
+      await f();
+    } catch (e) {
+      setError(`${what} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   async function togglePlay() {
     // Space stops a recording pass too (standard DAW behavior); starting a
     // take is the Record tab's Punch in / the `r` action's job.
-    if (engine() === "Playing" || engine() === "Recording") setEngine(await engine_stop({}));
-    else setEngine(await engine_play({}));
+    if (engine() === "Playing" || engine() === "Recording") await stop();
+    else await attempt("play", async () => {
+      setEngine(await engine_play({}));
+    });
   }
 
   // Global `record.punch` action (`r`, palette, native menu): show the
   // Record tab and toggle the pass there (the panel owns armed tracks).
-  const [punchNonce, setPunchNonce] = createSignal(0);
+  const punchNonce = createNonce();
   // Same nonce pattern for the session/comp actions: the panels own jam,
   // selection, and picks; keys just bump and show the tab.
-  const [launchNonce, setLaunchNonce] = createSignal(0);
-  const [jamNonce, setJamNonce] = createSignal(0);
-  const [commitNonce, setCommitNonce] = createSignal(0);
-  const [grooveNonce, setGrooveNonce] = createSignal(0);
-  const [mergeNonce, setMergeNonce] = createSignal(0);
+  const launchNonce = createNonce();
+  const jamNonce = createNonce();
+  const commitNonce = createNonce();
+  const grooveNonce = createNonce();
+  // The groove pool outlives the Groove tab (its panel remounts per switch).
+  const groovePool = new GroovePool();
+  const mergeNonce = createNonce();
   const [linked, setLinked] = createSignal(false);
 
   async function stop() {
-    setEngine(await engine_stop({}));
+    await attempt("stop", async () => {
+      setEngine(await engine_stop({}));
+    });
   }
 
   async function undo() {
@@ -146,8 +164,10 @@ export default function App() {
       setError(`tempo must be a number > 0 (got ${tempoDraft()})`);
       return;
     }
-    await engine_set_tempo({ tempo: bpm });
-    await refresh();
+    await attempt("set tempo", async () => {
+      await engine_set_tempo({ tempo: bpm });
+      await refresh();
+    });
   }
 
   async function save() {
@@ -156,8 +176,10 @@ export default function App() {
       setError("save needs a file path");
       return;
     }
-    await project_save({ path });
-    await refresh();
+    await attempt("save", async () => {
+      await project_save({ path });
+      await refresh();
+    });
   }
 
   async function open() {
@@ -166,16 +188,20 @@ export default function App() {
       setError("open needs a file path");
       return;
     }
-    setProject(await project_open({ path }));
-    setEngine("Stopped");
-    setError(null);
+    await attempt("open", async () => {
+      setProject(await project_open({ path }));
+      setEngine("Stopped");
+      setError(null);
+    });
   }
 
   async function newProject() {
     const name = projectName().trim() || "Untitled";
-    setProject(await project_new({ name }));
-    setEngine("Stopped");
-    setError(null);
+    await attempt("new project", async () => {
+      setProject(await project_new({ name }));
+      setEngine("Stopped");
+      setError(null);
+    });
   }
 
   async function patchTrack(
@@ -226,8 +252,11 @@ export default function App() {
     if (!a) return;
     if (id === "transport.play") {
       // Space / palette Play toggles like every other DAW; the engine
-      // signal updates inside togglePlay.
+      // signal updates inside togglePlay. Return before the shared refresh:
+      // play changes no project state, and a refresh would wipe a failure.
       await togglePlay();
+      setPaletteOpen(false);
+      return;
     } else if (id === "project.save") {
       // Ctrl+S / menu Save behave exactly like the Save button: the typed
       // path, or an honest error when there is none. Invoking project_save
@@ -240,6 +269,23 @@ export default function App() {
     } else if (id === "project.open") {
       // Menu Open behaves like the Open button (same typed-path rule).
       await open();
+      setPaletteOpen(false);
+      return;
+    } else if (id === "project.new" || id === "engine.set_tempo") {
+      // Menu / palette New and Set Tempo behave like their buttons: the
+      // typed name (or "Untitled") and the typed BPM. The bridge needs the
+      // argument and a menu click cannot supply one.
+      await (id === "project.new" ? newProject() : applyTempo());
+      setPaletteOpen(false);
+      return;
+    } else if (id === "track.list") {
+      // Menu / palette List Tracks answers in the status line (the bare
+      // project_get it maps to returned the list to nobody).
+      await attempt("list tracks", async () => {
+        const p = await project_get({});
+        setProject(p);
+        setError(`tracks: ${p.tracks.length} — ${p.tracks.map((t) => t.name).join(", ") || "none"}`);
+      });
       setPaletteOpen(false);
       return;
     } else if (id === "track.add") {
@@ -296,7 +342,10 @@ export default function App() {
     // (see src-tauri/src/menu.rs): run them like palette actions.
     listen<{ action: string }>("menu-action", (e) => {
       const id = e.payload?.action;
-      if (typeof id === "string") void runAction(id);
+      // Edit-menu roles (Cut/Copy/Paste/Select All) are performed natively
+      // by the OS before this sync event arrives; running them again here
+      // would paste twice.
+      if (typeof id === "string" && !(EDIT_ACTIONS as readonly string[]).includes(id)) void runAction(id);
     })
       .then((u) => {
         unlistens.push(u);
@@ -346,36 +395,34 @@ export default function App() {
     // Mixer `m` / `M`: toggle mute/solo on the strip under the vim cursor
     // through the same ParamSet op path as the mixer buttons (undoable).
     const toggleStrip = (field: "muted" | "solo") => {
-      const tracks = project()?.tracks ?? [];
-      if (tracks.length === 0) return;
-      const t = tracks[Math.max(0, Math.min(tracks.length - 1, vim.cursor.track))];
-      void patchTrack(t.id, field, field === "muted" ? !t.muted : !t.solo);
+      const t = cursorTrack();
+      if (t) void patchTrack(t.id, field, field === "muted" ? !t.muted : !t.solo);
     };
     registerLocalActionHandler("mixer.muteSelected", () => toggleStrip("muted"));
     registerLocalActionHandler("mixer.soloSelected", () => toggleStrip("solo"));
     registerLocalActionHandler("record.punch", () => {
       setWorkspaceTab("Record");
-      setPunchNonce((n) => n + 1);
+      punchNonce.bump();
     });
     registerLocalActionHandler("session.launch", () => {
       setWorkspaceTab("Session");
-      setLaunchNonce((n) => n + 1);
+      launchNonce.bump();
     });
     registerLocalActionHandler("session.jam_record", () => {
       setWorkspaceTab("Session");
-      setJamNonce((n) => n + 1);
+      jamNonce.bump();
     });
     registerLocalActionHandler("comp.commit", () => {
       setWorkspaceTab("Comp");
-      setCommitNonce((n) => n + 1);
+      commitNonce.bump();
     });
     registerLocalActionHandler("groove.apply", () => {
       setWorkspaceTab("Groove");
-      setGrooveNonce((n) => n + 1);
+      grooveNonce.bump();
     });
     // Branches live in an always-visible side panel: no tab switch needed.
     registerLocalActionHandler("branch.merge", () => {
-      setMergeNonce((n) => n + 1);
+      mergeNonce.bump();
     });
     registerLocalActionHandler("view.fullscreen", async () => {
       try {
@@ -422,6 +469,30 @@ export default function App() {
     registerLocalActionHandler("vim.mode.normal", () => setVimMode("normal"));
     registerLocalActionHandler("vim.mode.insert", () => setVimMode("insert"));
     registerLocalActionHandler("vim.mode.visual", () => setVimMode("visual"));
+    // Palette / scripting Edit rows act on the last text field the user was
+    // in (the palette has taken focus by now) and report what happened.
+    let lastField: Element | null = null;
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target as Element | null;
+      // The palette's / editor's own search boxes are not edit targets.
+      if (domEditField(el) && !el?.closest('[role="dialog"]')) lastField = el;
+    };
+    window.addEventListener("focusin", onFocusIn);
+    onCleanup(() => window.removeEventListener("focusin", onFocusIn));
+    for (const id of EDIT_ACTIONS) {
+      registerLocalActionHandler(id, async () => {
+        setPaletteOpen(false);
+        const field = lastField?.isConnected ? domEditField(lastField) : null;
+        setError(await runEdit(id, field, navigator.clipboard ?? null));
+      });
+    }
+    // Motions run from the palette / scripting move the same cursor `hjkl`
+    // does (keys apply them inside handleKey without reaching the registry).
+    for (const { id } of ACTIONS.filter((a) => a.id.startsWith("vim.motion."))) {
+      registerLocalActionHandler(id, () => {
+        if (applyMotion(vim, id)) setCursor(`${vim.cursor.track}:${vim.cursor.step}`);
+      });
+    }
     // Guidance actions (`LOCAL_GUIDANCE`): surface the text on every path.
     // The trailing refresh is skipped for these — it would wipe the error.
     for (const [gid, text] of Object.entries(LOCAL_GUIDANCE)) {
@@ -429,7 +500,8 @@ export default function App() {
     }
 
     const onKey = (e: KeyboardEvent) => {
-      if (paletteOpen()) return; // palette handles its own keys
+      // Palette and Shortcuts editor are modal and handle their own keys.
+      if (paletteOpen() || shortcutsOpen()) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) {
         if (e.key !== "Escape") return;
@@ -449,6 +521,14 @@ export default function App() {
   });
 
   const playing = () => engine() === "Playing";
+
+  /** Track under the vim cursor (clamped), highlighted in the mixer. */
+  const cursorTrack = () => {
+    cursor();
+    const tracks = project()?.tracks ?? [];
+    if (tracks.length === 0) return null;
+    return tracks[Math.max(0, Math.min(tracks.length - 1, vim.cursor.track))];
+  };
 
   // Live transport clock: poll the engine position while playing. The
   // interval dies with the component and with every stop.
@@ -473,14 +553,14 @@ export default function App() {
     <main class="daw-shell">
       <header class="transport-bar">
         <div class="tb-group" role="group" aria-label="Transport">
-          <button
+          <button data-testid="transport-play"
             class="transport-play"
             classList={{ playing: playing() }}
             onClick={togglePlay}
           >
             {playing() ? "❚❚" : "▶"}
           </button>
-          <button onClick={stop} title="Stop">■</button>
+          <button data-testid="transport-stop" onClick={stop} title="Stop">■</button>
           <span class={`engine-badge${playing() ? " playing" : ""}`}>
             {engine()}
           </span>
@@ -499,7 +579,7 @@ export default function App() {
           <span class={`vim-badge ${vimMode()}`}>
             {vimMode().toUpperCase()}
           </span>
-          <span class="transport-readout daw-numeric">{cursor()}</span>
+          <span data-testid="vim-cursor" class="transport-readout daw-numeric">{cursor()}</span>
         </div>
         <div class="tb-group" role="group" aria-label="Tempo">
           <input
@@ -516,7 +596,7 @@ export default function App() {
             Set
           </button>
         </div>
-        <button class="tb-palette" onClick={() => setPaletteOpen((v) => !v)} title="Command palette (Ctrl+K)">
+        <button data-testid="palette-open" class="tb-palette" onClick={() => setPaletteOpen((v) => !v)} title="Command palette (Ctrl+K)">
           ⌘K
         </button>
         <span class="transport-spacer" />
@@ -556,10 +636,7 @@ export default function App() {
           <span data-testid="transport-error" class="transport-error">{error()}</span>
         </Show>
       </header>
-      <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} onRan={(id) => {
-          if (!REPORTS_STATUS.has(id)) void refresh();
-        }}
-      />
+      <Palette open={paletteOpen()} onClose={() => setPaletteOpen(false)} run={runAction} />
       <ShortcutEditor
         open={shortcutsOpen()}
         onClose={() => setShortcutsOpen(false)}
@@ -596,8 +673,8 @@ export default function App() {
               <Panel title="Session">
                 <SessionView
                   project={project()}
-                  launchNonce={launchNonce()}
-                  jamNonce={jamNonce()}
+                  launchNonce={launchNonce}
+                  jamNonce={jamNonce}
                 />
               </Panel>
             </Show>
@@ -618,7 +695,7 @@ export default function App() {
             </Show>
             <Show when={workspaceTab() === "Groove"}>
               <Panel title="Groove">
-                <GroovePanel source={null} target={null} applyNonce={grooveNonce()} />
+                <GrooveTab project={project()} pool={groovePool} applyNonce={grooveNonce} />
               </Panel>
             </Show>
             <Show when={workspaceTab() === "Record"}>
@@ -627,13 +704,13 @@ export default function App() {
                   project={project()}
                   engineState={engine()}
                   onTransport={setEngine}
-                  punchNonce={punchNonce()}
+                  punchNonce={punchNonce}
                 />
               </Panel>
             </Show>
             <Show when={workspaceTab() === "Comp"}>
               <Panel title="Comp">
-                <CompPanel project={project()} commitNonce={commitNonce()} />
+                <CompPanel project={project()} commitNonce={commitNonce} />
               </Panel>
             </Show>
           </div>
@@ -642,12 +719,16 @@ export default function App() {
           <Panel title="Mixer">
             <div onFocusIn={() => setVimContext(vim, "mixer")}>
             <Show when={project()} fallback={<div class="session-dim">No project open.</div>}>
-              {(p) => <Mixer project={p()} onPatch={(id, field, value) => void patchTrack(id, field, value)} />}
+              {(p) => <Mixer
+                  project={p()}
+                  selectedId={cursorTrack()?.id ?? null}
+                  onPatch={(id, field, value) => void patchTrack(id, field, value)}
+                />}
             </Show>
             </div>
           </Panel>
           <Panel title="Branches">
-            <BranchPanel project={project()} mergeNonce={mergeNonce()} />
+            <BranchPanel project={project()} mergeNonce={mergeNonce} />
           </Panel>
           <Panel title="Devices">
             <DevicesPanel project={project()} />

@@ -42,6 +42,7 @@ export function classifyOp(op: Op): OpCategory {
     case "AutomationPointSet":
       return "automation";
     case "UndoMarker":
+    case "GameAudioExported":
       return "marker";
   }
 }

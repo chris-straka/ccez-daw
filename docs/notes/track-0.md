@@ -55,7 +55,9 @@ version + migration note).
 - **IPC table** (`contracts/ipc-table.md`, truth in `core/src/ipc.rs`):
   13 Tauri `invoke` commands and 4 `listen` events
   (`project_changed`, `engine_state_changed`, `param_changed`,
-  `op_applied`), wired end-to-end in `src-tauri/src/lib.rs`.
+  `op_applied`), wired end-to-end in `src-tauri/src/lib.rs` (of the
+  events, only `engine_state_changed` is emitted today — see "Who emits"
+  in `contracts/ipc-table.md`).
 - **Action registry** (`contracts/action-registry.md`): 10 action ids shared
   by palette, vim layer, scripting, and MCP (`ui/src/actions/registry.ts`,
   cross-checked against IPC by `ui/tests/contracts.test.ts`).

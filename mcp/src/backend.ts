@@ -2,8 +2,8 @@
  * Track L: MCP backend seam.
  *
  * The MCP server runs as its own Bun process, so it cannot `invoke` Tauri
- * commands directly. This module is the seam where the six frozen tools
- * (`contracts/mcp-tools.md`) meet the op log (`contracts/op-log-format.md`):
+ * commands directly. This module is the seam where the project tools
+ * (`contracts/mcp-tools.md`: the frozen six plus the coverage rows) meet the op log (`contracts/op-log-format.md`):
  * every mutating call appends an ordinary op with actor `"mcp"`, so MCP
  * output is undoable by design via `undo()` (mirrors `op_undo`), exactly
  * like script output (`script:<name>`) from Track K.
@@ -118,6 +118,14 @@ export class InMemoryBackend {
   private nextSeq = 1;
   private automationLanes: AutomationLaneView[] = [];
   private linkSessions = new Map<string, { tempo: number; peers: string[] }>();
+  /** Seqs undone by an `UndoMarker` (core `Engine::undone`). */
+  private undone = new Set<number>();
+  /** Seqs whose effect this backend materializes (`ClipAdded`,
+   *  `AutomationPointSet` from the mutation mirrors); the rest are
+   *  log-only here, so a rebuild replays exactly what was applied. */
+  private materialized = new Set<number>();
+  /** Base state the rebuild replays live ops onto (core `Engine::base`). */
+  private readonly base: ProjectView;
 
   constructor(name = "Untitled") {
     this.project = {
@@ -144,6 +152,7 @@ export class InMemoryBackend {
       routing: [],
       automation: [],
     };
+    this.base = structuredClone(this.project);
   }
 
   private appendOp(
@@ -168,6 +177,22 @@ export class InMemoryBackend {
       value_json: JSON.stringify(payload),
     };
     this.ops.push(op);
+    return op;
+  }
+
+  /**
+   * Validate-then-append, like core `Engine::apply`: the op's effect is
+   * staged on copies first, so a bad op never enters the log and never
+   * half-mutates state.
+   */
+  private appendApplied(kind: "ClipAdded" | "AutomationPointSet", target: string, payload: unknown): OpView {
+    const project = structuredClone(this.project);
+    const lanes = structuredClone(this.automationLanes);
+    applyOpToState(project, lanes, kind, target, payload);
+    const op = this.appendOp(kind, target, payload);
+    this.project = project;
+    this.automationLanes = lanes;
+    this.materialized.add(op.seq);
     return op;
   }
 
@@ -197,8 +222,13 @@ export class InMemoryBackend {
   }
 
   addClip(input: NewClip): { clipId: string; seq: number } {
-    const track = this.project.tracks.find((t) => t.id === input.trackId);
-    if (!track) throw new Error(`unknown track: ${input.trackId}`);
+    return this.commitClip(this.buildClip(input, `clip_${this.nextSeq}`));
+  }
+
+  /** Check one clip request and build its `ClipView` (writes nothing). */
+  private buildClip(input: NewClip, id: string, source = ""): ClipView {
+    const track = this.project.tracks.find((t) => t.id === input?.trackId);
+    if (!track) throw new Error(`unknown track: ${input?.trackId}`);
     if (!input.name || typeof input.name !== "string") {
       throw new Error("clip name must be a non-empty string");
     }
@@ -216,18 +246,20 @@ export class InMemoryBackend {
     if (input.kind !== "Audio" && input.kind !== "Midi") {
       throw new Error(`kind must be "Audio" or "Midi"`);
     }
-    const clip: ClipView = {
-      id: `clip_${this.nextSeq}`,
+    return {
+      id,
       track_id: input.trackId,
       name: input.name,
       start_beats: input.startBeats,
       length_beats: input.lengthBeats,
       kind: input.kind,
-      source: "",
+      source,
     };
-    this.project.clips.push(clip);
-    track.clip_ids.push(clip.id);
-    const op = this.appendOp("ClipAdded", clip.id, clip);
+  }
+
+  /** Append one fully built clip as a `ClipAdded` op. */
+  private commitClip(clip: ClipView): { clipId: string; seq: number } {
+    const op = this.appendApplied("ClipAdded", clip.id, clip);
     return { clipId: clip.id, seq: op.seq };
   }
 
@@ -269,22 +301,19 @@ export class InMemoryBackend {
     if (typeof value !== "number" || !Number.isFinite(value)) {
       throw new Error("value must be a finite number");
     }
-    let existing = this.automationLanes.find((l) => l.id === lane);
-    if (!existing) {
-      if (!node || !param) {
-        throw new Error(`unknown lane: ${lane} (pass node and param to create it)`);
-      }
-      existing = { id: lane, target: { node, param }, points: [] };
-      this.automationLanes.push(existing);
+    const existing = this.automationLanes.find((l) => l.id === lane);
+    if (!existing && (!node || !param)) {
+      throw new Error(`unknown lane: ${lane} (pass node and param to create it)`);
     }
-    const payload: Record<string, number | string> = { beat, value };
-    if (existing.target.node && existing.target.param) {
-      payload.node = existing.target.node;
-      payload.param = existing.target.param;
-    }
-    existing.points.push({ beat, value });
-    existing.points.sort((a, b) => a.beat - b.beat);
-    const op = this.appendOp("AutomationPointSet", lane, payload);
+    // Every payload names its lane target, so a rebuild can recreate the
+    // lane even after the op that first created it is undone.
+    const payload: Record<string, number | string> = {
+      beat,
+      value,
+      node: existing ? existing.target.node : node!,
+      param: existing ? existing.target.param : param!,
+    };
+    const op = this.appendApplied("AutomationPointSet", lane, payload);
     return { seq: op.seq, laneId: lane };
   }
 
@@ -311,6 +340,9 @@ export class InMemoryBackend {
     if (!Array.isArray(clips) || clips.length === 0) {
       throw new Error("clips must be a non-empty array");
     }
+    // Validate the whole batch before the log is touched: a bad clip
+    // mid-batch must not leave the earlier ones applied.
+    clips.forEach((c) => this.buildClip(c, "check"));
     const clipIds: string[] = [];
     const seqs: number[] = [];
     for (const c of clips) {
@@ -333,14 +365,7 @@ export class InMemoryBackend {
     for (const t of input.takes) {
       if (typeof t !== "string" || !t) throw new Error("take ids must be non-empty strings");
     }
-    const track = this.project.tracks.find((t) => t.id === input.trackId);
-    if (!track) throw new Error(`unknown track: ${input.trackId}`);
-    const { clipId, seq } = this.addClip(input);
-    const clip = this.project.clips.find((c) => c.id === clipId);
-    if (clip) clip.source = `comp:${input.takes.join("+")}`;
-    const op = this.ops.find((o) => o.seq === seq);
-    if (op && clip) op.value_json = JSON.stringify(clip);
-    return { clipId, seq };
+    return this.commitClip(this.buildClip(input, `clip_${this.nextSeq}`, `comp:${input.takes.join("+")}`));
   }
 
   /**
@@ -362,18 +387,16 @@ export class InMemoryBackend {
     if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount > 1) {
       throw new Error("amount must be a finite number in 0..=1");
     }
-    const track = this.project.tracks.find((t) => t.id === target.track_id);
-    if (!track) throw new Error(`unknown track: ${target.track_id}`);
     const clip: ClipView = {
       ...structuredClone(target),
       id: `${target.id}~groove-${clean}`,
       name: `${target.name} (groove ${groove.trim()})`,
-      source: `groove:${clean}+${target.source}`,
+      // Same key the UI grooves from (`midiAssetKey`): source, else `<id>.mid`.
+      source: `groove:${clean}+${target.source || `${target.id}.mid`}`,
     };
-    this.project.clips.push(clip);
-    track.clip_ids.push(clip.id);
-    const op = this.appendOp("ClipAdded", clip.id, clip);
-    return { clipId: clip.id, seq: op.seq };
+    // Same deterministic id as the UI `grooveCommitOp`; a repeat while the
+    // first copy is live is rejected (core `ClipAdded` -> DuplicateTarget).
+    return this.commitClip(clip);
   }
 
   /**
@@ -398,23 +421,42 @@ export class InMemoryBackend {
       "TempoSet",
       "UndoMarker",
       "AutomationPointSet",
+      "GameAudioExported",
     ];
-    const merged: number[] = [];
-    const conflicts: string[] = [];
-    for (const op of sourceOps) {
+    // Pass 1: validate the whole batch (shape + parseable payload) before
+    // the log is touched, so a bad op mid-batch leaves nothing applied.
+    const parsed = sourceOps.map((op, i) => {
       if (!kinds.includes(op?.kind)) throw new Error(`bad op kind: ${String(op?.kind)}`);
       if (typeof op?.target !== "string" || !op.target) {
         throw new Error("merge ops need non-empty targets");
       }
       if (typeof op?.value_json !== "string") throw new Error("merge ops need a value_json string");
-      const other = this.ops.find((o) => o.target === op.target && o.kind !== "UndoMarker");
+      try {
+        return { op, payload: JSON.parse(op.value_json) as unknown };
+      } catch {
+        throw new Error(`merge op ${i} (${op.target}): value_json is not valid JSON`);
+      }
+    });
+    // Pass 2: plan against the log plus the ops already planned from this
+    // batch (same-target ops inside one batch resolve in order).
+    const seen: Array<Pick<OpView, "kind" | "target" | "value_json">> = this.ops.filter(
+      (o) => o.kind !== "UndoMarker",
+    );
+    const plan: typeof parsed = [];
+    const conflicts: string[] = [];
+    for (const entry of parsed) {
+      const { op } = entry;
+      const other = seen.find((o) => o.target === op.target);
       if (other && (other.kind !== op.kind || other.value_json !== op.value_json)) {
         if (!conflicts.includes(op.target)) conflicts.push(op.target);
         continue;
       }
       if (other) continue;
-      merged.push(this.appendOp(op.kind, op.target, JSON.parse(op.value_json)).seq);
+      seen.push(op);
+      plan.push(entry);
     }
+    // Pass 3: append the clean ops in one go.
+    const merged = plan.map(({ op, payload }) => this.appendOp(op.kind, op.target, payload).seq);
     return { merged, conflicts };
   }
 
@@ -437,18 +479,14 @@ export class InMemoryBackend {
     if (typeof endBeats !== "number" || !Number.isFinite(endBeats) || !(endBeats > startBeats)) {
       throw new Error("endBeats must be finite and > startBeats");
     }
-    const { clipId, seq } = this.addClip({
-      trackId: input.trackId,
-      name: input.name,
-      startBeats,
-      lengthBeats: endBeats - startBeats,
-      kind: input.kind,
-    });
-    const clip = this.project.clips.find((c) => c.id === clipId);
-    if (clip) clip.source = `take:${clipId}`;
-    const op = this.ops.find((o) => o.seq === seq);
-    if (op && clip) op.value_json = JSON.stringify(clip);
-    return { clipId, seq };
+    const id = `clip_${this.nextSeq}`;
+    return this.commitClip(
+      this.buildClip(
+        { trackId: input.trackId, name: input.name, startBeats, lengthBeats: endBeats - startBeats, kind: input.kind },
+        id,
+        `take:${id}`,
+      ),
+    );
   }
 
   /**
@@ -459,17 +497,18 @@ export class InMemoryBackend {
   joinLink(session: string, peer: string, tempo?: number): LinkSessionView {
     if (!session) throw new Error("session must be a non-empty name");
     if (!peer) throw new Error("peer must be a non-empty name");
+    // Validate before touching session state: a bad call creates nothing.
+    if (tempo !== undefined) {
+      if (typeof tempo !== "number" || !Number.isFinite(tempo) || tempo < 1 || tempo > 960) {
+        throw new Error("tempo must be a finite BPM in 1..=960");
+      }
+    }
     let entry = this.linkSessions.get(session);
     if (!entry) {
       entry = { tempo: 120, peers: [] };
       this.linkSessions.set(session, entry);
     }
-    if (tempo !== undefined) {
-      if (typeof tempo !== "number" || !Number.isFinite(tempo) || tempo < 1 || tempo > 960) {
-        throw new Error("tempo must be a finite BPM in 1..=960");
-      }
-      entry.tempo = tempo;
-    }
+    if (tempo !== undefined) entry.tempo = tempo;
     if (!entry.peers.includes(peer)) entry.peers.push(peer);
     return { session, tempo: entry.tempo, peers: [...entry.peers] };
   }
@@ -480,23 +519,73 @@ export class InMemoryBackend {
   }
 
   /**
-   * Undo the last undoable op (mirrors `op_undo`); records an `UndoMarker`
-   * so redo branches stay addressable, and returns the undone seq.
+   * Undo the latest live op (mirrors core `Engine::undo` / `op_undo`): the
+   * newest op that is neither an `UndoMarker` nor already undone. Records
+   * an `UndoMarker` naming it (so redo branches stay addressable), then
+   * rebuilds state by replaying the live ops onto the base, so every kind
+   * this backend applies (`ClipAdded`, `AutomationPointSet`) reverses.
    */
   undo(): { undoneSeq: number } {
     const last = [...this.ops]
       .reverse()
-      .find((o) => o.kind !== "UndoMarker");
+      .find((o) => o.kind !== "UndoMarker" && !this.undone.has(o.seq));
     if (!last) throw new Error("nothing to undo");
-    if (last.kind === "ClipAdded") {
-      this.project.clips = this.project.clips.filter(
-        (c) => c.id !== last.target,
-      );
-      for (const t of this.project.tracks) {
-        t.clip_ids = t.clip_ids.filter((id) => id !== last.target);
-      }
-    }
     this.appendOp("UndoMarker", String(last.seq), { undoneSeq: last.seq });
+    this.undone.add(last.seq);
+    this.rebuild();
     return { undoneSeq: last.seq };
+  }
+
+  /** Replay live, materialized ops onto the base (core `rebuild`). */
+  private rebuild(): void {
+    const project = structuredClone(this.base);
+    const lanes: AutomationLaneView[] = [];
+    for (const op of this.ops) {
+      if (!this.materialized.has(op.seq) || this.undone.has(op.seq)) continue;
+      applyOpToState(project, lanes, op.kind, op.target, JSON.parse(op.value_json));
+    }
+    this.project = project;
+    this.automationLanes = lanes;
+  }
+}
+
+/**
+ * Apply one op's effect (mirrors core `apply_op_to_project` for the kinds
+ * this backend materializes). Used for live apply (on staged copies) and
+ * for replay after undo.
+ */
+function applyOpToState(
+  project: ProjectView,
+  lanes: AutomationLaneView[],
+  kind: OpView["kind"],
+  target: string,
+  payload: unknown,
+): void {
+  if (kind === "ClipAdded") {
+    const clip = payload as ClipView;
+    if (project.clips.some((c) => c.id === clip.id)) {
+      throw new Error(`duplicate clip id: ${clip.id}`);
+    }
+    const track = project.tracks.find((t) => t.id === clip.track_id);
+    if (!track) throw new Error(`unknown track: ${clip.track_id}`);
+    project.clips.push(structuredClone(clip));
+    if (!track.clip_ids.includes(clip.id)) track.clip_ids.push(clip.id);
+  } else if (kind === "AutomationPointSet") {
+    const p = payload as { beat: number; value: number; node?: string; param?: string };
+    let lane = lanes.find((l) => l.id === target);
+    if (!lane) {
+      if (!p.node || !p.param) throw new Error(`unknown lane: ${target}`);
+      lane = { id: target, target: { node: p.node, param: p.param }, points: [] };
+      lanes.push(lane);
+    }
+    // Upsert: an exact-beat point is replaced, otherwise insert keeping
+    // strictly-ascending beat order (core `apply_automation_point`).
+    const hit = lane.points.find((pt) => pt.beat === p.beat);
+    if (hit) {
+      hit.value = p.value;
+    } else {
+      const pos = lane.points.findIndex((pt) => pt.beat > p.beat);
+      lane.points.splice(pos < 0 ? lane.points.length : pos, 0, { beat: p.beat, value: p.value });
+    }
   }
 }

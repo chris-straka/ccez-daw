@@ -1,11 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { InMemoryBackend } from "../src/backend";
-import { ComposeStore, COMPOSE_TOOL_NAMES, parseNoteText, sequenceLength, targetDirs } from "../src/compose";
+import { ComposeStore, COMPOSE_TOOL_NAMES, midiPitch, parseNoteText, sequenceLength, targetDirs } from "../src/compose";
 import { createServer } from "../src/index";
 import { GameAudioStore } from "../src/gameaudio";
 
@@ -42,6 +42,11 @@ describe("note text notation", () => {
     expect(parseNoteText("60/2")).toEqual([{ pitches: [60], start: 0, length: 2 }]);
     expect(() => parseNoteText("A4/x")).toThrow("can't read");
     expect(() => parseNoteText("A4@2")).toThrow("velocity");
+  });
+
+  test("pitch names follow core parse_pitch", () => {
+    expect(["C4", "A4", "F#3", "Bb2", "C-1", "G9", 0, 127].map(midiPitch)).toEqual([60, 69, 54, 46, 0, 127, 0, 127]);
+    for (const bad of ["H2", "D", "zz", "60", "G#9", 128, 60.5]) expect(() => midiPitch(bad)).toThrow();
   });
 });
 
@@ -84,6 +89,50 @@ describe("compose store (stub CLI)", () => {
       ).toThrow("give pitch or pitches");
     });
   }, SLOW);
+
+  test("a bad pitch is rejected before the doc changes; the session keeps working", () => {
+    withBin(STUB, () => {
+      const s = new ComposeStore();
+      s.newDoc({ name: "t", tempo: 90 });
+      s.addSection({ id: "calm", role: "loop", bars: 2 });
+      s.writeNotes({ section: "calm", layer: "bed", instrument: "keys", text: "D4/1" });
+      const before = structuredClone(s.doc);
+      const at = { section: "calm", layer: "bed", instrument: "keys" };
+      expect(() => s.writeNotes({ ...at, text: "200/1" })).toThrow("outside MIDI 0..=127");
+      expect(() => s.writeNotes({ ...at, notes: [{ pitch: "zz", start: 0, length: 1 }] })).toThrow("note name");
+      expect(() => s.writeNotes({ ...at, notes: [{ pitch: "H2", start: 0, length: 1 }], mode: "append" })).toThrow(
+        "note name",
+      );
+      expect(() => s.writeNotes({ ...at, text: "G#9/1" })).toThrow("outside MIDI 0..=127");
+      expect(s.doc).toEqual(before);
+      // Every validating tool still answers (one bad call can't brick it).
+      expect(s.get()).toMatchObject({ ok: true });
+      expect(s.addLayer({ id: "bed" })).toMatchObject({ added: "bed", ok: true });
+      // Opening a document the CLI cannot load keeps the working one.
+      const kept = structuredClone(s.doc);
+      const dir = mkdtempSync(join(tmpdir(), "compose-bad-"));
+      const path = join(dir, "bad.json");
+      writeFileSync(path, JSON.stringify({ ...kept, parts: [{ ...kept!.parts[0], notes: [{ pitch: 200, start: 0, length: 1 }] }] }));
+      try {
+        expect(() => s.open({ path })).toThrow("0..=127");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+      expect(s.doc).toEqual(kept);
+    });
+  }, SLOW);
+
+  test("a mutation whose validation throws is rolled back", () => {
+    const s = new ComposeStore();
+    withBin(STUB, () => s.newDoc({ name: "t", tempo: 90 }));
+    const before = structuredClone(s.doc);
+    withBin("/nonexistent/ccez-compose", () => {
+      expect(() => s.addLayer({ id: "bed" })).toThrow("cargo build");
+      expect(() => s.addSection({ id: "calm", role: "loop", bars: 2 })).toThrow("cargo build");
+      expect(() => s.setRoom({ decaySecs: 3 })).toThrow("cargo build");
+    });
+    expect(s.doc).toEqual(before);
+  });
 
   test("preview and export pass the plan through to the CLI", () => {
     withBin(STUB, () => {
@@ -184,6 +233,13 @@ describe("compose tools over MCP", () => {
     });
     expect(bad.ok).toBe(false);
     expect(bad.errors.join()).toContain("outside the section");
+    // A pitch the CLI can't load is refused up front; the session still answers.
+    const refused = (await client.callTool({
+      name: "compose_write_notes",
+      arguments: { section: "calm", layer: "bed", instrument: "keys", text: "200/1" },
+    })) as any;
+    expect(refused.isError).toBe(true);
+    expect((await call("compose_get", {})).errors.join()).toContain("outside the section");
     await client.close();
   }, 120_000);
 });

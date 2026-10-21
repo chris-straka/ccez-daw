@@ -542,6 +542,10 @@ body {
   min-width: 120px;
 }
 
+.mixer-strip.selected {
+  border-color: var(--daw-accent);
+}
+
 .mixer-strip.reference {
   border-color: rgba(245, 166, 35, 0.5);
 }

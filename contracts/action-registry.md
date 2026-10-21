@@ -16,7 +16,7 @@ API, NL commands, and MCP tools alike. Stub mirror:
 | `project.redo` | `op_redo` | |
 | `op.apply` | `op_apply` | programmatic (all AI/script output flows here) |
 | `track.add` | `track_add` | |
-| `track.list` | — (reads `project_get`) | MCP listing view |
+| `track.list` | — (reads `project_get`) | MCP listing view; palette/menu report `tracks: N — names` in the status line |
 | `clip.add` | `clip_add` | |
 | `param.set` | `param_set` | |
 | `engine.set_tempo` | `engine_set_tempo` | programmatic in v0 |
@@ -37,10 +37,10 @@ to descriptors until Track K wires real behavior.
 | `app.preferences` | — (local) | Preferences dialog (Track K) |
 | `app.update.check` | — (local → `app_update_check`) | ask the release feed for a newer signed build; status line shows the answer |
 | `app.update.install` | — (local → `app_update_install`) | download, verify, install the newer build and restart |
-| `edit.cut` | — (local) | Native OS cut + sync event |
-| `edit.copy` | — (local) | Native OS copy + sync event |
-| `edit.paste` | — (local) | Native OS paste + sync event |
-| `edit.select_all` | — (local) | Native OS select-all + sync event |
+| `edit.cut` | — (local) | Menu: native OS cut (the sync event is not re-run); palette/scripting: last text field via the clipboard, status `edit: …` |
+| `edit.copy` | — (local) | Menu: native OS copy (the sync event is not re-run); palette/scripting: last text field via the clipboard, status `edit: …` |
+| `edit.paste` | — (local) | Menu: native OS paste (the sync event is not re-run); palette/scripting: last text field via the clipboard, status `edit: …` |
+| `edit.select_all` | — (local) | Menu: native OS select-all (the sync event is not re-run); palette/scripting: last text field via the clipboard, status `edit: …` |
 | `view.zoom.in` | — (local) | Window zoom in (Track K) |
 | `view.zoom.out` | — (local) | Window zoom out (Track K) |
 | `view.zoom.reset` | — (local) | Window zoom reset (Track K) |
@@ -75,7 +75,7 @@ IPC surface was needed.
 | `session.launch` | — (local) | Quantized slot/scene launch plan (`S`, View menu) |
 | `session.jam_record` | — (local) | Jam → `ClipAdded` ops (`J`, View menu) |
 | `comp.commit` | — (local) | Composite take → `ClipAdded` (`C`, Clip menu) |
-| `groove.apply` | — (local) | Grooved clip → `ClipAdded` (programmatic/palette, Clip menu) |
+| `groove.apply` | — (local) | Groove tab's picked target → grooved copy: notes saved via `asset_store` under `groove:<name>+<key>`, then `ClipAdded` (programmatic/palette, Clip menu) |
 | `branch.merge` | — (local) | Merge preview/apply → ops (programmatic/palette, File menu) |
 | `record.punch` | — (local) | Punched take → `ClipAdded` (`r`, Transport menu) |
 | `link.join` | — (local) | Join Link session clock (`L`, Transport menu; writes no ops) |

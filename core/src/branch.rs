@@ -83,7 +83,8 @@ pub struct MergeOutcome {
 ///   a new value.
 /// - `Tempo`: `TempoSet`.
 /// - `Automation`: `AutomationPointSet` — a lane point is (re)aimed.
-/// - `Marker`: `UndoMarker` — history bookkeeping, still rendered as a row.
+/// - `Marker`: `UndoMarker` / `GameAudioExported` — history bookkeeping
+///   (an export record changes no state), still rendered as a row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpCategory {
     Added,
@@ -116,7 +117,7 @@ pub fn classify_op(op: &Op) -> OpCategory {
         OpKind::ParamSet => OpCategory::Retargeted,
         OpKind::TempoSet => OpCategory::Tempo,
         OpKind::AutomationPointSet => OpCategory::Automation,
-        OpKind::UndoMarker => OpCategory::Marker,
+        OpKind::UndoMarker | OpKind::GameAudioExported => OpCategory::Marker,
     }
 }
 
@@ -574,6 +575,7 @@ mod tests {
             (OpKind::TempoSet, OpCategory::Tempo),
             (OpKind::AutomationPointSet, OpCategory::Automation),
             (OpKind::UndoMarker, OpCategory::Marker),
+            (OpKind::GameAudioExported, OpCategory::Marker),
         ];
         for (kind, want) in kinds {
             let op = Op {

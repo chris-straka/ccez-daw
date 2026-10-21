@@ -3,6 +3,7 @@ import type { Clip, Op, OpKind } from "../generated/project";
 import { OpSchema } from "../generated/project";
 import type { MidiClip } from "../pianoroll/model";
 import { MidiClipSchema, sortNotes } from "../pianoroll/model";
+import { midiAssetKey } from "../notation/score";
 
 /**
  * Groove pool: extract timing/velocity feel from any MIDI clip into a named
@@ -289,7 +290,7 @@ export function grooveCommitOp(actor: string, target: Clip, grooveName: string):
     ...target,
     id: `${target.id}~groove-${clean}`,
     name: `${target.name} (groove ${grooveName.trim() || clean})`,
-    source: groovedSource(target.source, grooveName),
+    source: groovedSource(midiAssetKey(target), grooveName),
   };
   return OpSchema.parse({
     seq: 0,

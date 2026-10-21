@@ -41,8 +41,11 @@ pub enum LoopMode {
     NoLoop,
     /// Play the whole recording regardless of note length (drums).
     OneShot,
-    /// Loop `loop_points` while the note sounds.
+    /// Loop `loop_start..loop_end` while the note sounds.
     Loop,
+    /// SFZ's default (no `loop_mode`): loop if the recording carries its
+    /// own loop (a WAV `smpl` chunk), else play once.
+    FromFile,
 }
 
 /// Amplitude envelope, seconds (sustain is a level 0..1).
@@ -86,6 +89,10 @@ pub struct Region {
     pub volume_db: f32,
     /// -1 (left) ..= 1 (right).
     pub pan: f32,
+    /// One side of an SF2 linked stereo pair: the recording is a channel,
+    /// not a mono source, so hard pan puts it at unity on its own side
+    /// (the constant-power law over √2) instead of +3 dB.
+    pub stereo_half: bool,
     /// Round robin: this region plays on pass `seq_position` of `seq_length`.
     pub seq_length: u32,
     pub seq_position: u32,
@@ -96,7 +103,11 @@ pub struct Region {
     pub offset: usize,
     pub end: Option<usize>,
     pub loop_mode: LoopMode,
-    pub loop_points: Option<(usize, usize)>,
+    /// Loop start / end (exclusive) in frames, each set on its own; an
+    /// unset side resolves when the recording is read (see
+    /// `loop_span`).
+    pub loop_start: Option<usize>,
+    pub loop_end: Option<usize>,
     pub env: Env,
     /// 0..1: how much velocity scales loudness (SFZ amp_veltrack / 100).
     pub veltrack: f32,
@@ -116,6 +127,7 @@ impl Region {
             xfade: None,
             volume_db: 0.0,
             pan: 0.0,
+            stereo_half: false,
             seq_length: 1,
             seq_position: 1,
             lorand: 0.0,
@@ -123,7 +135,8 @@ impl Region {
             offset: 0,
             end: None,
             loop_mode: LoopMode::NoLoop,
-            loop_points: None,
+            loop_start: None,
+            loop_end: None,
             env: Env::default(),
             veltrack: 1.0,
         }
@@ -160,8 +173,9 @@ impl Region {
 /// How the composer plays an instrument's regions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayStyle {
-    /// Sustained recordings without loop points get a cross-faded loop
-    /// when a note outlasts them (strings, winds, choir).
+    /// Sustained recordings without loop points (neither the region's
+    /// nor the WAV's own `smpl` loop) get a cross-faded loop over 35-85%
+    /// of the recording when a note outlasts it (strings, winds, choir).
     pub auto_loop: bool,
     /// Floor on the release time (s), so short library releases don't
     /// chop chords dry.
@@ -208,10 +222,54 @@ pub fn pan_gains(pan: f32) -> (f32, f32) {
     )
 }
 
-fn hermite(x: &[f32], pos: f64) -> f32 {
+/// A region's channel gains: [`pan_gains`] for a mono source; for one
+/// side of a stereo pair, the same law scaled so hard pan is unity.
+fn region_gains(r: &Region) -> (f32, f32) {
+    let (l, rt) = pan_gains(r.pan);
+    if r.stereo_half {
+        let k = std::f32::consts::FRAC_1_SQRT_2;
+        (l * k, rt * k)
+    } else {
+        (l, rt)
+    }
+}
+
+/// The loop a region plays over a recording of `n_src` frames, by the
+/// SFZ defaults, each side on its own: an unset start is the file
+/// loop's start (else frame 0), an unset end the file loop's end (else
+/// the last frame). With neither set nor a file loop there is none.
+fn loop_span(r: &Region, file: Option<(usize, usize)>, n_src: usize) -> Option<(usize, usize)> {
+    if r.loop_start.is_none() && r.loop_end.is_none() {
+        return file;
+    }
+    let start = r.loop_start.or(file.map(|f| f.0)).unwrap_or(0);
+    let end = r.loop_end.or(file.map(|f| f.1)).unwrap_or(n_src);
+    Some((start, end))
+}
+
+/// An explicit loop `[start, end)` as the interpolator sees it: taps at or
+/// past `end` read from `start` on, and once the loop has wrapped, taps
+/// before `start` read the loop's tail (what precedes them on every
+/// later pass).
+#[derive(Clone, Copy)]
+struct Wrap {
+    start: usize,
+    end: usize,
+    wrapped: bool,
+}
+
+fn hermite(x: &[f32], pos: f64, wrap: Option<Wrap>) -> f32 {
     let i = pos.floor() as isize;
     let t = (pos - i as f64) as f32;
-    let at = |k: isize| -> f32 {
+    let at = |mut k: isize| -> f32 {
+        if let Some(w) = wrap {
+            let (a, b) = (w.start as isize, w.end as isize);
+            if k >= b {
+                k -= b - a;
+            } else if w.wrapped && k < a {
+                k += b - a;
+            }
+        }
         if k < 0 || k as usize >= x.len() {
             0.0
         } else {
@@ -361,15 +419,24 @@ fn render_region(
     let cents = (pitch as f32 - r.keycenter) * r.keytrack + r.tune;
     let step = 2f64.powf(cents as f64 / 1200.0) * audio.sample_rate as f64 / sr as f64;
     let one_shot = style.one_shot || r.loop_mode == LoopMode::OneShot;
+    // SFZ defaults: unset loop points come from the file's own loop, and
+    // an unset loop mode loops when the file has one (hits still ring
+    // once).
+    let loop_points = loop_span(r, audio.sample_loop, n_src);
+    let loop_mode = match r.loop_mode {
+        LoopMode::FromFile if audio.sample_loop.is_some() && !one_shot => LoopMode::Loop,
+        LoopMode::FromFile => LoopMode::NoLoop,
+        m => m,
+    };
     let release = r.env.release.max(style.min_release).max(0.005);
     let vel_db = 40.0 * (vel as f32 / 127.0).log10() * r.veltrack;
     let gain = db_gain(r.volume_db + vel_db) * r.xfade_gain(vel);
-    let (pl, pr) = pan_gains(r.pan);
+    let (pl, pr) = region_gains(r);
     let held = (dur.max(0.0) * sr as f32) as usize;
     // Loop region: explicit points, else an auto cross-fade loop when a
     // sustained note outlasts its recording.
     let src_needed = (held as f64 + release as f64 * sr as f64) * step;
-    let looping = match (r.loop_mode, r.loop_points) {
+    let looping = match (loop_mode, loop_points) {
         (LoopMode::Loop, Some((a, b))) if b > a + 64 && b <= n_src => Some((a, b, 0usize)),
         _ if style.auto_loop && !one_shot && src_needed > (n_src - start) as f64 => {
             let len = n_src - start;
@@ -398,11 +465,9 @@ fn render_region(
     let env = r.env;
     let srf = sr as f32;
     let rel_k = (-6.9 / (release * srf)).exp(); // -60 dB over `release`
-    let mut rel_level = 1.0f32;
-    let mut pos = start as f64;
-    for i in 0..max_frames {
-        let t = i as f32 / srf;
-        let mut g = if env.attack > 0.0 && t < env.attack {
+    // Attack, hold, decay to sustain: the level `t` seconds into the note.
+    let level = |t: f32| -> f32 {
+        if env.attack > 0.0 && t < env.attack {
             t / env.attack
         } else if t < env.attack + env.hold {
             1.0
@@ -411,14 +476,23 @@ fn render_region(
             env.sustain + (1.0 - env.sustain) * (-4.6 * d).exp()
         } else {
             env.sustain
-        };
-        if !one_shot && i >= held {
+        }
+    };
+    // The release fades from wherever the envelope was at note-off (mid-
+    // attack included), not from a still-running attack or decay.
+    let off_level = level(held as f32 / srf);
+    let mut rel_level = 1.0f32;
+    let mut pos = start as f64;
+    for i in 0..max_frames {
+        let g = if !one_shot && i >= held {
             rel_level *= rel_k;
-            g *= rel_level;
             if rel_level < 1e-4 {
                 break;
             }
-        }
+            off_level * rel_level
+        } else {
+            level(i as f32 / srf)
+        };
         // Read (with the loop cross-fade when inside it).
         let (sl, sr2) = match looping {
             Some((a, b, xf)) => {
@@ -427,15 +501,23 @@ fn render_region(
                 if p >= b as f64 {
                     p = a as f64 + (p - a as f64) % len;
                 }
-                let (mut sl, mut sr2) = (hermite(left, p), hermite(right, p));
+                // Explicit loops wrap their taps; the cross-faded auto loop
+                // reads the real audio around its ends (the blend below
+                // makes that join continuous).
+                let wrap = (xf == 0).then_some(Wrap {
+                    start: a,
+                    end: b,
+                    wrapped: pos >= b as f64,
+                });
+                let (mut sl, mut sr2) = (hermite(left, p, wrap), hermite(right, p, wrap));
                 // Approaching the loop end, blend in the audio before the
                 // loop start so the wrap is continuous.
                 let to_end = b as f64 - p;
                 if xf > 0 && pos >= a as f64 && to_end < xf as f64 && (p - len) >= 0.0 {
                     let w = (1.0 - to_end / xf as f64) as f32;
                     let (wa, wb) = ((1.0 - w).sqrt(), w.sqrt());
-                    sl = sl * wa + hermite(left, p - len) * wb;
-                    sr2 = sr2 * wa + hermite(right, p - len) * wb;
+                    sl = sl * wa + hermite(left, p - len, None) * wb;
+                    sr2 = sr2 * wa + hermite(right, p - len, None) * wb;
                 }
                 (sl, sr2)
             }
@@ -443,7 +525,7 @@ fn render_region(
                 if pos >= n_src as f64 {
                     break;
                 }
-                (hermite(left, pos), hermite(right, pos))
+                (hermite(left, pos, None), hermite(right, pos, None))
             }
         };
         let gg = g * gain;
@@ -542,6 +624,191 @@ pub(crate) mod tests {
         let first = l.iter().position(|x| x.abs() > 0.01).unwrap();
         assert!(first < 200, "sound starts {first} frames in (want < 200)");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn peak(x: &[f32]) -> f32 {
+        x.iter().fold(0f32, |m, s| m.max(s.abs()))
+    }
+
+    /// A note released mid-attack fades from where the attack got to; it
+    /// never keeps swelling after note-off.
+    #[test]
+    fn release_mid_attack_decays_from_the_note_off_level() {
+        let dir = std::env::temp_dir().join(format!("ccez-sampler-rel-{}", std::process::id()));
+        let p = sine_wav(&dir, "s.wav", 440.0, 2.0, 48_000);
+        let mut r = Region::new(SampleRef::Wav(p));
+        r.keycenter = 69.0;
+        r.env.attack = 1.0;
+        r.env.release = 5.0;
+        let mut inst = SampledInstrument::new(vec![r], PlayStyle::default());
+        let (l, _) = inst.render_note(69, 1.0, 0.2, 48_000, 0.0).unwrap();
+        let off = (0.2 * 48_000.0) as usize;
+        let before = peak(&l[off - 480..off]);
+        let after = peak(&l[off..]);
+        assert!(after <= before * 1.01, "swelled after note-off: {before} -> {after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// While an explicit loop plays, the interpolator's taps wrap from the
+    /// loop end to the loop start: no click each pass, whether the loop
+    /// ends at the last frame or audio follows it.
+    #[test]
+    fn interpolation_wraps_inside_explicit_loops() {
+        let dir = std::env::temp_dir().join(format!("ccez-sampler-wrap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 100 cycles of a 1 kHz cosine (seamless over 0..4800), then
+        // `trailer` frames of silence.
+        for trailer in [0usize, 200] {
+            let mut s: Vec<f32> = (0..4_800)
+                .map(|i| 0.5 * (std::f32::consts::TAU * i as f32 / 48.0).cos())
+                .collect();
+            s.resize(4_800 + trailer, 0.0);
+            let p = dir.join(format!("cos{trailer}.wav"));
+            std::fs::write(&p, wavread::encode_pcm16(48_000, &[s])).unwrap();
+            let mut r = Region::new(SampleRef::Wav(p));
+            r.keycenter = 69.0;
+            r.tune = 13.0; // fractional read positions
+            r.loop_mode = LoopMode::Loop;
+            r.loop_start = Some(0);
+            r.loop_end = Some(4_800);
+            let mut inst = SampledInstrument::new(vec![r], PlayStyle::default());
+            let (l, _) = inst.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
+            // The cosine itself never steps more than 0.5 * 2π/48 ≈ 0.066.
+            let held = &l[..48_000];
+            let worst = held.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0f32, f32::max);
+            assert!(worst < 0.07, "trailer {trailer}: step {worst} at the loop seam");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `wav` with a `smpl` chunk carrying one forward loop (end inclusive,
+    /// as the spec stores it).
+    fn with_smpl_loop(mut wav: Vec<u8>, start: u32, end_incl: u32) -> Vec<u8> {
+        let mut body = vec![0u8; 36];
+        body[28..32].copy_from_slice(&1u32.to_le_bytes());
+        for v in [0u32, 0, start, end_incl, 0, 0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        wav.extend_from_slice(b"smpl");
+        wav.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        wav.extend(body);
+        let riff = (wav.len() - 8) as u32;
+        wav[4..8].copy_from_slice(&riff.to_le_bytes());
+        wav
+    }
+
+    /// SFZ defaults: with no `loop_mode`/`loop_start`/`loop_end`, a WAV's
+    /// own `smpl` loop plays (`loop_continuous`), and it wins over the
+    /// sustain style's 35-85% auto-loop. One-shot hits ignore it.
+    #[test]
+    fn a_files_own_loop_is_the_default() {
+        let dir = std::env::temp_dir().join(format!("ccez-sampler-smpl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 50 ms of 1 kHz (seamless, looped by the file), then 50 ms of
+        // silence the auto-loop would cycle through.
+        let mut s: Vec<f32> = (0..2_400)
+            .map(|i| 0.5 * (std::f32::consts::TAU * i as f32 / 48.0).cos())
+            .collect();
+        s.resize(4_800, 0.0);
+        let p = dir.join("looped.wav");
+        std::fs::write(&p, with_smpl_loop(wavread::encode_pcm16(48_000, &[s]), 0, 2_399)).unwrap();
+        let regions = super::super::sfz::parse("<region> sample=looped.wav key=69", &dir).unwrap();
+        assert_eq!(regions[0].loop_mode, LoopMode::FromFile);
+        let sus = PlayStyle {
+            auto_loop: true,
+            min_release: 0.0,
+            one_shot: false,
+        };
+        let mut inst = SampledInstrument::new(regions.clone(), sus);
+        let (l, _) = inst.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
+        assert!(l.len() >= 48_000, "{}", l.len());
+        let quietest = l[4_800..45_600]
+            .chunks(480)
+            .map(|w| (w.iter().map(|x| x * x).sum::<f32>() / w.len() as f32).sqrt())
+            .fold(f32::MAX, f32::min);
+        assert!(quietest > 0.3, "the file loop sounds throughout (quietest 10 ms: {quietest})");
+        // A hit rings its recording once: no loop.
+        let ring = PlayStyle {
+            one_shot: true,
+            ..PlayStyle::default()
+        };
+        let mut hit = SampledInstrument::new(regions, ring);
+        let (l, _) = hit.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
+        assert!(peak(&l[2_500..]) < 1e-3, "one-shot plays the silence after the loop");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The rms a 1 s held note settles to when `opcodes` play a recording
+    /// of three 30 ms segments of a 1 kHz cosine, A (0.1), B (0.5) and C
+    /// (0.9) at frames 0, 1440 and 2880, optionally carrying a `smpl` loop
+    /// over B. Looping A+B settles to 0.255, B alone 0.354, B+C 0.515; no
+    /// loop at all is `None` (the note ends with the recording).
+    fn settled_loop_rms(name: &str, opcodes: &str, smpl: bool) -> Option<f32> {
+        let dir = std::env::temp_dir().join(format!("ccez-sampler-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let s: Vec<f32> = (0..4_320)
+            .map(|i| {
+                let amp = [0.1, 0.5, 0.9][i / 1_440];
+                amp * (std::f32::consts::TAU * i as f32 / 48.0).cos()
+            })
+            .collect();
+        let mut wav = wavread::encode_pcm16(48_000, &[s]);
+        if smpl {
+            wav = with_smpl_loop(wav, 1_440, 2_879);
+        }
+        std::fs::write(dir.join("abc.wav"), wav).unwrap();
+        let text = format!("<region> sample=abc.wav key=69 {opcodes}");
+        let regions = super::super::sfz::parse(&text, &dir).unwrap();
+        let mut inst = SampledInstrument::new(regions, PlayStyle::default());
+        let (l, _) = inst.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        if l.len() < 48_000 {
+            return None;
+        }
+        // Ten passes of a two-segment loop (twenty of a one-segment one).
+        let w = &l[8_640..8_640 + 28_800];
+        Some((w.iter().map(|x| x * x).sum::<f32>() / w.len() as f32).sqrt())
+    }
+
+    fn assert_loops(got: Option<f32>, want: f32, what: &str) {
+        let got = got.unwrap_or_else(|| panic!("{what}: did not loop"));
+        assert!((got - want).abs() < 0.02, "{what}: settled rms {got:.3}, want {want:.3}");
+    }
+
+    // SFZ defaults each loop point on its own: an unset `loop_start` is
+    // the file loop's start (else 0), an unset `loop_end` the file loop's
+    // end (else the last frame).
+    const AB: f32 = 0.255;
+    const B: f32 = 0.354;
+    const BC: f32 = 0.515;
+
+    /// No file loop: `loop_start` alone loops to the last frame.
+    #[test]
+    fn loop_start_alone_loops_to_the_last_frame() {
+        let got = settled_loop_rms("ls", "loop_mode=loop_continuous loop_start=1440", false);
+        assert_loops(got, BC, "loop_start=1440, no file loop: 1440..end");
+    }
+
+    /// No file loop: `loop_end` alone loops from frame 0.
+    #[test]
+    fn loop_end_alone_loops_from_the_first_frame() {
+        let got = settled_loop_rms("le", "loop_mode=loop_continuous loop_end=2879", false);
+        assert_loops(got, AB, "loop_end=2879, no file loop: 0..2880");
+    }
+
+    /// Over a file loop, `loop_start` alone keeps the file's loop end.
+    #[test]
+    fn loop_start_alone_keeps_the_file_loop_end() {
+        assert_loops(settled_loop_rms("f", "", true), B, "file loop alone");
+        let got = settled_loop_rms("fls", "loop_start=0", true);
+        assert_loops(got, AB, "loop_start=0 over the file loop: 0..2880");
+    }
+
+    /// Over a file loop, `loop_end` alone keeps the file's loop start.
+    #[test]
+    fn loop_end_alone_keeps_the_file_loop_start() {
+        let got = settled_loop_rms("fle", "loop_end=4319", true);
+        assert_loops(got, BC, "loop_end=4319 over the file loop: 1440..4320");
     }
 
     #[test]

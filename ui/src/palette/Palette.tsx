@@ -7,6 +7,11 @@ export default function Palette(props: {
   open: boolean;
   onClose: () => void;
   onRan?: (id: string) => void;
+  /**
+   * The shell's action runner (keys and menus use the same one), so a row
+   * behaves exactly like its key: header state, typed arguments, status.
+   */
+  run?: (id: string) => Promise<void>;
 }) {
   const [query, setQuery] = createSignal("");
   const [selected, setSelected] = createSignal(0);
@@ -27,6 +32,11 @@ export default function Palette(props: {
     // surfaces in the header): closing on an inert descriptor looked dead.
     if (LOCAL_GUIDANCE[id]) {
       setError(LOCAL_GUIDANCE[id]!);
+      return;
+    }
+    if (props.run) {
+      await props.run(id);
+      props.onClose();
       return;
     }
     try {
@@ -71,7 +81,7 @@ export default function Palette(props: {
           class="palette-dialog"
           onKeyDown={onKey}
         >
-          <input
+          <input data-testid="palette-input"
             ref={inputEl}
             placeholder="Type a command…"
             value={query()}
@@ -84,7 +94,7 @@ export default function Palette(props: {
             <For each={matches()}>
               {(a, i) => (
                 <li>
-                  <button
+                  <button data-testid={`palette-item-${a.id}`}
                     class="palette-item"
                     classList={{ selected: i() === selected() }}
                     onClick={() => void run(a.id)}
