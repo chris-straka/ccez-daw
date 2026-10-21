@@ -35,6 +35,8 @@ function gainReadout(project: Project, groups: VcaGroup[], id: string, vol: numb
 export default function Mixer(props: {
   project: Project;
   onPatch: (trackId: string, field: "volume" | "pan" | "muted" | "solo", value: number | boolean) => void;
+  /** Strip under the vim cursor: the one `m` / `M` mute and solo. */
+  selectedId?: string | null;
 }) {
   const [groups, setGroups] = createSignal<VcaGroup[]>([
     makeGroup("g_all", "All", props.project.tracks.map((t) => t.id), 0),
@@ -108,8 +110,10 @@ export default function Mixer(props: {
         <For each={list()}>
           {(s) => (
             <div
+              data-testid={`mixer-strip-${s.id}`}
+              data-selected={props.selectedId === s.id ? "true" : undefined}
               class="mixer-strip"
-              classList={{ reference: s.isReference }}
+              classList={{ reference: s.isReference, selected: props.selectedId === s.id }}
             >
               <div class="mixer-strip-name">{s.name}</div>
               <div class="mixer-strip-out">

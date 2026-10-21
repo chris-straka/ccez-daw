@@ -381,10 +381,8 @@ export default function App() {
     // Mixer `m` / `M`: toggle mute/solo on the strip under the vim cursor
     // through the same ParamSet op path as the mixer buttons (undoable).
     const toggleStrip = (field: "muted" | "solo") => {
-      const tracks = project()?.tracks ?? [];
-      if (tracks.length === 0) return;
-      const t = tracks[Math.max(0, Math.min(tracks.length - 1, vim.cursor.track))];
-      void patchTrack(t.id, field, field === "muted" ? !t.muted : !t.solo);
+      const t = cursorTrack();
+      if (t) void patchTrack(t.id, field, field === "muted" ? !t.muted : !t.solo);
     };
     registerLocalActionHandler("mixer.muteSelected", () => toggleStrip("muted"));
     registerLocalActionHandler("mixer.soloSelected", () => toggleStrip("solo"));
@@ -492,6 +490,14 @@ export default function App() {
   });
 
   const playing = () => engine() === "Playing";
+
+  /** Track under the vim cursor (clamped), highlighted in the mixer. */
+  const cursorTrack = () => {
+    cursor();
+    const tracks = project()?.tracks ?? [];
+    if (tracks.length === 0) return null;
+    return tracks[Math.max(0, Math.min(tracks.length - 1, vim.cursor.track))];
+  };
 
   // Live transport clock: poll the engine position while playing. The
   // interval dies with the component and with every stop.
@@ -682,7 +688,11 @@ export default function App() {
           <Panel title="Mixer">
             <div onFocusIn={() => setVimContext(vim, "mixer")}>
             <Show when={project()} fallback={<div class="session-dim">No project open.</div>}>
-              {(p) => <Mixer project={p()} onPatch={(id, field, value) => void patchTrack(id, field, value)} />}
+              {(p) => <Mixer
+                  project={p()}
+                  selectedId={cursorTrack()?.id ?? null}
+                  onPatch={(id, field, value) => void patchTrack(id, field, value)}
+                />}
             </Show>
             </div>
           </Panel>

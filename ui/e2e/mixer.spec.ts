@@ -32,3 +32,32 @@ test("pan slider commits one ParamSet on release", async ({ page }) => {
   const hit = patches.find((c) => JSON.stringify(c.args).includes("t1:pan"));
   expect(hit).toBeDefined();
 });
+
+test.describe("vim strip selection", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockTauri(page, {
+      projectName: "mixer-fixture",
+      tracks: [
+        { id: "t1", name: "Drums" },
+        { id: "t2", name: "Bass" },
+      ],
+    });
+    await page.goto("/");
+  });
+
+  test("the strip m / M act on is highlighted and follows j", async ({ page }) => {
+    await page.keyboard.press("g");
+    await page.keyboard.press("m");
+    await expect(page.getByTestId("mixer-strip-t1")).toHaveAttribute("data-selected", "true");
+    await page.keyboard.press("j");
+    await expect(page.getByTestId("mixer-strip-t2")).toHaveAttribute("data-selected", "true");
+    await expect(page.getByTestId("mixer-strip-t1")).not.toHaveAttribute("data-selected", "true");
+
+    await page.keyboard.press("m");
+    await expect
+      .poll(async () =>
+        (await ipcCalls(page)).some((c) => c.cmd === "op_apply" && JSON.stringify(c.args).includes("t2:muted")),
+      )
+      .toBe(true);
+  });
+});
