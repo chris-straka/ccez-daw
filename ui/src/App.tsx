@@ -15,6 +15,7 @@ import { sampleTimelineDoc } from "./timeline/model";
 import Palette from "./palette/Palette";
 import ShortcutEditor from "./input/Editor";
 import { createNonce } from "./input/nonce";
+import { EDIT_ACTIONS, domEditField, runEdit } from "./input/edit";
 import AutomationView from "./automation/AutomationView";
 import GrooveTab from "./groove/GrooveTab";
 import { GroovePool } from "./groove/model";
@@ -86,7 +87,7 @@ export default function App() {
   });
 
   /** Local actions whose handler leaves its answer in the status line. */
-  const REPORTS_STATUS = new Set(["app.update.check", "app.update.install"]);
+  const REPORTS_STATUS = new Set(["app.update.check", "app.update.install", ...EDIT_ACTIONS]);
 
   async function refresh() {
     try {
@@ -341,7 +342,10 @@ export default function App() {
     // (see src-tauri/src/menu.rs): run them like palette actions.
     listen<{ action: string }>("menu-action", (e) => {
       const id = e.payload?.action;
-      if (typeof id === "string") void runAction(id);
+      // Edit-menu roles (Cut/Copy/Paste/Select All) are performed natively
+      // by the OS before this sync event arrives; running them again here
+      // would paste twice.
+      if (typeof id === "string" && !(EDIT_ACTIONS as readonly string[]).includes(id)) void runAction(id);
     })
       .then((u) => {
         unlistens.push(u);
@@ -465,6 +469,23 @@ export default function App() {
     registerLocalActionHandler("vim.mode.normal", () => setVimMode("normal"));
     registerLocalActionHandler("vim.mode.insert", () => setVimMode("insert"));
     registerLocalActionHandler("vim.mode.visual", () => setVimMode("visual"));
+    // Palette / scripting Edit rows act on the last text field the user was
+    // in (the palette has taken focus by now) and report what happened.
+    let lastField: Element | null = null;
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target as Element | null;
+      // The palette's / editor's own search boxes are not edit targets.
+      if (domEditField(el) && !el?.closest('[role="dialog"]')) lastField = el;
+    };
+    window.addEventListener("focusin", onFocusIn);
+    onCleanup(() => window.removeEventListener("focusin", onFocusIn));
+    for (const id of EDIT_ACTIONS) {
+      registerLocalActionHandler(id, async () => {
+        setPaletteOpen(false);
+        const field = lastField?.isConnected ? domEditField(lastField) : null;
+        setError(await runEdit(id, field, navigator.clipboard ?? null));
+      });
+    }
     // Motions run from the palette / scripting move the same cursor `hjkl`
     // does (keys apply them inside handleKey without reaching the registry).
     for (const { id } of ACTIONS.filter((a) => a.id.startsWith("vim.motion."))) {
@@ -575,7 +596,7 @@ export default function App() {
             Set
           </button>
         </div>
-        <button class="tb-palette" onClick={() => setPaletteOpen((v) => !v)} title="Command palette (Ctrl+K)">
+        <button data-testid="palette-open" class="tb-palette" onClick={() => setPaletteOpen((v) => !v)} title="Command palette (Ctrl+K)">
           ⌘K
         </button>
         <span class="transport-spacer" />
