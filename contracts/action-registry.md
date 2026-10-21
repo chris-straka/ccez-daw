@@ -16,7 +16,7 @@ API, NL commands, and MCP tools alike. Stub mirror:
 | `project.redo` | `op_redo` | |
 | `op.apply` | `op_apply` | programmatic (all AI/script output flows here) |
 | `track.add` | `track_add` | |
-| `track.list` | — (reads `project_get`) | MCP listing view |
+| `track.list` | — (reads `project_get`) | MCP listing view; palette/menu report `tracks: N — names` in the status line |
 | `clip.add` | `clip_add` | |
 | `param.set` | `param_set` | |
 | `engine.set_tempo` | `engine_set_tempo` | programmatic in v0 |

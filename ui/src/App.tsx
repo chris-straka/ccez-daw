@@ -277,6 +277,16 @@ export default function App() {
       await (id === "project.new" ? newProject() : applyTempo());
       setPaletteOpen(false);
       return;
+    } else if (id === "track.list") {
+      // Menu / palette List Tracks answers in the status line (the bare
+      // project_get it maps to returned the list to nobody).
+      await attempt("list tracks", async () => {
+        const p = await project_get({});
+        setProject(p);
+        setError(`tracks: ${p.tracks.length} — ${p.tracks.map((t) => t.name).join(", ") || "none"}`);
+      });
+      setPaletteOpen(false);
+      return;
     } else if (id === "track.add") {
       // Menu / palette Add Track with the standard auto-name (the bridge
       // needs a name and a key cannot supply one).

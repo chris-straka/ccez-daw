@@ -48,6 +48,11 @@ test.describe("with the bridge", () => {
     await expect(page.getByTestId("transport-error")).toBeHidden();
   });
 
+  test("List Tracks reports the tracks in the status line", async ({ page }) => {
+    await palette(page, "Track: List");
+    await expect(page.getByTestId("transport-error")).toHaveText("tracks: 1 — Drums");
+  });
+
   test("palette Vim motions move the cursor like their keys", async ({ page }) => {
     await expect(page.getByTestId("vim-cursor")).toHaveText("0:0");
     await palette(page, "Vim: Move Down");
