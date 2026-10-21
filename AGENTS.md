@@ -59,7 +59,8 @@ common wrong answer.
 
 ## UI conventions
 
-- Every interactive element gets a `data-testid`. Status lines report
+- Every interactive element gets a `data-testid` (`ui/tests/testids.test.ts`
+  fails the build otherwise). Status lines report
   what happened (`record: take 1 → take_x`), never "done".
 - Headless-safe: Tauri calls in panels fail into honest status text so
   the shell runs in a plain browser.

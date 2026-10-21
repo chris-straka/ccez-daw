@@ -173,10 +173,10 @@ export default function Mixer(props: {
       <details class="mixer-ab">
         <summary>A/B snapshots{ab() === "A" ? " (on A)" : " (on B)"}</summary>
         <div class="session-controls">
-          <button onClick={() => take("A")}>Capture A</button>
-          <button onClick={() => take("B")}>Capture B</button>
-          <button onClick={() => flip("A")} disabled={!slotA()}>Recall A{ab() === "A" ? " ●" : ""}</button>
-          <button onClick={() => flip("B")} disabled={!slotB()}>Recall B{ab() === "B" ? " ●" : ""}</button>
+          <button data-testid="mixer-capture-a" onClick={() => take("A")}>Capture A</button>
+          <button data-testid="mixer-capture-b" onClick={() => take("B")}>Capture B</button>
+          <button data-testid="mixer-recall-a" onClick={() => flip("A")} disabled={!slotA()}>Recall A{ab() === "A" ? " ●" : ""}</button>
+          <button data-testid="mixer-recall-b" onClick={() => flip("B")} disabled={!slotB()}>Recall B{ab() === "B" ? " ●" : ""}</button>
           <Show when={note()}>
             <span class="session-launch-note">{note()}</span>
           </Show>

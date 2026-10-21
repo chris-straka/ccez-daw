@@ -87,7 +87,7 @@ export default function RepairPanel(props: {
       <div class="form-row">
         <label>
           Pitch (st)
-          <input
+          <input data-testid="repair-pitch"
             type="number"
             min={-24}
             max={24}
@@ -99,7 +99,7 @@ export default function RepairPanel(props: {
         </label>
         <label>
           Rate (x)
-          <input
+          <input data-testid="repair-rate"
             type="number"
             min={0.25}
             max={4}
@@ -109,12 +109,12 @@ export default function RepairPanel(props: {
             style={{ width: "64px", "margin-left": "4px" }}
           />
         </label>
-        <button onClick={applyPitchTime}>Apply pitch/time</button>
+        <button data-testid="repair-apply-pitch-time" onClick={applyPitchTime}>Apply pitch/time</button>
       </div>
       <div class="form-row">
         <label>
           Warp shift (beats)
-          <input
+          <input data-testid="repair-warp-shift"
             type="number"
             step={0.05}
             value={warpShift()}
@@ -122,11 +122,11 @@ export default function RepairPanel(props: {
             style={{ width: "64px", "margin-left": "4px" }}
           />
         </label>
-        <button onClick={applyWarp}>Apply warp</button>
+        <button data-testid="repair-apply-warp" onClick={applyWarp}>Apply warp</button>
       </div>
       <div class="form-row">
         <label>
-          <input
+          <input data-testid="repair-drop-muted"
             type="checkbox"
             checked={cleanup().dropMuted}
             onInput={(e) => setCleanup({ ...cleanup(), dropMuted: e.currentTarget.checked })}
@@ -134,7 +134,7 @@ export default function RepairPanel(props: {
           drop muted
         </label>
         <label>
-          <input
+          <input data-testid="repair-fix-overlaps"
             type="checkbox"
             checked={cleanup().fixOverlaps}
             onInput={(e) => setCleanup({ ...cleanup(), fixOverlaps: e.currentTarget.checked })}
@@ -143,7 +143,7 @@ export default function RepairPanel(props: {
         </label>
         <label>
           Quantize
-          <select
+          <select data-testid="repair-quantize-grid"
             value={String(cleanup().quantizeGrid)}
             onInput={(e) => setCleanup({ ...cleanup(), quantizeGrid: Number(e.currentTarget.value) })}
             style={{ "margin-left": "4px" }}
@@ -153,7 +153,7 @@ export default function RepairPanel(props: {
             <option value="0.25">16th</option>
           </select>
         </label>
-        <button onClick={applyCleanup}>Apply cleanup</button>
+        <button data-testid="repair-apply-cleanup" onClick={applyCleanup}>Apply cleanup</button>
       </div>
       <Show when={message()}>
         <div class="meter-readout">{message()}</div>

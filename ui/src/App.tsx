@@ -553,14 +553,14 @@ export default function App() {
     <main class="daw-shell">
       <header class="transport-bar">
         <div class="tb-group" role="group" aria-label="Transport">
-          <button
+          <button data-testid="transport-play"
             class="transport-play"
             classList={{ playing: playing() }}
             onClick={togglePlay}
           >
             {playing() ? "❚❚" : "▶"}
           </button>
-          <button onClick={stop} title="Stop">■</button>
+          <button data-testid="transport-stop" onClick={stop} title="Stop">■</button>
           <span class={`engine-badge${playing() ? " playing" : ""}`}>
             {engine()}
           </span>

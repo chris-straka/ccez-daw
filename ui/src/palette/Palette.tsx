@@ -81,7 +81,7 @@ export default function Palette(props: {
           class="palette-dialog"
           onKeyDown={onKey}
         >
-          <input
+          <input data-testid="palette-input"
             ref={inputEl}
             placeholder="Type a command…"
             value={query()}
@@ -94,7 +94,7 @@ export default function Palette(props: {
             <For each={matches()}>
               {(a, i) => (
                 <li>
-                  <button
+                  <button data-testid={`palette-item-${a.id}`}
                     class="palette-item"
                     classList={{ selected: i() === selected() }}
                     onClick={() => void run(a.id)}

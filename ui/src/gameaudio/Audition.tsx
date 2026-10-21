@@ -172,12 +172,12 @@ export default function Audition(props: {
     <div class="session-view">
       <canvas ref={canvas} width={480} height={140} class="audition-canvas" style={{ width: "100%" }} />
       <div class="session-controls">
-        <button onClick={() => setTransport((t) => ({ ...t, playing: !t.playing }))}>
+        <button data-testid="audition-play" onClick={() => setTransport((t) => ({ ...t, playing: !t.playing }))}>
           {transport().playing ? "Pause" : "Play"}
         </button>
         <label class="mixer-label" style={{ "min-width": "140px" }}>
           tempo
-          <input
+          <input data-testid="audition-tempo"
             type="range"
             min={60}
             max={180}
@@ -197,7 +197,7 @@ export default function Audition(props: {
         <span class="session-dim">State:</span>
         <For each={["explore", "combat", "menu"]}>
           {(s) => (
-            <button
+            <button data-testid={`audition-state-${s}`}
               class="state-btn"
               classList={{ active: stateName() === s }}
               onClick={() => postState(s)}
@@ -206,14 +206,14 @@ export default function Audition(props: {
             </button>
           )}
         </For>
-        <button onClick={pinEntry}>Pin snapshot @ beat</button>
+        <button data-testid="audition-pin" onClick={pinEntry}>Pin snapshot @ beat</button>
       </div>
       <div class="session-controls">
         <For each={declared()}>
           {(p) => (
             <label class="mixer-label" style={{ "min-width": "140px" }}>
               {p.label} ({p.id}{p.unit ? `, ${p.unit}` : ""})
-              <input
+              <input data-testid={`audition-param-${p.id}`}
                 type="range"
                 min={p.min}
                 max={p.max}
@@ -241,7 +241,7 @@ export default function Audition(props: {
       <div class="session-controls">
         <span class="session-dim">Fire:</span>
         <For each={bank().events}>
-          {(e) => <button onClick={() => fire(e.id)}>{e.id}</button>}
+          {(e) => <button data-testid={`audition-event-${e.id}`} onClick={() => fire(e.id)}>{e.id}</button>}
         </For>
       </div>
       <div class="session-dim">
@@ -249,9 +249,9 @@ export default function Audition(props: {
           Timeline ({entries().length} pinned; evaluated live, never stored as ops):
         </div>
         <For each={entries()}>
-          {(e) => (
+          {(e, i) => (
             <div class="daw-numeric">
-              <button onClick={() => jumpTo(e)}>jump</button> beat {e.beat.toFixed(2)} — {e.snapshot.state}
+              <button data-testid={`audition-jump-${i()}`} onClick={() => jumpTo(e)}>jump</button> beat {e.beat.toFixed(2)} — {e.snapshot.state}
             </div>
           )}
         </For>

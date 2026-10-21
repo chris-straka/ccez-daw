@@ -106,7 +106,7 @@ export default function LoopAudition(props: {
       <div class="session-controls">
         <span class="session-dim">Loop layer:</span>
         {props.cue.layers.map((l) => (
-          <button
+          <button data-testid={`loop-layer-${l.id}`}
             class="state-btn"
             classList={{ active: layerId() === l.id }}
             onClick={() => {
@@ -118,7 +118,7 @@ export default function LoopAudition(props: {
             {l.id}
           </button>
         ))}
-        <button onClick={toggle}>{playing() ? "Stop" : "Play loop"}</button>
+        <button data-testid="loop-play" onClick={toggle}>{playing() ? "Stop" : "Play loop"}</button>
         <span class="meter-readout daw-numeric">
           gapless wrap demo: beat 9.5 of 0–8 plays at {wrapped().toFixed(2)}
         </span>
@@ -126,7 +126,7 @@ export default function LoopAudition(props: {
       <div class="session-controls">
         <label class="mixer-label">
           click threshold
-          <input
+          <input data-testid="loop-fade"
             type="range"
             min={0.001}
             max={0.1}
@@ -147,17 +147,17 @@ export default function LoopAudition(props: {
         </div>
       )}
       <div class="session-controls">
-        <button onClick={() => setFixed(true)} disabled={fixed() || !report().click}>
+        <button data-testid="loop-fix" onClick={() => setFixed(true)} disabled={fixed() || !report().click}>
           Fix: fade edges
         </button>
-        <input
+        <input data-testid="loop-waiver-reason"
           type="text"
           placeholder="waiver reason (required)"
           value={reason()}
           onInput={(e) => setReason(e.target.value)}
           style={{ width: "240px" }}
         />
-        <button onClick={waive} disabled={reason().trim().length === 0}>
+        <button data-testid="loop-waive" onClick={waive} disabled={reason().trim().length === 0}>
           Waive with reason
         </button>
       </div>
