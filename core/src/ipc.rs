@@ -149,6 +149,10 @@ pub const COMMANDS: &[CommandDef] = &[
     },
 ];
 
+/// Name of the `engine_state_changed` event row below, for Rust emitters
+/// (the shell's transport commands) so they cannot drift from the table.
+pub const ENGINE_STATE_CHANGED: &str = "engine_state_changed";
+
 pub const EVENTS: &[EventDef] = &[
     EventDef {
         name: "project_changed",
@@ -156,7 +160,7 @@ pub const EVENTS: &[EventDef] = &[
         payload_ts: "Project",
     },
     EventDef {
-        name: "engine_state_changed",
+        name: ENGINE_STATE_CHANGED,
         doc: "Emitted whenever the transport state changes.",
         payload_ts: "EngineState",
     },
