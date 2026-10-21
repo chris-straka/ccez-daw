@@ -16,7 +16,8 @@ import Palette from "./palette/Palette";
 import ShortcutEditor from "./input/Editor";
 import { createNonce } from "./input/nonce";
 import AutomationView from "./automation/AutomationView";
-import GroovePanel from "./groove/GroovePanel";
+import GrooveTab from "./groove/GrooveTab";
+import { GroovePool } from "./groove/model";
 import BrowserPalette from "./browser/Browser";
 import { deviceClassOf, findNativePreset, presetParamOps } from "./browser/presets";
 import type { LibraryItem } from "./generated/project";
@@ -125,6 +126,8 @@ export default function App() {
   const jamNonce = createNonce();
   const commitNonce = createNonce();
   const grooveNonce = createNonce();
+  // The groove pool outlives the Groove tab (its panel remounts per switch).
+  const groovePool = new GroovePool();
   const mergeNonce = createNonce();
   const [linked, setLinked] = createSignal(false);
 
@@ -655,7 +658,7 @@ export default function App() {
             </Show>
             <Show when={workspaceTab() === "Groove"}>
               <Panel title="Groove">
-                <GroovePanel source={null} target={null} applyNonce={grooveNonce} />
+                <GrooveTab project={project()} pool={groovePool} applyNonce={grooveNonce} />
               </Panel>
             </Show>
             <Show when={workspaceTab() === "Record"}>

@@ -18,6 +18,11 @@ export function midiClips(project: Project | null): Clip[] {
   return project.clips.filter((c) => c.kind === "Midi");
 }
 
+/** Asset key for a clip's note bytes: its explicit source, else `<id>.mid`. */
+export function midiAssetKey(clip: Clip): string {
+  return clip.source || `${clip.id}.mid`;
+}
+
 /** The clip the score shows: the picked id, else the first MIDI clip. */
 export function resolveScoreClip(project: Project | null, clipId?: string | null): Clip | null {
   const all = midiClips(project);

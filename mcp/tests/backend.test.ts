@@ -92,6 +92,14 @@ describe("groove_apply ids stay unique", () => {
     b.undo();
     expect(b.applyGroove(src.clipId, "swing", 0.5).clipId).toBe(first.clipId);
   });
+
+  test("a sourceless clip grooves from its default note key, like the UI", () => {
+    const b = new InMemoryBackend();
+    const src = b.addClip(clip("Beat"));
+    const { clipId } = b.applyGroove(src.clipId, "swing", 0.5);
+    const copy = b.getProject().clips.find((c) => c.id === clipId);
+    expect(copy?.source).toBe(`groove:swing+${src.clipId}.mid`);
+  });
 });
 
 describe("link_join validates before creating the session", () => {

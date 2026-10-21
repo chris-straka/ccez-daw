@@ -25,6 +25,8 @@ const STEP_CHOICES = [1, 2, 4];
  * the asset loader lands — the same seam as the repair panel), and applying
  * reports the grooved clip through `onEdit` plus one ordinary frozen
  * `ClipAdded` op through `op_apply` (undoable via `op_undo`, no new IPC).
+ * With a `targetClip`, the grooved notes are saved through `persist` under
+ * the copy's source key first, so the new clip never points at nothing.
  * Pass `applyOp` to override the transport (tests) and `pool` to share a
  * library between mounts.
  */
@@ -36,6 +38,8 @@ export default function GroovePanel(props: {
   targetClip?: Clip;
   pool?: GroovePool;
   applyOp?: (op: Op) => Promise<unknown>;
+  /** Save the grooved notes under the copy's asset key (before the op). */
+  persist?: (key: string, clip: MidiClip) => Promise<void>;
   onEdit?: (clip: MidiClip) => void;
   /** Bump to apply the current template from the global `groove.apply` action. */
   applyNonce?: Nonce;
@@ -135,7 +139,10 @@ export default function GroovePanel(props: {
       setUndo((stack) => [...stack, props.target as MidiClip]);
       props.onEdit?.(out);
       if (props.targetClip) {
-        await apply(grooveCommitOp("ui", props.targetClip, found.name));
+        const op = grooveCommitOp("ui", props.targetClip, found.name);
+        const copy = JSON.parse(op.value_json) as Clip;
+        await props.persist?.(copy.source, out);
+        await apply(op);
       }
       setMessage(
         `applied “${found.name}” to ${props.targetName ?? "target"}: ` +

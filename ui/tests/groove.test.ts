@@ -170,4 +170,15 @@ describe("groove pool + op commit", () => {
     expect(payload.start_beats).toBe(4);
     expect(payload.source).toBe("groove:late_hats_+take:1");
   });
+
+  test("a clip with no source grooves from its default note key, not from nothing", () => {
+    // The piano roll stores a sourceless clip's notes under `<id>.mid`;
+    // two sourceless clips must not share one grooved key.
+    const a = JSON.parse(grooveCommitOp("ui", { ...timelineClip(), source: "" }, "late").value_json) as Clip;
+    const b = JSON.parse(
+      grooveCommitOp("ui", { ...timelineClip(), id: "clip_c", source: "" }, "late").value_json,
+    ) as Clip;
+    expect(a.source).toBe("groove:late+clip_b.mid");
+    expect(b.source).toBe("groove:late+clip_c.mid");
+  });
 });

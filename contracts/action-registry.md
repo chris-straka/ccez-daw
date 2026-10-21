@@ -75,7 +75,7 @@ IPC surface was needed.
 | `session.launch` | — (local) | Quantized slot/scene launch plan (`S`, View menu) |
 | `session.jam_record` | — (local) | Jam → `ClipAdded` ops (`J`, View menu) |
 | `comp.commit` | — (local) | Composite take → `ClipAdded` (`C`, Clip menu) |
-| `groove.apply` | — (local) | Grooved clip → `ClipAdded` (programmatic/palette, Clip menu) |
+| `groove.apply` | — (local) | Groove tab's picked target → grooved copy: notes saved via `asset_store` under `groove:<name>+<key>`, then `ClipAdded` (programmatic/palette, Clip menu) |
 | `branch.merge` | — (local) | Merge preview/apply → ops (programmatic/palette, File menu) |
 | `record.punch` | — (local) | Punched take → `ClipAdded` (`r`, Transport menu) |
 | `link.join` | — (local) | Join Link session clock (`L`, Transport menu; writes no ops) |

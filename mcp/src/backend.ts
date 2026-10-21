@@ -391,7 +391,8 @@ export class InMemoryBackend {
       ...structuredClone(target),
       id: `${target.id}~groove-${clean}`,
       name: `${target.name} (groove ${groove.trim()})`,
-      source: `groove:${clean}+${target.source}`,
+      // Same key the UI grooves from (`midiAssetKey`): source, else `<id>.mid`.
+      source: `groove:${clean}+${target.source || `${target.id}.mid`}`,
     };
     // Same deterministic id as the UI `grooveCommitOp`; a repeat while the
     // first copy is live is rejected (core `ClipAdded` -> DuplicateTarget).

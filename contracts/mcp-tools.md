@@ -46,8 +46,9 @@ is replaced, points stay ascending, `apply_automation_point`);
 `session_jam_record` and `branch_merge` validate the whole batch (shape
 and parseable `value_json`) before appending, so a bad entry writes
 nothing; `groove_apply` names the copy `<clipId>~groove-<name>` (the UI
-`grooveCommitOp` id) and rejects a repeat while that copy is live (core
-`DuplicateTarget`); `link_join` validates `tempo` before it creates the
+`grooveCommitOp` id), sources it `groove:<name>+<key>` where `<key>` is
+the clip's source or `<clipId>.mid` (the UI's `midiAssetKey`), and rejects
+a repeat while that copy is live (core `DuplicateTarget`); `link_join` validates `tempo` before it creates the
 session. Undo picks the newest op not already undone and reverses
 `ClipAdded` and `AutomationPointSet` alike (`Engine::undo`).
 

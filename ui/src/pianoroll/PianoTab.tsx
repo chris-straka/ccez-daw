@@ -7,6 +7,7 @@ import PianoRoll from "./PianoRoll";
 import { asset_load, asset_store } from "../tauri/commands";
 import {
   emptyStaffFor,
+  midiAssetKey as assetKey,
   midiClips,
   readScoreClip,
   resolveScoreClip,
@@ -110,11 +111,6 @@ export default function PianoTab(props: {
 
   const clips = createMemo(() => midiClips(props.project));
   const frozen = createMemo(() => resolveScoreClip(props.project, picked()));
-
-  /** Asset key for a clip's note bytes: explicit source, else per-clip default. */
-  function assetKey(f: Clip): string {
-    return f.source || `${f.id}.mid`;
-  }
 
   // Hydrate the working clip from durable bytes on first view. Local edits
   // (overrides) always win: a load never clobbers them.
