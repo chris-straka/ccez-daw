@@ -1,5 +1,7 @@
 # AGENTS.md — ccez-daw working conventions
 
+One rules file only: this `AGENTS.md` is it — never create a `CLAUDE.md` in this folder (Muse ignores it and warns while both exist).
+
 How this repo stays a working DAW instead of a wired-together demo.
 Follow these over cleverness.
 
