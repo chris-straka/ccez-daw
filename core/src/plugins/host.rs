@@ -318,6 +318,37 @@ pub struct PluginHost {
     entries: HashMap<String, Entry>,
 }
 
+/// Where the worker sits relative to `exe`: in the same dir (the app, or a
+/// binary in a cargo profile dir), else in the cargo profile dir above a
+/// test executable. Cargo puts test executables either in
+/// `<profile>/deps/` (cargo before 1.100) or in
+/// `<profile>/build/<pkg>/<hash>/out/` (1.100's build-dir layout); the
+/// worker binary itself always lands in `<profile>/`.
+fn worker_bin_near(
+    exe: &std::path::Path,
+    exists: impl Fn(&std::path::Path) -> bool,
+) -> Option<PathBuf> {
+    let name = super::worker::WORKER_BIN_NAME;
+    let named = |dir: &std::path::Path| {
+        let bin = dir.join(name);
+        #[cfg(windows)]
+        let bin = bin.with_extension("exe");
+        bin
+    };
+    let dir = exe.parent()?;
+    let mut candidates = vec![named(dir)];
+    // Each ancestor whose next path component is `deps` or `build` is a
+    // cargo profile dir.
+    let mut child = dir;
+    while let Some(parent) = child.parent() {
+        if child.file_name().is_some_and(|n| n == "deps" || n == "build") {
+            candidates.push(named(parent));
+        }
+        child = parent;
+    }
+    candidates.into_iter().find(|c| exists(c))
+}
+
 impl PluginHost {
     pub fn new(sample_rate: f64, worker_bin: PathBuf) -> Self {
         Self {
@@ -327,24 +358,13 @@ impl PluginHost {
         }
     }
 
-    /// Locate the `plugin-worker` binary next to the current executable
-    /// (unit tests run from `target/{debug,release}/deps/`, the worker
-    /// sits one level up). Falls back to `debug/` when that fails.
+    /// Locate the `plugin-worker` binary next to the current executable,
+    /// or in the cargo profile dir a test executable was built under.
+    /// Falls back to `target/debug/` when neither has it.
     pub fn default_worker_bin() -> PathBuf {
         if let Ok(exe) = std::env::current_exe() {
-            if let Some(deps) = exe.parent() {
-                let bin = if deps.file_name().is_some_and(|n| n == "deps") {
-                    deps.parent()
-                        .unwrap_or(deps)
-                        .join(super::worker::WORKER_BIN_NAME)
-                } else {
-                    deps.join(super::worker::WORKER_BIN_NAME)
-                };
-                #[cfg(windows)]
-                let bin = bin.with_extension("exe");
-                if bin.exists() {
-                    return bin;
-                }
+            if let Some(bin) = worker_bin_near(&exe, |p| p.exists()) {
+                return bin;
             }
         }
         PathBuf::from(format!("target/debug/{}", super::worker::WORKER_BIN_NAME))
@@ -462,6 +482,37 @@ mod tests {
     fn host() -> PluginHost {
         ensure_worker_built();
         PluginHost::new(44100.0, PluginHost::default_worker_bin())
+    }
+
+    #[test]
+    fn worker_bin_is_found_under_both_cargo_test_layouts() {
+        use std::path::Path;
+        let worker = |dir: &str| {
+            let bin = Path::new(dir).join(crate::plugins::worker::WORKER_BIN_NAME);
+            #[cfg(windows)]
+            let bin = bin.with_extension("exe");
+            bin
+        };
+        let only = |want: PathBuf| move |p: &Path| p == want;
+        // Cargo before 1.100: `<profile>/deps/<test-exe>`.
+        let old = Path::new("/w/target/debug/deps/ccez_core-1a2b");
+        assert_eq!(
+            worker_bin_near(old, only(worker("/w/target/debug"))),
+            Some(worker("/w/target/debug"))
+        );
+        // Cargo 1.100: `<profile>/build/<pkg>/<hash>/out/<test-exe>`.
+        let new = Path::new("/w/target/debug/build/ccez-core/1a2b/out/ccez_core-1a2b");
+        assert_eq!(
+            worker_bin_near(new, only(worker("/w/target/debug"))),
+            Some(worker("/w/target/debug"))
+        );
+        // The app: the worker sits next to the executable.
+        let app = Path::new("/Applications/ccez.app/Contents/MacOS/ccez-daw");
+        assert_eq!(
+            worker_bin_near(app, only(worker("/Applications/ccez.app/Contents/MacOS"))),
+            Some(worker("/Applications/ccez.app/Contents/MacOS"))
+        );
+        assert_eq!(worker_bin_near(new, |_| false), None);
     }
 
     #[test]

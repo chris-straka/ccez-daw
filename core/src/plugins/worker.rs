@@ -460,6 +460,8 @@ pub(crate) fn ensure_worker_built() {
         .args(["build", "--manifest-path", manifest, "--bin", WORKER_BIN_NAME])
         .status()
         .expect("cargo build launches");
+    // Resolve again: before the build the lookup can only fall back.
+    let bin = PluginHost::default_worker_bin();
     assert!(
         status.success() && bin.exists(),
         "plugin worker must build at {}",
