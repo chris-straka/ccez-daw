@@ -27,7 +27,7 @@ new MCP tool rows (`contracts/mcp-tools.md`); no frozen row has changed.
   loudness-normalized bounce, batch + game-audio export, metering bridge.
 - **Game music for Bevy** — compose (MCP `compose_*` tools or
   `ccez-compose`), render seamless loop stems with intro/loop/outro
-  sections and intensity 1-5 layers, export an audioforge package
+  sections and intensity 1-5 layers, export a gameaudio package
   (`docs/notes/ga-compose.md`, `contracts/audioforge-music.md`).
 - **Hosts everything** — sandboxed CLAP/VST3/AU loading with latency
   compensation, plugin scan lists, crash recovery with watchdog, ARA

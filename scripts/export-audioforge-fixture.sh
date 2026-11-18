@@ -5,7 +5,7 @@
 #   scripts/export-audioforge-fixture.sh [path/to/audioforge]
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-af="${1:-$here/../audioforge}"
+af="${1:-$here/../gameaudio}"
 out="$af/crates/af-runtime/tests/fixtures/ccez-daw-tiny"
 cargo build --release --manifest-path "$here/core/Cargo.toml" --bin ccez-compose
 rm -rf "$out"
