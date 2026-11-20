@@ -487,8 +487,13 @@ pub(crate) mod fixture {
         BUNDLE
             .get_or_init(|| {
                 let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("clap-gain/Cargo.toml");
-                let target = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("clap-gain/target/debug");
+                let target = std::env::var_os("CARGO_TARGET_DIR")
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| {
+                        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("clap-gain/target")
+                    })
+                    .join("debug");
                 let lib = if cfg!(target_os = "macos") {
                     target.join("libccez_clap_gain.dylib")
                 } else if cfg!(target_os = "windows") {
