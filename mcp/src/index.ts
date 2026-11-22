@@ -2,15 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { InMemoryBackend } from "./backend.js";
-import { GameAudioStore } from "./gameaudio.js";
 import { ComposeStore, composeTools } from "./compose.js";
 import {
-  AuditionInput,
   AutomationPointInput,
   BranchMergeInput,
   ClipInput,
   CompCommitInput,
-  ExportInput,
   GrooveApplyInput,
   JamRecordInput,
   LinkJoinInput,
@@ -19,7 +16,6 @@ import {
   PunchCommitInput,
   SessionLaunchInput,
   TOOLS,
-  TriggerSfxInput,
   createToolHandlers,
   type ToolHandler,
 } from "./tools.js";
@@ -33,11 +29,10 @@ function toContent(value: unknown) {
  *  the op log actor is always `"mcp"` for that server's mutations). */
 export function createServer(
   backend: InMemoryBackend,
-  gameAudio: GameAudioStore = new GameAudioStore(),
   compose: ComposeStore = new ComposeStore(),
 ): McpServer {
   const server = new McpServer({ name: "ccez-daw", version: "0.1.0" });
-  const handlers = createToolHandlers(backend, gameAudio);
+  const handlers = createToolHandlers(backend);
   const inputSchemas = [
     ProjectRef.shape,
     ProjectRef.shape,
@@ -45,11 +40,6 @@ export function createServer(
     ParamInput.shape,
     ProjectRef.shape,
     ProjectRef.shape,
-    // GA-5 (additive rows; v0 six shapes above untouched):
-    ProjectRef.shape,
-    AuditionInput.shape,
-    TriggerSfxInput.shape,
-    ExportInput.shape,
     // Post-v0 coverage (additive rows in TOOLS order):
     AutomationPointInput.shape,
     SessionLaunchInput.shape,
@@ -81,8 +71,27 @@ export function createServer(
   return server;
 }
 
-function getPort(): number {
-  const fromArg = process.argv
+export const DEFAULT_HTTP_HOST = "127.0.0.1";
+
+export function resolveHttpHost(argv: readonly string[] = process.argv): string {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg.startsWith("--host=")) {
+      const val = arg.slice("--host=".length).trim();
+      if (!val) throw new Error("bad host: empty");
+      return val;
+    }
+    if (arg === "--host") {
+      const val = (argv[i + 1] ?? "").trim();
+      if (!val || val.startsWith("--")) throw new Error("--host needs a value");
+      return val;
+    }
+  }
+  return DEFAULT_HTTP_HOST;
+}
+
+function getPort(argv: readonly string[] = process.argv): number {
+  const fromArg = argv
     .find((a) => a.startsWith("--port="))
     ?.slice("--port=".length);
   const raw = fromArg ?? process.env["PORT"] ?? "3001";
@@ -93,9 +102,8 @@ function getPort(): number {
 
 async function main() {
   const backend = new InMemoryBackend();
-  const gameAudio = new GameAudioStore();
   const compose = new ComposeStore();
-  const server = createServer(backend, gameAudio, compose);
+  const server = createServer(backend, compose);
 
   if (process.argv.includes("--http")) {
     // Streamable HTTP (stateless) via the official TS SDK web-standard
@@ -103,7 +111,9 @@ async function main() {
     // Stateless transports are single-use, so each request gets a fresh
     // transport + server over the one shared backend (the op log persists).
     const port = getPort();
+    const hostname = resolveHttpHost();
     Bun.serve({
+      hostname,
       port,
       fetch: async (req: Request) => {
         // JSON responses (not SSE): handleRequest resolves with the whole
@@ -113,7 +123,7 @@ async function main() {
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
         });
-        const perRequest = createServer(backend, gameAudio, compose);
+        const perRequest = createServer(backend, compose);
         await perRequest.connect(transport);
         try {
           return await transport.handleRequest(req);
@@ -123,7 +133,7 @@ async function main() {
         }
       },
     });
-    console.error(`ccez-daw MCP listening for Streamable HTTP on :${port}/mcp`);
+    console.error(`ccez-daw MCP listening for Streamable HTTP on http://${hostname}:${port}/mcp`);
   } else {
     await server.connect(new StdioServerTransport());
   }

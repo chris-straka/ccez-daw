@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -63,28 +64,67 @@ describe("Track P-2: model pins resolve behind the one-interface seam", () => {
     }
   });
 
-  test("ensureModelCached downloads on first use, then no-ops; baselines-only throws", async () => {
+  test("ensureModelCached verifies SHA-256 checksum, caches on match, and rejects unverified or tampered weights", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ccez-models-dl-"));
     const prev = process.env.CCEZ_MODEL_DIR;
     process.env.CCEZ_MODEL_DIR = dir;
     try {
+      const payload = "weights-bytes";
+      const rightSha = createHash("sha256").update(payload).digest("hex");
+      const wrongSha = "0".repeat(64);
       let calls = 0;
       const fakeFetch = (async () => {
         calls += 1;
-        return new Response("weights-bytes");
+        return new Response(payload);
       }) as unknown as typeof fetch;
+
+      // Missing/invalid SHA-256 must fail before downloading.
+      await expect(
+        ensureModelCached("transcribe-melody", "https://example.invalid/basic-pitch.onnx", "", fakeFetch),
+      ).rejects.toThrow();
+      expect(calls).toBe(0);
+
+      // Mismatching SHA-256 must fail without leaving a file in cache.
+      await expect(
+        ensureModelCached(
+          "transcribe-melody",
+          "https://example.invalid/basic-pitch.onnx",
+          wrongSha,
+          fakeFetch,
+        ),
+      ).rejects.toThrow(/checksum|sha-?256/i);
+      expect(existsSync(join(dir, "basic-pitch.onnx"))).toBe(false);
+
       const dest = await ensureModelCached(
         "transcribe-melody",
         "https://example.invalid/basic-pitch.onnx",
+        rightSha,
         fakeFetch,
       );
       expect(dest).toBe(join(dir, "basic-pitch.onnx"));
-      expect(calls).toBe(1);
-      await ensureModelCached("transcribe-melody", "https://example.invalid/x", fakeFetch);
-      expect(calls).toBe(1);
-      await expect(ensureModelCached("groove-transfer", "https://example.invalid/x")).rejects.toThrow(
-        "baselines-only",
+      const callsAfterFirst = calls;
+      await ensureModelCached(
+        "transcribe-melody",
+        "https://example.invalid/x",
+        rightSha,
+        fakeFetch,
       );
+      expect(calls).toBe(callsAfterFirst);
+
+      // Tampered cached file must also fail checksum check.
+      writeFileSync(dest, "tampered");
+      await expect(
+        ensureModelCached(
+          "transcribe-melody",
+          "https://example.invalid/x",
+          rightSha,
+          fakeFetch,
+        ),
+      ).rejects.toThrow(/checksum|sha-?256/i);
+
+      await expect(
+        ensureModelCached("groove-transfer", "https://example.invalid/x", rightSha),
+      ).rejects.toThrow("baselines-only");
     } finally {
       if (prev === undefined) delete process.env.CCEZ_MODEL_DIR;
       else process.env.CCEZ_MODEL_DIR = prev;

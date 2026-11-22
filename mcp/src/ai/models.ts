@@ -10,8 +10,9 @@
  * weights into the same cache path the Rust side probes. Plans may change;
  * op shapes and UI don't.
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -161,15 +162,27 @@ export function resolveProviderFor(
   return new LocalTranscriptionProvider();
 }
 
+function sha256Hex(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function normalizeSha256(expectedSha256: string): string {
+  const normalized = expectedSha256.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error("model download requires a valid 64-hex expectedSha256 checksum");
+  }
+  return normalized;
+}
+
 /**
  * Download-on-first-use: fetch a pinned model's weights into the cache
- * dir. No-op (returns the existing path) when already cached; throws for
- * baselines-only sidecars. The caller passes the direct weight URL; the
- * pin's `url` names the canonical upstream to take it from.
+ * dir and verify their SHA-256 digest against `expectedSha256`. Verifies
+ * already-cached files as well and refuses unverified or mismatched payloads.
  */
 export async function ensureModelCached(
   sidecar: string,
   weightUrl: string,
+  expectedSha256: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const pin = pinFor(sidecar);
@@ -177,11 +190,23 @@ export async function ensureModelCached(
   if (pin.verdict.kind !== "pinned") {
     throw new Error(`sidecar ${sidecar} is baselines-only: nothing to download`);
   }
+  const want = normalizeSha256(expectedSha256);
   const dest = cachedWeightPath(pin.verdict.modelId, pin.verdict.file);
-  if (existsSync(dest)) return dest;
+  if (existsSync(dest)) {
+    const existing = await readFile(dest);
+    const got = sha256Hex(existing);
+    if (got !== want) {
+      throw new Error(`cached model checksum mismatch for ${dest}: expected ${want}, got ${got}`);
+    }
+    return dest;
+  }
   const res = await fetchImpl(weightUrl);
   if (!res.ok) throw new Error(`model download failed: ${res.status}`);
   const bytes = new Uint8Array(await res.arrayBuffer());
+  const got = sha256Hex(bytes);
+  if (got !== want) {
+    throw new Error(`model download SHA-256 mismatch: expected ${want}, got ${got}`);
+  }
   await mkdir(modelCacheDir(), { recursive: true });
   await writeFile(dest, bytes);
   return dest;
