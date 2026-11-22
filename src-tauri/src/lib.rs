@@ -35,14 +35,14 @@ fn io_err(e: impl ToString) -> std::io::Error {
 /// Rebuild the render graph from the current project and hand it to the
 /// live backend (no-op while stopped). Click-free by construction: the
 /// callback swaps between blocks.
-fn push_graph(state: &State<AppState>) {
-    let engine = state.engine.lock().expect("engine lock");
+fn push_graph(state: &State<AppState>) -> Result<(), String> {
+    let engine = state.engine.lock().map_err(|_| poisoned("engine"))?;
     let mut project = engine.project().clone();
     // Decoded `audio` assets ride along so `asset:` clips sound live;
     // engines without audio assets render byte-identical procedural audio.
     let bank = engine.sample_bank();
     drop(engine);
-    let transport = state.transport.lock().expect("transport lock");
+    let transport = state.transport.lock().map_err(|_| poisoned("transport"))?;
     let rate = transport.sample_rate();
     project.tempo = transport.tempo();
     drop(transport);
@@ -57,7 +57,7 @@ fn push_graph(state: &State<AppState>) {
                 Ok(d) => d,
                 Err(e) => {
                     eprintln!("graph delays failed: {e}");
-                    return;
+                    return Ok(());
                 }
             };
             (RenderGraph::from_audio_graph(topo), delays)
@@ -66,21 +66,23 @@ fn push_graph(state: &State<AppState>) {
     state
         .transport
         .lock()
-        .expect("transport lock")
+        .map_err(|_| poisoned("transport"))?
         .swap_graph(graph, delays, "mix".to_string());
+    Ok(())
 }
 
-fn push_graph_if_playing(state: &State<AppState>) {
+fn push_graph_if_playing(state: &State<AppState>) -> Result<(), String> {
     let state_now = state
         .transport
         .lock()
-        .expect("transport lock")
+        .map_err(|_| poisoned("transport"))?
         .engine_state();
     // Recording passes hear mix edits too: the loop was rendered at pass
     // start and every op re-renders it.
     if state_now == EngineState::Playing || state_now == EngineState::Recording {
-        push_graph(state);
+        push_graph(state)?;
     }
+    Ok(())
 }
 
 /// Announce a transport change: emit `engine_state_changed` (core
@@ -133,13 +135,19 @@ fn create_fresh_project(root: &Path, name: &str) -> Result<Engine, String> {
     unreachable!()
 }
 
-fn sync_project_tempo(state: &State<AppState>) {
-    let tempo = state.engine.lock().expect("engine lock").project().tempo;
+fn sync_project_tempo(state: &State<AppState>) -> Result<(), String> {
+    let tempo = state
+        .engine
+        .lock()
+        .map_err(|_| poisoned("engine"))?
+        .project()
+        .tempo;
     state
         .transport
         .lock()
-        .expect("transport lock")
+        .map_err(|_| poisoned("transport"))?
         .set_tempo(tempo);
+    Ok(())
 }
 
 #[tauri::command]
@@ -152,7 +160,7 @@ fn project_new<R: Runtime>(
     let project = engine.project().clone();
     let before = stop_for_switch(&state)?;
     *state.engine.lock().map_err(|_| poisoned("engine"))? = engine;
-    sync_project_tempo(&state);
+    sync_project_tempo(&state)?;
     announce_engine_state(&app, &state, before);
     Ok(project)
 }
@@ -187,7 +195,7 @@ fn project_open<R: Runtime>(
     let project = engine.project().clone();
     let before = stop_for_switch(&state)?;
     *state.engine.lock().map_err(|_| poisoned("engine"))? = engine;
-    sync_project_tempo(&state);
+    sync_project_tempo(&state)?;
     announce_engine_state(&app, &state, before);
     Ok(project)
 }
@@ -202,9 +210,9 @@ fn op_apply(op: Op, state: State<AppState>) -> Result<u64, String> {
         .apply(&op.actor, op.kind, &op.target, &op.value_json)
         .map_err(|e| e.to_string())?;
     if changes_tempo {
-        sync_project_tempo(&state);
+        sync_project_tempo(&state)?;
     }
-    push_graph_if_playing(&state);
+    push_graph_if_playing(&state)?;
     Ok(seq)
 }
 
@@ -217,9 +225,9 @@ fn op_undo(state: State<AppState>) -> Result<u64, String> {
         (seq, engine.project().tempo != before)
     };
     if changes_tempo {
-        sync_project_tempo(&state);
+        sync_project_tempo(&state)?;
     }
-    push_graph_if_playing(&state);
+    push_graph_if_playing(&state)?;
     Ok(seq)
 }
 
@@ -232,9 +240,9 @@ fn op_redo(state: State<AppState>) -> Result<u64, String> {
         (seq, engine.project().tempo != before)
     };
     if changes_tempo {
-        sync_project_tempo(&state);
+        sync_project_tempo(&state)?;
     }
-    push_graph_if_playing(&state);
+    push_graph_if_playing(&state)?;
     Ok(seq)
 }
 
@@ -257,7 +265,7 @@ fn track_add(name: String, state: State<AppState>) -> Result<String, String> {
         .apply("ui", OpKind::TrackAdded, &id, &json)
         .map_err(|e| e.to_string())?;
     drop(engine);
-    push_graph_if_playing(&state);
+    push_graph_if_playing(&state)?;
     Ok(id)
 }
 
@@ -269,7 +277,7 @@ fn clip_add(clip: Clip, state: State<AppState>) -> Result<String, String> {
         .apply("ui", OpKind::ClipAdded, &clip.id, &json)
         .map_err(|e| e.to_string())?;
     drop(engine);
-    push_graph_if_playing(&state);
+    push_graph_if_playing(&state)?;
     Ok(clip.id)
 }
 
@@ -286,7 +294,7 @@ fn param_set(target: ParamAddress, value: f64, state: State<AppState>) -> Result
             &value.to_string(),
         )
         .map_err(|e| e.to_string())?;
-    push_graph_if_playing(&state);
+    push_graph_if_playing(&state)?;
     Ok(())
 }
 
@@ -334,14 +342,17 @@ fn asset_list(state: State<AppState>) -> Vec<ccez_core::engine::AssetEntry> {
 /// a half-broken hardware layer reports `Stopped` instead. A real change
 /// emits `engine_state_changed`.
 #[tauri::command]
-fn engine_play<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> EngineState {
-    let transport = state.transport.lock().expect("transport lock");
+fn engine_play<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<AppState>,
+) -> Result<EngineState, String> {
+    let transport = state.transport.lock().map_err(|_| poisoned("transport"))?;
     let before = transport.engine_state();
     let started = transport.play();
     drop(transport);
     let reported = match started {
         Ok(s) => {
-            push_graph(&state);
+            push_graph(&state)?;
             s
         }
         Err(e) => {
@@ -350,19 +361,22 @@ fn engine_play<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> EngineS
         }
     };
     announce_engine_state(&app, &state, before);
-    reported
+    Ok(reported)
 }
 
 /// Stop the realtime transport: closes/suspends the output stream. A real
 /// change emits `engine_state_changed`.
 #[tauri::command]
-fn engine_stop<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> EngineState {
-    let transport = state.transport.lock().expect("transport lock");
+fn engine_stop<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<AppState>,
+) -> Result<EngineState, String> {
+    let transport = state.transport.lock().map_err(|_| poisoned("transport"))?;
     let before = transport.engine_state();
     let stopped = transport.stop();
     drop(transport);
     announce_engine_state(&app, &state, before);
-    stopped
+    Ok(stopped)
 }
 
 /// Start a recording pass: the transport runs (song audible for context)
@@ -371,14 +385,17 @@ fn engine_stop<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> EngineS
 /// reports `Stopped` instead of panicking. A real change emits
 /// `engine_state_changed`.
 #[tauri::command]
-fn engine_record<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> EngineState {
-    let transport = state.transport.lock().expect("transport lock");
+fn engine_record<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<AppState>,
+) -> Result<EngineState, String> {
+    let transport = state.transport.lock().map_err(|_| poisoned("transport"))?;
     let before = transport.engine_state();
     let started = transport.record();
     drop(transport);
     let reported = match started {
         Ok(s) => {
-            push_graph(&state);
+            push_graph(&state)?;
             s
         }
         Err(e) => {
@@ -387,18 +404,18 @@ fn engine_record<R: Runtime>(app: AppHandle<R>, state: State<AppState>) -> Engin
         }
     };
     announce_engine_state(&app, &state, before);
-    reported
+    Ok(reported)
 }
 
 /// Join/leave the Link session clock (`link.join` action, `L` key):
 /// returns the new membership. Tempo follows the session while joined.
 #[tauri::command]
-fn link_toggle(state: State<AppState>) -> bool {
-    state
+fn link_toggle(state: State<AppState>) -> Result<bool, String> {
+    Ok(state
         .transport
         .lock()
-        .expect("transport lock")
-        .toggle_link()
+        .map_err(|_| poisoned("transport"))?
+        .toggle_link())
 }
 
 /// Set the transport tempo in BPM; maps to block scheduling from the next
@@ -415,20 +432,20 @@ fn engine_set_tempo(tempo: f64, state: State<AppState>) -> Result<(), String> {
         .map_err(|_| poisoned("engine"))?
         .apply("ui", OpKind::TempoSet, "tempo", &tempo.to_string())
         .map_err(|e| e.to_string())?;
-    sync_project_tempo(&state);
-    push_graph_if_playing(&state);
+    sync_project_tempo(&state)?;
+    push_graph_if_playing(&state)?;
     Ok(())
 }
 
 /// Current transport position in beats (lock-free read; 0 while stopped).
 #[tauri::command]
-fn engine_position(state: State<AppState>) -> f64 {
-    state
+fn engine_position(state: State<AppState>) -> Result<f64, String> {
+    Ok(state
         .transport
         .lock()
-        .expect("transport lock")
+        .map_err(|_| poisoned("transport"))?
         .stats()
-        .position_beats
+        .position_beats)
 }
 
 /// Ask the release feed (`plugins.updater.endpoints`, the GitHub
@@ -755,14 +772,23 @@ mod regression_tests {
         let state = fixture.app.state::<AppState>();
         // Recording from a running transport flips state without a stream.
         state.transport.lock().unwrap().play_null();
-        assert_eq!(engine_record(app(&fixture), state.clone()), EngineState::Recording);
+        assert_eq!(
+            engine_record(app(&fixture), state.clone()).unwrap(),
+            EngineState::Recording
+        );
         assert_eq!(heard(), ["\"Recording\""]);
         // Already running: play is a no-op and must not emit.
-        assert_eq!(engine_play(app(&fixture), state.clone()), EngineState::Recording);
+        assert_eq!(
+            engine_play(app(&fixture), state.clone()).unwrap(),
+            EngineState::Recording
+        );
         assert!(heard().is_empty());
-        assert_eq!(engine_stop(app(&fixture), state.clone()), EngineState::Stopped);
+        assert_eq!(
+            engine_stop(app(&fixture), state.clone()).unwrap(),
+            EngineState::Stopped
+        );
         assert_eq!(heard(), ["\"Stopped\""]);
-        engine_stop(app(&fixture), state.clone());
+        let _ = engine_stop(app(&fixture), state.clone()).unwrap();
         assert!(heard().is_empty());
         // Opening or creating a project stops a running transport.
         let saved = fixture.root.join("other");
@@ -790,5 +816,49 @@ mod regression_tests {
             state.transport.lock().unwrap().engine_state(),
             EngineState::Stopped
         );
+    }
+
+    #[test]
+    fn poisoned_mutexes_do_not_panic_in_tauri_commands() {
+        let fixture = Fixture::new();
+        let handle = app(&fixture);
+        // Poison both engine and transport mutexes via panicking threads.
+        let h1 = handle.clone();
+        let _ = std::thread::spawn(move || {
+            let st = h1.state::<AppState>();
+            let _g = st.engine.lock().unwrap();
+            panic!("poison engine");
+        })
+        .join();
+        let h2 = handle.clone();
+        let _ = std::thread::spawn(move || {
+            let st = h2.state::<AppState>();
+            let _g = st.transport.lock().unwrap();
+            panic!("poison transport");
+        })
+        .join();
+        let state = fixture.app.state::<AppState>();
+        assert!(engine_play(handle.clone(), state.clone())
+            .unwrap_err()
+            .contains("poisoned"));
+        assert!(engine_stop(handle.clone(), state.clone())
+            .unwrap_err()
+            .contains("poisoned"));
+        assert!(engine_record(handle.clone(), state.clone())
+            .unwrap_err()
+            .contains("poisoned"));
+        assert!(link_toggle(state.clone()).unwrap_err().contains("poisoned"));
+        assert!(engine_position(state.clone())
+            .unwrap_err()
+            .contains("poisoned"));
+        assert!(project_new(handle.clone(), "Fresh".into(), state.clone())
+            .unwrap_err()
+            .contains("poisoned"));
+        assert!(engine_set_tempo(140.0, state.clone())
+            .unwrap_err()
+            .contains("poisoned"));
+        assert!(track_add("Drums".into(), state.clone())
+            .unwrap_err()
+            .contains("poisoned"));
     }
 }
