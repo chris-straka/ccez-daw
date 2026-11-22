@@ -3,18 +3,17 @@
 //!
 //! Teaching note: the realtime answer lives in [`engine`](super::engine)
 //! (`AdaptiveEngine`: stems x state, sample-accurate). This module is the
-//! rehearsal-room twin — the [`sfx`](crate::sfx) `audition` philosophy for
-//! music: resolve a [`GameStateSnapshot`] to a per-layer mix (audible layers
-//! x layer volume), then synthesize a deterministic stand-in tone per layer
-//! so the mix is audible without audio hardware or v0 clip decoders.
+//! rehearsal-room twin for music: resolve a [`GameStateSnapshot`] to a
+//! per-layer mix (audible layers x layer volume), then synthesize a
+//! deterministic stand-in tone per layer so the mix is audible without audio
+//! hardware or v0 clip decoders.
 //!
 //! - Audibility mirrors `AdaptiveCue::layers_for_state` (empty `states` =
 //!   always-on bed). If the preview and the engine ever disagree, the
 //!   engine wins and this preview is the bug.
-//! - Tone construction matches [`gaexport`](crate::gaexport) (220 cycles
-//!   per beat at the cue tempo, deterministic per-layer 0-4 semitone shift
-//!   from `cue:layer`, scaled by layer volume), so auditioned mixes and
-//!   exported stems agree in character.
+//! - Tone construction uses 220 cycles per beat at the cue tempo with a
+//!   deterministic per-layer 0-4 semitone shift from `cue:layer`, scaled by
+//!   layer volume.
 //! - Transition flavors are reported, never faked: `BarWait`/`Stinger`
 //!   degrade to a cut, exactly like the engine's `Degraded::Yes`.
 //! - Pure function of (cue, snapshot): same state, same samples, every run.
@@ -271,61 +270,5 @@ mod tests {
             effective_transition(&cue, "explore", "menu"),
             AuditionTransition::Direct(TransitionKind::Cut)
         );
-    }
-
-    #[test]
-    fn auditioned_cue_passes_export_validation() {
-        use crate::gaexport::{build_package, validate_package, ExportOptions, ExportRequest};
-        use crate::model::{Clip, ClipKind, Project};
-
-        let cue = demo_cue();
-        // The auditioned states must both be non-silent before export ships.
-        let cfg = AuditionConfig {
-            sample_rate: 8000,
-            seconds: 1.0,
-        };
-        assert!(rms(&render_audition(&cue, &snap("explore"), &cfg)) > 0.01);
-        assert!(rms(&render_audition(&cue, &snap("combat"), &cfg)) > 0.01);
-
-        let mut project = Project::new("proj_aud", "Audition export");
-        for id in ["clip_a", "clip_b"] {
-            project.clips.push(Clip {
-                id: id.to_string(),
-                track_id: "trk_1".to_string(),
-                name: id.to_string(),
-                start_beats: 0.0,
-                length_beats: 4.0,
-                kind: ClipKind::Audio,
-                source: format!("samples/{id}.wav"),
-            });
-        }
-        let options = ExportOptions {
-            sample_rate: 8000,
-            seed: crate::gaexport::DEFAULT_EXPORT_SEED,
-        };
-        let request = ExportRequest::new("audition-demo", vec![cue.id.clone()], vec![]);
-        let built = build_package(&project, &[cue.clone()], &[], &[], &request, options)
-            .expect("auditioned cue builds");
-        // One stem per layer, loop-clean music loops.
-        assert_eq!(built.stems.len(), cue.layers.len());
-        for stem in &built.stems {
-            assert!(matches!(
-                stem.stem.kind,
-                crate::game_audio::StemKind::MusicLayer
-            ));
-            assert!(stem.stem.loop_start_beats < stem.stem.loop_end_beats);
-        }
-        let dir = std::env::temp_dir().join(format!(
-            "ccez-ga-audition-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos()
-        ));
-        crate::gaexport::write_package(&dir, &built).expect("write package");
-        let report = validate_package(&dir, &project, &[cue], &[], &[], options);
-        assert!(report.is_ok(), "export must validate: {:?}", report.errors);
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

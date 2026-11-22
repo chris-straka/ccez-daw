@@ -7,7 +7,6 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { InMemoryBackend } from "../src/backend";
 import { ComposeStore, COMPOSE_TOOL_NAMES, midiPitch, parseNoteText, sequenceLength, targetDirs } from "../src/compose";
 import { createServer } from "../src/index";
-import { GameAudioStore } from "../src/gameaudio";
 
 const STUB = resolve(import.meta.dir, "fixtures/stub-compose");
 const REPO = resolve(import.meta.dir, "../..");
@@ -194,7 +193,7 @@ describe("compose tools over MCP", () => {
 
   test.skipIf(!e2e)("an agent composes, previews and exports through MCP", async () => {
     const [ct, st] = InMemoryTransport.createLinkedPair();
-    await createServer(new InMemoryBackend(), new GameAudioStore(), new ComposeStore()).connect(st);
+    await createServer(new InMemoryBackend(), new ComposeStore()).connect(st);
     const client = new Client({ name: "compose-e2e", version: "0" });
     await client.connect(ct);
     const call = async (name: string, args: Record<string, unknown>) => {

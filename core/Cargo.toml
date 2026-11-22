@@ -21,10 +21,6 @@ path = "src/bin/plugin-worker.rs"
 name = "ccez-compose"
 path = "src/bin/ccez-compose.rs"
 
-[[bin]]
-name = "export-validator"
-path = "src/bin/export-validator.rs"
-
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
