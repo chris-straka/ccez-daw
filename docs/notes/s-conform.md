@@ -106,6 +106,5 @@ for the exporter.
 - New IPC/bounce endpoints: the panel previews with local math and calls
   the existing bounce path; no `contracts/` or `ui/src/generated/*`
   surface was added.
-- Spec certification: approximate rows are convention. When Nintendo,
-  Microsoft, or PC-store guidance publishes numbers, update the two
-  tables and this note in one commit.
+- Spec certification: approximate rows are convention. When platform
+  holders publish numbers, update the two tables and this note in one commit.

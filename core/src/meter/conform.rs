@@ -87,7 +87,7 @@ pub const PRESET_PC: ConformancePreset = ConformancePreset::of(
     "convention: desktop/streaming finish",
     true,
 );
-/// Switch: Nintendo publishes no LUFS spec — console convention.
+/// Switch: platform holder publishes no LUFS spec — console convention.
 pub const PRESET_SWITCH: ConformancePreset = ConformancePreset::of(
     "switch",
     "Switch (console convention)",
@@ -371,10 +371,10 @@ mod tests {
     #[test]
     fn unknown_preset_errors_cleanly() {
         let stem = tone_stem(8000, 1.0, 0.5);
-        assert!(conform_to_preset(&stem, "gameboy").is_err());
+        assert!(conform_to_preset(&stem, "unknown_target").is_err());
         let p = Project::new("p", "P");
         let cfg = BounceConfig::new(8000, 0.0, 1.0).expect("config");
-        assert!(conform_mix_to_preset(&p, &cfg, "gameboy").is_err());
+        assert!(conform_mix_to_preset(&p, &cfg, "unknown_target").is_err());
     }
 
     #[test]

@@ -27,7 +27,7 @@ describe("conformance presets", () => {
     for (const id of ["pc", "switch", "xbox", "mobile"]) {
       expect(presetById(id)?.approximate).toBe(true);
     }
-    expect(presetById("gameboy")).toBeUndefined();
+    expect(presetById("unknown_target")).toBeUndefined();
   });
 
   test("preview gain hits the target; the ceiling wins when hot", () => {
