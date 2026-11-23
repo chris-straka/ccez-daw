@@ -4,6 +4,7 @@
 //! ccez-compose validate <composition.json>
 //! ccez-compose preview  <composition.json> --out <file.wav|file.mp3> [--plan <plan.json>]
 //! ccez-compose export   <composition.json> --out <dir> [--plan <plan.json>]
+//! ccez-compose export-takes <takes.json> --out <dir> [--plan <plan.json>]
 //! ccez-compose patches   [--family <family>]
 //! ccez-compose instrument <id>
 //! ccez-compose fetch     <id>... | all
@@ -29,7 +30,7 @@ use ccez_core::compose::render::{
     default_plan, interleave, render_preview, render_stems, wav_bytes, PlanStep,
 };
 use ccez_core::compose::sampler::SampledInstrument;
-use ccez_core::compose::{audioforge, library, synth, Composition};
+use ccez_core::compose::{audioforge, library, synth, takes, Composition};
 use serde_json::{json, Value};
 
 fn main() -> ExitCode {
@@ -160,8 +161,26 @@ fn run(args: Vec<String>) -> Result<serde_json::Value, String> {
             let report = audioforge::export(&c, &plan, &out)?;
             Ok(serde_json::to_value(report).map_err(|e| e.to_string())?)
         }
+        "export-takes" => {
+            let spec_path = args.get(1).ok_or("export-takes: missing <takes.json>")?;
+            let out = PathBuf::from(flag(&args, "--out").ok_or("export-takes: missing --out <dir>")?);
+            let text = std::fs::read_to_string(spec_path).map_err(|e| format!("{spec_path}: {e}"))?;
+            let file_spec: takes::TakePackFileSpec =
+                serde_json::from_str(&text).map_err(|e| format!("{spec_path}: {e}"))?;
+            let base = Path::new(spec_path).parent().unwrap_or_else(|| Path::new("."));
+            let spec = file_spec.load_from(base)?;
+            let plan = match flag(&args, "--plan") {
+                Some(p) => {
+                    let pt = std::fs::read_to_string(&p).map_err(|e| format!("{p}: {e}"))?;
+                    serde_json::from_str(&pt).map_err(|e| format!("{p}: {e}"))?
+                }
+                None => takes::default_take_plan(&spec),
+            };
+            let report = takes::export_takes(&spec, &plan, &out)?;
+            Ok(serde_json::to_value(report).map_err(|e| e.to_string())?)
+        }
         _ => Err(format!(
-            "unknown command {cmd:?} (want validate | preview | export | patches | instrument | fetch | samples)"
+            "unknown command {cmd:?} (want validate | preview | export | export-takes | patches | instrument | fetch | samples)"
         )),
     }
 }

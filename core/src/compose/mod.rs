@@ -38,6 +38,7 @@ pub mod sf2;
 pub mod sfz;
 pub mod sha256;
 pub mod synth;
+pub mod takes;
 pub mod wavread;
 
 use serde::{Deserialize, Deserializer, Serialize};
