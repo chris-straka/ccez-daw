@@ -1259,12 +1259,15 @@ impl AuBackend {
     #[cfg(target_os = "macos")]
     fn render_chunk(&mut self, chunk: &[f32]) -> Result<Vec<f32>, AuError> {
         let frames = chunk.len() as u32;
+        // Keep `ctx` live on this stack frame across `AudioUnitRender` below;
+        // declaring it inside `if self.needs_input` let release builds reuse its
+        // stack slot before the AU callback read it.
+        let ctx = RenderInput { frames: chunk };
         if self.needs_input {
-            let ctx = RenderInput { frames: chunk };
             let callback = ffi::AuRenderCallback {
                 input_proc: Some(au_input_proc),
-                // SAFETY: `ctx` outlives the synchronous render below;
-                // the unit never retains it (re-registered every chunk).
+                // SAFETY: `ctx` lives through `black_box(&ctx)` after
+                // `AudioUnitRender` below; the unit is driven synchronously.
                 input_proc_ref_con: &ctx as *const RenderInput<'_> as *mut std::ffi::c_void,
             };
             // A stale callback must never survive the chunk whose stack
@@ -1323,6 +1326,7 @@ impl AuBackend {
                 &mut list,
             )
         };
+        let _ = std::hint::black_box(&ctx);
         if status != 0 {
             return Err(AuError::RenderFailed { status });
         }
