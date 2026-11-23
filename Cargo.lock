@@ -20,7 +20,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "af-core"
 version = "0.1.0"
-source = "git+https://github.com/chris-straka/af-core.git?rev=4716fbeedd2a091350d3e6097dfa0da083a55985#4716fbeedd2a091350d3e6097dfa0da083a55985"
+source = "git+https://github.com/chris-straka/af-core.git?rev=152d1f1531cf9daf67b500c7cd43a02390a9c914#152d1f1531cf9daf67b500c7cd43a02390a9c914"
 dependencies = [
  "serde",
 ]

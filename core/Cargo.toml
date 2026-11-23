@@ -22,7 +22,7 @@ name = "ccez-compose"
 path = "src/bin/ccez-compose.rs"
 
 [dependencies]
-af-core = { git = "https://github.com/chris-straka/af-core.git", rev = "4716fbeedd2a091350d3e6097dfa0da083a55985", default-features = false }
+af-core = { git = "https://github.com/chris-straka/af-core.git", rev = "152d1f1531cf9daf67b500c7cd43a02390a9c914", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15"
