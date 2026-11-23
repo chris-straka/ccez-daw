@@ -29,11 +29,21 @@ pub struct JobControl {
     cancel: Arc<AtomicBool>,
 }
 
+fn lock_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            m.clear_poison();
+            poisoned.into_inner()
+        }
+    }
+}
+
 impl JobControl {
     /// Report progress in 0.0..=1.0 (clamped). Best-effort: the DAW reads
     /// it via [`Job::poll`]; transcription never depends on it.
     pub fn set_progress(&self, p: f64) {
-        *self.progress.lock().expect("job progress lock") = p.clamp(0.0, 1.0);
+        *lock_recover(&self.progress) = p.clamp(0.0, 1.0);
     }
 
     /// Workers check this between chunks and return early when set, so
@@ -57,6 +67,19 @@ pub struct Job<T> {
     handle: Option<JoinHandle<()>>,
 }
 
+struct PanicCancelGuard<T> {
+    inner: Arc<Mutex<JobInner<T>>>,
+    finished: bool,
+}
+
+impl<T> Drop for PanicCancelGuard<T> {
+    fn drop(&mut self) {
+        if !self.finished {
+            lock_recover(&self.inner).status = JobStatus::Cancelled;
+        }
+    }
+}
+
 impl<T: Send + 'static> Job<T> {
     /// Spawn `work` on a new thread. The closure receives a [`JobControl`]
     /// and returns the finished value.
@@ -76,17 +99,22 @@ impl<T: Send + 'static> Job<T> {
         let progress2 = Arc::clone(&progress);
         let cancel2 = Arc::clone(&cancel);
         let handle = std::thread::spawn(move || {
-            inner2.lock().expect("job lock").status = JobStatus::Running;
+            let mut panic_guard = PanicCancelGuard {
+                inner: Arc::clone(&inner2),
+                finished: false,
+            };
+            lock_recover(&inner2).status = JobStatus::Running;
             let value = work(&ctl);
-            let mut guard = inner2.lock().expect("job lock");
+            let mut guard = lock_recover(&inner2);
             if cancel2.load(Ordering::SeqCst) {
                 guard.status = JobStatus::Cancelled;
             } else {
                 guard.status = JobStatus::Done;
                 guard.progress = 1.0;
-                *progress2.lock().expect("job progress lock") = 1.0;
+                *lock_recover(&progress2) = 1.0;
                 guard.result = Some(value);
             }
+            panic_guard.finished = true;
         });
         Self {
             inner,
@@ -98,8 +126,8 @@ impl<T: Send + 'static> Job<T> {
 
     /// Non-blocking snapshot: current status plus last reported progress.
     pub fn poll(&self) -> (JobStatus, f64) {
-        let guard = self.inner.lock().expect("job lock");
-        let p = *self.progress.lock().expect("job progress lock");
+        let guard = lock_recover(&self.inner);
+        let p = *lock_recover(&self.progress);
         (guard.status, p)
     }
 
@@ -114,7 +142,7 @@ impl<T: Send + 'static> Job<T> {
     where
         T: Clone,
     {
-        self.inner.lock().expect("job lock").result.clone()
+        lock_recover(&self.inner).result.clone()
     }
 
     /// Block until the worker finishes (at most `timeout`), then take the
@@ -126,7 +154,7 @@ impl<T: Send + 'static> Job<T> {
         let start = Instant::now();
         loop {
             {
-                let guard = self.inner.lock().expect("job lock");
+                let guard = lock_recover(&self.inner);
                 if guard.status == JobStatus::Done || guard.status == JobStatus::Cancelled {
                     break;
                 }
@@ -136,7 +164,7 @@ impl<T: Send + 'static> Job<T> {
             }
             std::thread::sleep(Duration::from_millis(5));
         }
-        self.inner.lock().expect("job lock").result.clone()
+        lock_recover(&self.inner).result.clone()
     }
 }
 
@@ -186,5 +214,17 @@ mod tests {
         job.cancel();
         job.join();
         assert_eq!(job.poll().0, JobStatus::Cancelled);
+    }
+
+    #[test]
+    fn panicking_worker_marks_cancelled_and_recovers_locks() {
+        let mut job: Job<u32> = Job::submit(|ctl| {
+            ctl.set_progress(0.25);
+            panic!("simulated worker failure");
+        });
+        assert_eq!(job.wait(Duration::from_millis(500)), None);
+        let (status, _) = job.poll();
+        assert_eq!(status, JobStatus::Cancelled);
+        assert_eq!(job.try_take(), None);
     }
 }

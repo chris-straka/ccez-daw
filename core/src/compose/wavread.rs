@@ -16,10 +16,10 @@ impl Audio {
         self.channels.first().map_or(0, Vec::len)
     }
     pub fn left(&self) -> &[f32] {
-        &self.channels[0]
+        self.channels.first().map_or(&[], Vec::as_slice)
     }
     pub fn right(&self) -> &[f32] {
-        self.channels.last().expect("at least one channel")
+        self.channels.last().map_or(&[], Vec::as_slice)
     }
 }
 
@@ -41,7 +41,8 @@ pub fn decode(bytes: &[u8]) -> Result<Audio, String> {
     while i + 8 <= bytes.len() {
         let id = &bytes[i..i + 4];
         let len = u32le(bytes, i + 4) as usize;
-        let body = &bytes[i + 8..(i + 8 + len).min(bytes.len())];
+        let end = i.saturating_add(8).saturating_add(len).min(bytes.len());
+        let body = &bytes[i + 8..end];
         match id {
             b"fmt " if body.len() >= 16 => {
                 let mut tag = u16le(body, 0);
@@ -55,12 +56,15 @@ pub fn decode(bytes: &[u8]) -> Result<Audio, String> {
                 let start = u32le(body, 36 + 8) as usize;
                 let end = u32le(body, 36 + 12) as usize;
                 if end > start {
-                    sample_loop = Some((start, end + 1));
+                    sample_loop = Some((start, end.saturating_add(1)));
                 }
             }
             _ => {}
         }
-        i += 8 + len + (len & 1);
+        i = i
+            .saturating_add(8)
+            .saturating_add(len)
+            .saturating_add(len & 1);
     }
     let (tag, ch, rate, bits) = fmt.ok_or("no fmt chunk")?;
     let data = data.ok_or("no data chunk")?;
@@ -161,5 +165,17 @@ mod tests {
         b.extend_from_slice(&[0x00, 0x00, 0x40]);
         let a = decode(&b).unwrap();
         assert!((a.left()[0] - 0.5).abs() < 1e-6, "{:?}", a.left());
+    }
+
+    #[test]
+    fn empty_audio_channels_do_not_panic_on_accessors() {
+        let empty = Audio {
+            sample_rate: 48_000,
+            channels: vec![],
+            sample_loop: None,
+        };
+        assert_eq!(empty.frames(), 0);
+        assert!(empty.left().is_empty());
+        assert!(empty.right().is_empty());
     }
 }

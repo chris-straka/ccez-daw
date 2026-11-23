@@ -64,15 +64,12 @@ fn blocks(text: &str) -> Result<Vec<(String, Ops)>, String> {
             let mut key: Option<String> = None;
             let mut val = String::new();
             for tok in chunk.split_whitespace() {
-                let eq = tok.find('=');
-                let is_op = eq.is_some_and(|i| {
+                if let Some(i) = tok.find('=').filter(|&i| {
                     i > 0
                         && tok[..i]
                             .chars()
                             .all(|c| c.is_ascii_alphanumeric() || c == '_')
-                });
-                if is_op {
-                    let i = eq.unwrap();
+                }) {
                     if let (Some(k), Some(b)) = (key.take(), out.last_mut()) {
                         b.1.insert(k, val.trim().to_string());
                     }

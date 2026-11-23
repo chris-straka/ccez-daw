@@ -185,7 +185,7 @@ struct Inner {
 
 impl std::fmt::Debug for TransportController {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let inner = self.inner.lock().expect("transport lock");
+        let inner = self.lock_inner();
         f.debug_struct("TransportController")
             .field("state", &inner.state)
             .field("backend", &inner.backend)
@@ -194,6 +194,18 @@ impl std::fmt::Debug for TransportController {
 }
 
 impl TransportController {
+    fn lock_inner(&self) -> std::sync::MutexGuard<'_, Inner> {
+        match self.inner.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Recover inner state rather than cascading a panic into the
+                // audio shell; clear the poison flag so future locks stay clean.
+                self.inner.clear_poison();
+                poisoned.into_inner()
+            }
+        }
+    }
+
     pub fn new() -> Self {
         Self::with_link_bus(&LinkBus::new(120.0))
     }
@@ -226,7 +238,7 @@ impl TransportController {
     /// consistent, never half-open.
     pub fn play(&self) -> Result<EngineState, DeviceError> {
         {
-            let inner = self.inner.lock().expect("transport lock");
+            let inner = self.lock_inner();
             // Playing or already Recording: the pump is running, never open
             // a second stream — `engine_play` during a take is a no-op.
             if inner.state == EngineState::Playing || inner.state == EngineState::Recording {
@@ -247,7 +259,7 @@ impl TransportController {
         let thread = LiveCpal::spawn(self.counters.clone(), ready_tx, stop_rx);
         match ready_rx.recv() {
             Ok(Ok((engine, sample_rate))) => {
-                let mut inner = self.inner.lock().expect("transport lock");
+                let mut inner = self.lock_inner();
                 inner.cpal = Some(LiveCpal {
                     engine,
                     stop_tx,
@@ -285,16 +297,12 @@ impl TransportController {
     /// tests (and headless hosts) can prove the full start/stop lifecycle
     /// without hardware; `play` calls this itself when cpal reports no
     /// device.
-    /// Start the transport on the null device unconditionally. Public so
-    /// tests (and headless hosts) can prove the full start/stop lifecycle
-    /// without hardware; `play` calls this itself when cpal reports no
-    /// device.
     pub fn play_null(&self) -> EngineState {
         self.start_null(EngineState::Playing)
     }
 
     fn start_null(&self, state: EngineState) -> EngineState {
-        let mut inner = self.inner.lock().expect("transport lock");
+        let mut inner = self.lock_inner();
         if inner.state == EngineState::Playing || inner.state == EngineState::Recording {
             if state == EngineState::Recording {
                 inner.state = EngineState::Recording;
@@ -317,12 +325,20 @@ impl TransportController {
         // 512-frame block at 44100 Hz is ~11.6 ms); stats derive position
         // from blocks rendered with the same math.
         let beat_nanos = (NULL_BLOCK_FRAMES as u64 * 1_000_000_000) / rate as u64;
-        let pump = std::thread::spawn(move || {
-            let mut backend = NullBackend::with_counters(rx, params, counters);
-            while backend.pump(NULL_BLOCK_FRAMES) {
-                std::thread::sleep(std::time::Duration::from_nanos(beat_nanos));
+        let pump = match std::thread::Builder::new()
+            .name("ccez-null-pump".to_string())
+            .spawn(move || {
+                let mut backend = NullBackend::with_counters(rx, params, counters);
+                while backend.pump(NULL_BLOCK_FRAMES) {
+                    std::thread::sleep(std::time::Duration::from_nanos(beat_nanos));
+                }
+            }) {
+            Ok(handle) => handle,
+            Err(e) => {
+                eprintln!("null pump thread failed to spawn: {e}");
+                return EngineState::Stopped;
             }
-        });
+        };
         inner.null = Some(LiveNull {
             engine,
             pump: Some(pump),
@@ -337,7 +353,7 @@ impl TransportController {
     /// the punch/take path. Falls back to `record_null` with no hardware.
     pub fn record(&self) -> Result<EngineState, DeviceError> {
         {
-            let mut inner = self.inner.lock().expect("transport lock");
+            let mut inner = self.lock_inner();
             if inner.state == EngineState::Playing || inner.state == EngineState::Recording {
                 inner.state = EngineState::Recording;
                 return Ok(EngineState::Recording);
@@ -357,7 +373,7 @@ impl TransportController {
         let thread = LiveCpal::spawn(self.counters.clone(), ready_tx, stop_rx);
         match ready_rx.recv() {
             Ok(Ok((engine, sample_rate))) => {
-                let mut inner = self.inner.lock().expect("transport lock");
+                let mut inner = self.lock_inner();
                 inner.cpal = Some(LiveCpal {
                     engine,
                     stop_tx,
@@ -390,7 +406,7 @@ impl TransportController {
         // pump only exits after draining it, and dropping the senders first
         // would leave the pump spinning on a disconnected channel forever.
         {
-            let inner = self.inner.lock().expect("transport lock");
+            let inner = self.lock_inner();
             if inner.state != EngineState::Playing && inner.state != EngineState::Recording {
                 return inner.state.clone();
             }
@@ -402,7 +418,7 @@ impl TransportController {
             }
         }
         let (null_handle, rate, tempo) = {
-            let mut inner = self.inner.lock().expect("transport lock");
+            let mut inner = self.lock_inner();
             // Shut the hardware stream down (drops it on its owner thread,
             // halting audio) before reporting stopped.
             if let Some(cpal) = inner.cpal.as_mut() {
@@ -440,7 +456,7 @@ impl TransportController {
     pub fn set_tempo(&self, tempo_bpm: f64) {
         if tempo_bpm.is_finite() && tempo_bpm > 0.0 {
             let clamped = tempo_bpm.clamp(1.0, 960.0);
-            let inner = self.inner.lock().expect("transport lock");
+            let inner = self.lock_inner();
             if inner.link_enabled {
                 inner.link.set_tempo(clamped);
             } else {
@@ -453,7 +469,7 @@ impl TransportController {
     /// Current effective tempo: the session tempo while Link is enabled,
     /// the local tempo otherwise.
     pub fn tempo(&self) -> f64 {
-        let inner = self.inner.lock().expect("transport lock");
+        let inner = self.lock_inner();
         if inner.link_enabled {
             inner.link.tempo()
         } else {
@@ -466,7 +482,7 @@ impl TransportController {
     /// jump; disabling snapshots the session tempo back into the local
     /// tempo for the same reason. Never touches audio state.
     pub fn set_link_enabled(&self, enabled: bool) {
-        let mut inner = self.inner.lock().expect("transport lock");
+        let mut inner = self.lock_inner();
         if inner.link_enabled == enabled {
             return;
         }
@@ -482,7 +498,7 @@ impl TransportController {
     }
 
     pub fn link_enabled(&self) -> bool {
-        self.inner.lock().expect("transport lock").link_enabled
+        self.lock_inner().link_enabled
     }
 
     /// Join/leave the Link session clock (the `link.join` action): enabling
@@ -496,19 +512,19 @@ impl TransportController {
 
     /// Peers currently on this transport's Link session (including self).
     pub fn link_num_peers(&self) -> usize {
-        self.inner.lock().expect("transport lock").link.num_peers()
+        self.lock_inner().link.num_peers()
     }
 
     /// This transport's session phase in beats (`[0, quantum)`), on the
     /// shared session clock — independent of play/stop, like Link.
     pub fn link_phase(&self) -> f64 {
-        self.inner.lock().expect("transport lock").link.phase()
+        self.lock_inner().link.phase()
     }
 
     /// Join one more peer onto this transport's session (a handle for
     /// tests and future discovery layers — not a new transport).
     pub fn join_link_peer(&self) -> LinkSession {
-        self.inner.lock().expect("transport lock").link.join_peer()
+        self.lock_inner().link.join_peer()
     }
 
     /// Swap the rendered graph on the live output (whatever the backend).
@@ -519,7 +535,7 @@ impl TransportController {
         delays: std::collections::BTreeMap<(String, String), u64>,
         out_node: String,
     ) {
-        let inner = self.inner.lock().expect("transport lock");
+        let inner = self.lock_inner();
         let engine = inner
             .cpal
             .as_ref()
@@ -537,13 +553,13 @@ impl TransportController {
     /// Sample rate the backends render at. The live loop is pre-rendered
     /// at this rate so loop frames and device frames agree exactly.
     pub fn sample_rate(&self) -> u32 {
-        self.inner.lock().expect("transport lock").sample_rate
+        self.lock_inner().sample_rate
     }
 
     /// Current engine state, counters, and clock in one snapshot.
     /// Link status is visible as `link_enabled`, `link_peers`, and `link_phase`.
     pub fn stats(&self) -> TransportStats {
-        let inner = self.inner.lock().expect("transport lock");
+        let inner = self.lock_inner();
         let (blocks, underruns, overruns) = self.counters.snapshot();
         // Live null-path position: derive from blocks rendered with the
         // current tempo (same math the pump uses per block).
@@ -574,7 +590,7 @@ impl TransportController {
     }
 
     pub fn engine_state(&self) -> EngineState {
-        self.inner.lock().expect("transport lock").state.clone()
+        self.lock_inner().state.clone()
     }
 }
 
@@ -868,5 +884,32 @@ mod tests {
         // Local control again, session untouched by local edits.
         t.set_tempo(110.0);
         assert_eq!(t.tempo(), 110.0);
+    }
+
+    #[test]
+    fn poisoned_transport_lock_recovers_without_panicking() {
+        let t = std::sync::Arc::new(TransportController::new());
+        let t2 = std::sync::Arc::clone(&t);
+        let _ = std::thread::spawn(move || {
+            let _guard = t2.inner.lock().unwrap();
+            panic!("simulated transport lock panic");
+        })
+        .join();
+        assert!(t.inner.is_poisoned());
+        assert_eq!(t.engine_state(), EngineState::Stopped);
+        assert_eq!(t.sample_rate(), DEFAULT_SAMPLE_RATE);
+        t.set_tempo(135.0);
+        assert_eq!(t.tempo(), 135.0);
+        assert!(t.toggle_link());
+        assert!(t.link_enabled());
+        assert_eq!(t.link_num_peers(), 1);
+        assert!(t.link_phase().is_finite());
+        let stats = t.stats();
+        assert_eq!(stats.tempo_bpm, 135.0);
+        assert!(!format!("{t:?}").is_empty());
+        assert_eq!(t.play_null(), EngineState::Playing);
+        let (g, delays) = rig();
+        t.swap_graph(g, delays, "mix".to_string());
+        assert_eq!(t.stop(), EngineState::Stopped);
     }
 }

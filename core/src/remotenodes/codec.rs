@@ -167,7 +167,8 @@ impl<'a> Reader<'a> {
     }
     fn audio(&mut self) -> Result<Vec<f32>, CodecError> {
         let n = self.u32()? as usize;
-        let raw = self.take(n * 4)?;
+        let byte_len = n.checked_mul(4).ok_or(CodecError::Truncated)?;
+        let raw = self.take(byte_len)?;
         let mut out = Vec::with_capacity(n);
         for chunk in raw.as_chunks::<4>().0 {
             out.push(f32::from_le_bytes(*chunk));

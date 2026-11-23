@@ -58,7 +58,13 @@ impl ParamBank {
     }
 
     pub fn set(&self, target: &str, value: f32) {
-        let mut cells = self.cells.lock().expect("param bank");
+        let mut cells = match self.cells.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                self.cells.clear_poison();
+                e.into_inner()
+            }
+        };
         cells
             .entry(target.to_string())
             .or_insert_with(|| Arc::new(AtomicU32::new(0)))
@@ -71,7 +77,15 @@ impl ParamBank {
     /// callback does no per-param `String` clone or map insert — only
     /// changed params allocate, and only once per change.
     pub fn refresh_cache(&self, cache: &mut HashMap<String, f32>) {
-        if let Ok(cells) = self.cells.try_lock() {
+        let guard = match self.cells.try_lock() {
+            Ok(g) => Some(g),
+            Err(std::sync::TryLockError::Poisoned(e)) => {
+                self.cells.clear_poison();
+                Some(e.into_inner())
+            }
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        };
+        if let Some(cells) = guard {
             for (target, cell) in cells.iter() {
                 let value = f32::from_bits(cell.load(Ordering::Relaxed));
                 if cache.get(target.as_str()).copied() != Some(value) {
@@ -693,5 +707,20 @@ mod tests {
         let drained = pump.join().expect("pump thread");
         // Every param + swap + stop arrived; none blocked.
         assert_eq!(drained, 10_002);
+    }
+
+    #[test]
+    fn poisoned_param_bank_recovers_without_panicking() {
+        let bank = Arc::new(ParamBank::new());
+        let bank2 = Arc::clone(&bank);
+        let _ = std::thread::spawn(move || {
+            let _guard = bank2.cells.lock().unwrap();
+            panic!("simulated param bank panic");
+        })
+        .join();
+        bank.set("mix:volume", 0.75);
+        let mut cache = HashMap::new();
+        bank.refresh_cache(&mut cache);
+        assert_eq!(cache.get("mix:volume").copied(), Some(0.75));
     }
 }

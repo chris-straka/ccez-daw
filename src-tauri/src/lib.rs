@@ -132,7 +132,7 @@ fn create_fresh_project(root: &Path, name: &str) -> Result<Engine, String> {
             Err(e) => return Err(e.to_string()),
         }
     }
-    unreachable!()
+    Err("exhausted project directory suffixes".to_string())
 }
 
 fn sync_project_tempo(state: &State<AppState>) -> Result<(), String> {
@@ -515,9 +515,13 @@ pub fn run() {
             .map_err(io_err)?;
             let transport = TransportController::new();
             transport.set_tempo(engine.project().tempo);
+            let projects_root = dir
+                .parent()
+                .ok_or_else(|| io_err("missing app project parent"))?
+                .join("projects");
             app.manage(AppState {
                 engine: Mutex::new(engine),
-                projects_root: dir.parent().expect("app project parent").join("projects"),
+                projects_root,
                 transport: Mutex::new(transport),
             });
             Ok(())

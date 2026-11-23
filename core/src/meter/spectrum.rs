@@ -192,7 +192,8 @@ pub fn dominant_freq(samples: &[f32], sample_rate: f32) -> f32 {
     let (best, peak) = dft
         .iter()
         .enumerate()
-        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .filter(|(_, v)| v.is_finite())
+        .max_by(|a, b| a.1.total_cmp(b.1))
         .map(|(i, &v)| (i, v))
         .unwrap_or((0, 0.0));
     if peak <= 0.0 {
@@ -309,5 +310,12 @@ mod tests {
         let (lo, hi) = (peak_bin(55.0), peak_bin(12_000.0));
         assert!(lo < 4, "bass bin {lo}");
         assert!(hi > 24, "treble bin {hi}");
+    }
+
+    #[test]
+    fn dominant_freq_handles_nan_without_panicking() {
+        let samples = vec![f32::NAN; 64];
+        let freq = dominant_freq(&samples, 48_000.0);
+        assert!(freq.is_finite());
     }
 }

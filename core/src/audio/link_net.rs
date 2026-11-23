@@ -155,7 +155,13 @@ impl UdpLinkNode {
     /// Add a peer to heartbeat to (idempotent; self-addresses are ignored
     /// on send).
     pub fn add_peer(&self, peer: SocketAddr) {
-        let mut peers = self.inner.peers.lock().expect("link-net peers lock");
+        let mut peers = match self.inner.peers.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                self.inner.peers.clear_poison();
+                e.into_inner()
+            }
+        };
         if !peers.contains(&peer) {
             peers.push(peer);
         }
@@ -186,7 +192,14 @@ impl UdpLinkNode {
     /// Stop the background thread. Idempotent; `Drop` calls this too.
     pub fn shutdown(&self) {
         self.inner.stop.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.thread.lock().expect("link-net thread lock").take() {
+        let handle = match self.thread.lock() {
+            Ok(mut g) => g.take(),
+            Err(e) => {
+                self.thread.clear_poison();
+                e.into_inner().take()
+            }
+        };
+        if let Some(handle) = handle {
             let _ = handle.join();
         }
     }
@@ -230,7 +243,13 @@ fn run(inner: Arc<NodeInner>) {
             };
             let wire = encode(&pkt);
             let own = inner.socket.local_addr().ok();
-            let peers = inner.peers.lock().expect("link-net peers lock").clone();
+            let peers = match inner.peers.lock() {
+                Ok(g) => g.clone(),
+                Err(e) => {
+                    inner.peers.clear_poison();
+                    e.into_inner().clone()
+                }
+            };
             for peer in &peers {
                 // Never loop back to ourselves.
                 if Some(*peer) == own {

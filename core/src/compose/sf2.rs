@@ -204,7 +204,10 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
     let pool_frames = (l.smpl_len / 2) as u32;
     let mut out = Vec::new();
     for pz in zones(pbag, pgen, pb0, pb1, INSTRUMENT) {
-        let ii = index(get(&pz, INSTRUMENT).unwrap());
+        let Some(inst_gen) = get(&pz, INSTRUMENT) else {
+            continue;
+        };
+        let ii = index(inst_gen);
         // This record and the next (its bag range ends at the next's start).
         if (ii + 2) * 22 > inst.len() {
             continue;
@@ -218,7 +221,10 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
         // Preset generators add to the instrument's.
         let padd = |op: u16| get(&pz, op).map(amount).unwrap_or(0);
         for iz in zones(ibag, igen, ib0, ib1, SAMPLE_ID) {
-            let si = index(get(&iz, SAMPLE_ID).unwrap());
+            let Some(sample_gen) = get(&iz, SAMPLE_ID) else {
+                continue;
+            };
+            let si = index(sample_gen);
             if (si + 1) * 46 > shdr.len() {
                 continue;
             }

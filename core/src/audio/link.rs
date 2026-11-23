@@ -108,16 +108,26 @@ impl LinkBus {
         }
     }
 
+    fn lock_shared(&self) -> std::sync::MutexGuard<'_, Shared> {
+        match self.shared.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                self.shared.clear_poison();
+                poisoned.into_inner()
+            }
+        }
+    }
+
     /// Join the session as a new peer. The newcomer adopts the session
     /// tempo (Link join semantics) — it does not reset the clock.
     pub fn join(&self) -> LinkSession {
-        self.shared.lock().expect("link bus lock").peers += 1;
+        self.lock_shared().peers += 1;
         LinkSession { bus: self.clone() }
     }
 
     /// Current peer count (joined sessions not yet dropped).
     pub fn num_peers(&self) -> usize {
-        self.shared.lock().expect("link bus lock").peers
+        self.lock_shared().peers
     }
 }
 
@@ -142,7 +152,7 @@ impl LinkSession {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Shared> {
-        self.bus.shared.lock().expect("link bus lock")
+        self.bus.lock_shared()
     }
 
     /// Session tempo in BPM — identical for every peer on the bus.
@@ -334,5 +344,21 @@ mod tests {
         assert_eq!(s.tempo(), 120.0);
         s.set_tempo(90.0);
         assert_eq!(s.tempo(), 90.0);
+    }
+
+    #[test]
+    fn poisoned_link_bus_recovers_without_panicking() {
+        let bus = LinkBus::new(120.0);
+        let bus2 = bus.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = bus2.shared.lock().unwrap();
+            panic!("simulated link bus panic");
+        })
+        .join();
+        let session = bus.join();
+        assert_eq!(bus.num_peers(), 1);
+        session.set_tempo(128.0);
+        assert_eq!(session.tempo(), 128.0);
+        assert!(session.phase().is_finite());
     }
 }

@@ -439,13 +439,10 @@ pub fn ara_document_for_track(
             .add_region_for_clip(clip, &clip.id)
             .map_err(|e| BounceError::BadRange(e.to_string()))?
         {
-            let entry = doc
-                .regions()
-                .iter()
-                .find(|e| e.id == region_id)
-                .expect("just-added region");
-            let offset = entry.region.start_sec - window_start_sec;
-            doc.set_source_offset(&region_id, offset);
+            if let Some(entry) = doc.regions().iter().find(|e| e.id == region_id) {
+                let offset = entry.region.start_sec - window_start_sec;
+                doc.set_source_offset(&region_id, offset);
+            }
         }
     }
     Ok(doc)
@@ -675,9 +672,18 @@ pub fn decode_wav(bytes: &[u8]) -> Result<Stem> {
     let mut saw_smpl = false;
     while pos + 8 <= bytes.len() {
         let id = &bytes[pos..pos + 4];
-        let len = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        let len = u32::from_le_bytes([
+            bytes[pos + 4],
+            bytes[pos + 5],
+            bytes[pos + 6],
+            bytes[pos + 7],
+        ]) as usize;
+        let end = pos
+            .checked_add(8)
+            .and_then(|s| s.checked_add(len))
+            .ok_or_else(|| err("truncated chunk"))?;
         let body = bytes
-            .get(pos + 8..pos + 8 + len)
+            .get(pos + 8..end)
             .ok_or_else(|| err("truncated chunk"))?;
         match id {
             b"fmt " => {
@@ -702,13 +708,13 @@ pub fn decode_wav(bytes: &[u8]) -> Result<Stem> {
                     .collect();
             }
             b"smpl" if body.len() >= 36 + 24 => {
-                loop_start = u32::from_le_bytes(body[44..48].try_into().unwrap());
-                loop_end = u32::from_le_bytes(body[48..52].try_into().unwrap());
+                loop_start = u32::from_le_bytes([body[44], body[45], body[46], body[47]]);
+                loop_end = u32::from_le_bytes([body[48], body[49], body[50], body[51]]);
                 saw_smpl = true;
             }
             _ => {}
         }
-        pos += 8 + len;
+        pos = end;
     }
     if sample_rate == 0 {
         return Err(err("missing fmt chunk"));
@@ -1084,5 +1090,21 @@ mod tests {
         let mix = render_mix(&p, &config).expect("mix");
         assert_eq!(mix.samples.len(), stems[0].samples.len());
         assert!(mix.peak() > 0.0);
+    }
+
+    #[test]
+    fn decode_wav_rejects_overflowing_chunk_length_without_panicking() {
+        let mut bytes = encode_wav(&Stem {
+            name: "s".into(),
+            sample_rate: 48_000,
+            samples: vec![0.1; 8],
+            loop_start: 0,
+            loop_end: 8,
+        });
+        // Append a bogus chunk whose length would overflow `pos + 8 + len` on 32-bit
+        // or exceed slice bounds cleanly on 64-bit.
+        bytes.extend_from_slice(b"JUNK");
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        assert!(matches!(decode_wav(&bytes), Err(BounceError::WavParse(_))));
     }
 }

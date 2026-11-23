@@ -342,18 +342,16 @@ impl RemoteSession {
         let t0 = now_ms() as f64;
         let seq = self.next_seq;
         self.next_seq += 1;
-        let live = self
-            .stream
-            .as_ref()
-            .map(|_| ())
-            .ok_or_else(|| TransportError::Server("not connected".to_string()));
-        if live.is_err() {
+        if self.stream.is_none() {
             self.degrade("ping while disconnected");
-            return live.map(|_| 0.0);
+            return Err(TransportError::Server("not connected".to_string()));
         }
-        let stream = self.stream.as_mut().unwrap();
         let send_ms = now_ms();
         let res: Result<f64, TransportError> = (|| {
+            let stream = self
+                .stream
+                .as_mut()
+                .ok_or_else(|| TransportError::Server("not connected".to_string()))?;
             codec::write_message(
                 stream,
                 &Message::Ping {
@@ -459,7 +457,10 @@ impl RemoteSession {
 
         let t0 = now_ms() as f64;
         let outcome: Result<BTreeMap<String, Vec<f32>>, TransportError> = (|| {
-            let stream = self.stream.as_mut().unwrap();
+            let stream = self
+                .stream
+                .as_mut()
+                .ok_or_else(|| TransportError::Server("not connected".to_string()))?;
             codec::write_message(
                 stream,
                 &Message::RenderRequest {
@@ -538,7 +539,10 @@ impl RemoteSession {
                 self.next_seq += 1;
                 let mut buffers: BTreeMap<String, Vec<f32>> = BTreeMap::new();
                 self.render_available(&mut buffers, frames, block * frames as u64);
-                let stream = self.stream.as_mut().unwrap();
+                let stream = self
+                    .stream
+                    .as_mut()
+                    .ok_or_else(|| TransportError::Server("not connected".to_string()))?;
                 codec::write_message(
                     stream,
                     &Message::RenderRequest {
@@ -565,7 +569,10 @@ impl RemoteSession {
         let mut out = Vec::with_capacity(count);
         for (block, seq, mut buffers, t0) in pending.drain(..) {
             let reply: Result<BTreeMap<String, Vec<f32>>, TransportError> = (|| {
-                let stream = self.stream.as_mut().unwrap();
+                let stream = self
+                    .stream
+                    .as_mut()
+                    .ok_or_else(|| TransportError::Server("not connected".to_string()))?;
                 match codec::read_message(stream)? {
                     Message::RenderResponse {
                         block: gb,
