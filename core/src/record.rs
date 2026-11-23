@@ -145,9 +145,7 @@ pub fn is_punching(beat: f64, mode: &PunchMode, transport_recording: bool) -> bo
     }
     match mode {
         PunchMode::Manual => true,
-        PunchMode::Auto(range) => {
-            beat + EPS >= range.start_beats && beat + EPS < range.end_beats
-        }
+        PunchMode::Auto(range) => beat + EPS >= range.start_beats && beat + EPS < range.end_beats,
     }
 }
 
@@ -196,11 +194,7 @@ pub fn count_in_clicks(count_in: &CountIn) -> Result<Vec<CountInClick>> {
 
 /// Should the live input be audible? `Off` never, `On` whenever armed,
 /// `Auto` when armed and the transport is not playing back takes.
-pub fn should_monitor(
-    mode: &MonitorMode,
-    track_armed: bool,
-    transport: &EngineState,
-) -> bool {
+pub fn should_monitor(mode: &MonitorMode, track_armed: bool, transport: &EngineState) -> bool {
     match mode {
         MonitorMode::Off => false,
         MonitorMode::On => track_armed,
@@ -413,8 +407,14 @@ mod tests {
         assert_eq!(
             lanes,
             vec![
-                TakeLane { take_id: "take_vox_p1".to_string(), lane: 0 },
-                TakeLane { take_id: "take_vox_p2".to_string(), lane: 1 },
+                TakeLane {
+                    take_id: "take_vox_p1".to_string(),
+                    lane: 0
+                },
+                TakeLane {
+                    take_id: "take_vox_p2".to_string(),
+                    lane: 1
+                },
             ]
         );
 
@@ -447,23 +447,74 @@ mod tests {
 
     #[test]
     fn count_in_clicks_accent_bar_starts() {
-        let clicks = count_in_clicks(&CountIn { bars: 1, beats_per_bar: 4 }).unwrap();
+        let clicks = count_in_clicks(&CountIn {
+            bars: 1,
+            beats_per_bar: 4,
+        })
+        .unwrap();
         assert_eq!(clicks.len(), 4);
-        assert_eq!(clicks[0], CountInClick { offset_beats: -4.0, accent: true });
-        assert_eq!(clicks[3], CountInClick { offset_beats: -1.0, accent: false });
-        let secs = count_in_seconds(&CountIn { bars: 1, beats_per_bar: 4 }, 120.0).unwrap();
+        assert_eq!(
+            clicks[0],
+            CountInClick {
+                offset_beats: -4.0,
+                accent: true
+            }
+        );
+        assert_eq!(
+            clicks[3],
+            CountInClick {
+                offset_beats: -1.0,
+                accent: false
+            }
+        );
+        let secs = count_in_seconds(
+            &CountIn {
+                bars: 1,
+                beats_per_bar: 4,
+            },
+            120.0,
+        )
+        .unwrap();
         assert!((secs - 2.0).abs() < 1e-12);
-        assert!(count_in_clicks(&CountIn { bars: 0, beats_per_bar: 4 }).is_err());
+        assert!(count_in_clicks(&CountIn {
+            bars: 0,
+            beats_per_bar: 4
+        })
+        .is_err());
     }
 
     #[test]
     fn monitor_auto_mutes_input_during_playback() {
-        assert!(should_monitor(&MonitorMode::Auto, true, &EngineState::Stopped));
-        assert!(should_monitor(&MonitorMode::Auto, true, &EngineState::Recording));
-        assert!(!should_monitor(&MonitorMode::Auto, true, &EngineState::Playing));
-        assert!(!should_monitor(&MonitorMode::Auto, false, &EngineState::Recording));
-        assert!(should_monitor(&MonitorMode::On, true, &EngineState::Playing));
-        assert!(!should_monitor(&MonitorMode::Off, true, &EngineState::Recording));
+        assert!(should_monitor(
+            &MonitorMode::Auto,
+            true,
+            &EngineState::Stopped
+        ));
+        assert!(should_monitor(
+            &MonitorMode::Auto,
+            true,
+            &EngineState::Recording
+        ));
+        assert!(!should_monitor(
+            &MonitorMode::Auto,
+            true,
+            &EngineState::Playing
+        ));
+        assert!(!should_monitor(
+            &MonitorMode::Auto,
+            false,
+            &EngineState::Recording
+        ));
+        assert!(should_monitor(
+            &MonitorMode::On,
+            true,
+            &EngineState::Playing
+        ));
+        assert!(!should_monitor(
+            &MonitorMode::Off,
+            true,
+            &EngineState::Recording
+        ));
     }
 
     #[test]
@@ -498,7 +549,10 @@ mod tests {
         arms.arm("trk_gtr");
         assert!(arms.is_armed("trk_vox"));
         // Sorted: deterministic take-commit order.
-        assert_eq!(arms.armed(), vec!["trk_gtr".to_string(), "trk_vox".to_string()]);
+        assert_eq!(
+            arms.armed(),
+            vec!["trk_gtr".to_string(), "trk_vox".to_string()]
+        );
 
         assert!(!arms.toggle("trk_vox"));
         assert!(!arms.is_armed("trk_vox"));
@@ -513,7 +567,10 @@ mod tests {
         // Chorus at [16, 32): the "use section" button lands exactly here.
         assert_eq!(
             punch_range_for_section(16.0, 16.0).unwrap(),
-            PunchRange { start_beats: 16.0, end_beats: 32.0 }
+            PunchRange {
+                start_beats: 16.0,
+                end_beats: 32.0
+            }
         );
         assert!(punch_range_for_section(0.0, 0.0).is_err());
         assert!(punch_range_for_section(0.0, -4.0).is_err());
@@ -539,7 +596,13 @@ mod tests {
 
         // One auto-punched pass on the Music track becomes a take clip.
         let punch = validate_punch(4.0, 8.0).unwrap();
-        let take = punch_take_clip("take_music_p1", "trk_music", "Music p1", ClipKind::Audio, &punch);
+        let take = punch_take_clip(
+            "take_music_p1",
+            "trk_music",
+            "Music p1",
+            ClipKind::Audio,
+            &punch,
+        );
         let op = take_commit_op("ui", &take);
         assert_eq!(op.kind, OpKind::ClipAdded);
         assert_eq!(op.seq, 0);
@@ -548,10 +611,22 @@ mod tests {
         engine
             .apply("ui", op.kind, &op.target, &op.value_json)
             .expect("commit take");
-        assert!(engine.project().clips.iter().any(|c| c.id == "take_music_p1"));
+        assert!(engine
+            .project()
+            .clips
+            .iter()
+            .any(|c| c.id == "take_music_p1"));
         engine.undo().expect("undo take");
-        assert!(!engine.project().clips.iter().any(|c| c.id == "take_music_p1"));
+        assert!(!engine
+            .project()
+            .clips
+            .iter()
+            .any(|c| c.id == "take_music_p1"));
         engine.redo().expect("redo take");
-        assert!(engine.project().clips.iter().any(|c| c.id == "take_music_p1"));
+        assert!(engine
+            .project()
+            .clips
+            .iter()
+            .any(|c| c.id == "take_music_p1"));
     }
 }

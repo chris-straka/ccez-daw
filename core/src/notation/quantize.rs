@@ -44,7 +44,10 @@ impl QuantizeOptions {
         self.key.validate()?;
         let bar = self.meter.bar_beats().expect("meter validated");
         if !self.grid_beats.is_finite() || self.grid_beats <= 0.0 {
-            return Err(format!("grid_beats {} must be finite and > 0", self.grid_beats));
+            return Err(format!(
+                "grid_beats {} must be finite and > 0",
+                self.grid_beats
+            ));
         }
         // The grid must divide the bar, and must not be finer than a 32nd.
         let steps = (bar / self.grid_beats).round();
@@ -104,7 +107,11 @@ fn snap_notes(clip: &MidiClip, grid: f64) -> Vec<Snapped> {
         .map(|(start, end, pitches)| {
             let start_step = (start / grid).round() as i64;
             let end_step = ((end / grid).round() as i64).max(start_step + 1);
-            Snapped { start_step, len_steps: end_step - start_step, pitches }
+            Snapped {
+                start_step,
+                len_steps: end_step - start_step,
+                pitches,
+            }
         })
         .collect();
     // One voice, one staff: a note that is still sounding when the next
@@ -192,7 +199,11 @@ pub fn quantize(clip: &MidiClip, opts: &QuantizeOptions) -> Result<Score, String
     let steps_per_bar = (bar / grid).round() as i64;
 
     let snapped = snap_notes(clip, grid);
-    let last_end = snapped.iter().map(|s| s.start_step + s.len_steps).max().unwrap_or(0);
+    let last_end = snapped
+        .iter()
+        .map(|s| s.start_step + s.len_steps)
+        .max()
+        .unwrap_or(0);
     let total_end = (clip.length_beats / grid).ceil() as i64;
     let stream_end = last_end.max(total_end).max(0);
     let n_bars = ((stream_end + steps_per_bar - 1) / steps_per_bar).max(1);
@@ -223,14 +234,19 @@ pub fn quantize(clip: &MidiClip, opts: &QuantizeOptions) -> Result<Score, String
             // Clip the segment to this bar; a remainder continues tied.
             let len = (s_end - at).min(bar_start + steps_per_bar - at);
             if len > 0 {
-                segs.push(Seg { at, len, pitches: s.pitches.clone(), tie_stop });
+                segs.push(Seg {
+                    at,
+                    len,
+                    pitches: s.pitches.clone(),
+                    tie_stop,
+                });
             }
         }
         segs.sort_by_key(|s| (s.at, s.pitches.clone()));
 
         let mut events: Vec<MeasureEvent> = Vec::new();
         let mut cursor = 0i64; // steps within this bar
-        // 32nd-note steps per grid step (grid >= 32nd, divides evenly).
+                               // 32nd-note steps per grid step (grid >= 32nd, divides evenly).
         let steps32_per_grid = (grid / 0.125).round() as i64;
         let bar_32nds = steps_per_bar * steps32_per_grid;
 
@@ -245,7 +261,11 @@ pub fn quantize(clip: &MidiClip, opts: &QuantizeOptions) -> Result<Score, String
 
         for seg in &segs {
             let at_in_bar = seg.at - bar_start;
-            push_rest(&mut events, cursor * steps32_per_grid, at_in_bar * steps32_per_grid);
+            push_rest(
+                &mut events,
+                cursor * steps32_per_grid,
+                at_in_bar * steps32_per_grid,
+            );
             // Split this bar's slice of the note; the head carries tie_stop
             // when it continues an earlier bar, the tail carries tie_start
             // when more bars (or more of this bar) follow.
@@ -310,7 +330,9 @@ pub fn quantize(clip: &MidiClip, opts: &QuantizeOptions) -> Result<Score, String
         let mut run: Vec<usize> = Vec::new();
         let flush = |run: &mut Vec<usize>, beams: &mut Vec<BeamGroup>| {
             if run.len() >= 2 {
-                beams.push(BeamGroup { events: run.clone() });
+                beams.push(BeamGroup {
+                    events: run.clone(),
+                });
             }
             run.clear();
         };
@@ -341,7 +363,9 @@ pub fn quantize(clip: &MidiClip, opts: &QuantizeOptions) -> Result<Score, String
                     Some(&p) if idx == p + 1 => run.push(idx),
                     _ => {
                         if run.len() >= 2 {
-                            clean.push(BeamGroup { events: run.clone() });
+                            clean.push(BeamGroup {
+                                events: run.clone(),
+                            });
                         }
                         run = vec![idx];
                     }
@@ -352,7 +376,11 @@ pub fn quantize(clip: &MidiClip, opts: &QuantizeOptions) -> Result<Score, String
             }
         }
 
-        measures.push(Measure { number: (bar_idx + 1) as usize, events, beams: clean });
+        measures.push(Measure {
+            number: (bar_idx + 1) as usize,
+            events,
+            beams: clean,
+        });
     }
 
     let score = Score {
@@ -380,9 +408,11 @@ pub fn to_midi(score: &Score) -> MidiClip {
             let beats = e.beats();
             let notes: Vec<(u8, bool, bool)> = match e {
                 MeasureEvent::Note(n) => vec![(n.midi, n.tie_start, n.tie_stop)],
-                MeasureEvent::Chord(c) => {
-                    c.notes.iter().map(|n| (n.midi, n.tie_start, n.tie_stop)).collect()
-                }
+                MeasureEvent::Chord(c) => c
+                    .notes
+                    .iter()
+                    .map(|n| (n.midi, n.tie_start, n.tie_stop))
+                    .collect(),
                 MeasureEvent::Rest(_) => vec![],
             };
             for (pitch, tie_start, tie_stop) in notes {
@@ -478,7 +508,8 @@ mod tests {
     fn clip_with(notes: Vec<(u32, u8, f64, f64)>, len: f64) -> MidiClip {
         let mut clip = MidiClip::new(len);
         for (id, pitch, start, dur) in notes {
-            clip.add_note(MidiNote::new(id, pitch, 90, start, dur)).unwrap();
+            clip.add_note(MidiNote::new(id, pitch, 90, start, dur))
+                .unwrap();
         }
         clip
     }
@@ -494,8 +525,7 @@ mod tests {
         assert_eq!(score.measures.len(), 1);
         let m = &score.measures[0];
         // First two notes snapped to 0.0 and 0.5; third to 1.0, len 1.0.
-        let sounding: Vec<&MeasureEvent> =
-            m.events.iter().filter(|e| !e.is_rest()).collect();
+        let sounding: Vec<&MeasureEvent> = m.events.iter().filter(|e| !e.is_rest()).collect();
         assert_eq!(sounding.len(), 3);
         // Onsets: 0, 0.5, 1.0 — verify via cumulative beats.
         let mut onsets = Vec::new();
@@ -563,13 +593,19 @@ mod tests {
         match &score.measures[0].events[0] {
             MeasureEvent::Chord(c) => {
                 assert_eq!(c.notes.len(), 3);
-                assert_eq!(c.notes.iter().map(|n| n.midi).collect::<Vec<_>>(), vec![60, 64, 67]);
+                assert_eq!(
+                    c.notes.iter().map(|n| n.midi).collect::<Vec<_>>(),
+                    vec![60, 64, 67]
+                );
             }
             other => panic!("want chord, got {other:?}"),
         }
         // F# spelled sharp-side in G major...
         let sharp = find_midi(&score, 66).unwrap();
-        assert_eq!((sharp.pitch.step, sharp.pitch.alter), (super::super::model::Step::F, 1));
+        assert_eq!(
+            (sharp.pitch.step, sharp.pitch.alter),
+            (super::super::model::Step::F, 1)
+        );
         // ...and flat-side (Gb) in F major.
         let opts_flat = QuantizeOptions {
             key: KeySig::major(-1),
@@ -577,7 +613,10 @@ mod tests {
         };
         let flat_score = quantize(&clip, &opts_flat).unwrap();
         let flat = find_midi(&flat_score, 66).unwrap();
-        assert_eq!((flat.pitch.step, flat.pitch.alter), (super::super::model::Step::G, -1));
+        assert_eq!(
+            (flat.pitch.step, flat.pitch.alter),
+            (super::super::model::Step::G, -1)
+        );
     }
 
     fn find_midi(score: &Score, midi: u8) -> Option<NotationNote> {
@@ -626,7 +665,10 @@ mod tests {
     #[test]
     fn quantize_rejects_bad_options() {
         let clip = clip_with(vec![(1, 60, 0.0, 1.0)], 4.0);
-        let bad_grid = QuantizeOptions { grid_beats: 0.03, ..QuantizeOptions::default() };
+        let bad_grid = QuantizeOptions {
+            grid_beats: 0.03,
+            ..QuantizeOptions::default()
+        };
         assert!(quantize(&clip, &bad_grid).is_err());
         let bad_meter = QuantizeOptions {
             meter: Meter::new(4, 3),
@@ -640,7 +682,12 @@ mod tests {
         // Grid-aligned clip: quantize -> to_midi -> quantize is stable,
         // and to_midi pitches/onsets match the written notes.
         let clip = clip_with(
-            vec![(1, 60, 0.0, 1.0), (2, 64, 1.0, 0.5), (3, 67, 1.5, 0.5), (4, 72, 2.0, 2.0)],
+            vec![
+                (1, 60, 0.0, 1.0),
+                (2, 64, 1.0, 0.5),
+                (3, 67, 1.5, 0.5),
+                (4, 72, 2.0, 2.0),
+            ],
             4.0,
         );
         let opts = QuantizeOptions::default();

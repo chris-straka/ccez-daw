@@ -176,9 +176,7 @@ pub fn resolve(sidecar: &str) -> ModelResolution {
         None => return base(),
     };
     let pinned = match pin.verdict {
-        ModelVerdict::Pinned {
-            model_id, file, ..
-        } => (model_id, file),
+        ModelVerdict::Pinned { model_id, file, .. } => (model_id, file),
         ModelVerdict::BaselinesOnly { .. } => return base(),
     };
     let weight = cached_weight_path(pinned.0, pinned.1);
@@ -220,10 +218,7 @@ mod tests {
     #[test]
     fn groove_is_baselines_only() {
         let pin = pin_for(super::super::SIDECAR_GROOVE).expect("groove pin");
-        assert!(matches!(
-            pin.verdict,
-            ModelVerdict::BaselinesOnly { .. }
-        ));
+        assert!(matches!(pin.verdict, ModelVerdict::BaselinesOnly { .. }));
     }
 
     #[test]

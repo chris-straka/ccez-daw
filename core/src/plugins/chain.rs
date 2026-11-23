@@ -88,11 +88,7 @@ pub fn chain_order(project: &Project, track_id: &str) -> Result<Vec<String>> {
 /// state render as pass-through).
 pub fn chain_devices<'a>(project: &'a Project, track_id: &str) -> Result<Vec<&'a Node>> {
     let order = chain_order(project, track_id)?;
-    let by_id: BTreeMap<&str, &Node> = project
-        .devices
-        .iter()
-        .map(|d| (d.id.as_str(), d))
-        .collect();
+    let by_id: BTreeMap<&str, &Node> = project.devices.iter().map(|d| (d.id.as_str(), d)).collect();
     Ok(order
         .iter()
         .filter_map(|id| by_id.get(id.as_str()).copied())
@@ -115,7 +111,14 @@ pub fn oversample_factor(device: &Node) -> u32 {
 
 /// Set the oversampling flag, inserting the param (0.0..=1.0) when absent.
 pub fn set_oversampled(device: &mut Node, on: bool) {
-    upsert_param(device, OVERSAMPLE_PARAM, "Oversampling", if on { 1.0 } else { 0.0 }, 0.0, 1.0);
+    upsert_param(
+        device,
+        OVERSAMPLE_PARAM,
+        "Oversampling",
+        if on { 1.0 } else { 0.0 },
+        0.0,
+        1.0,
+    );
 }
 
 /// `(wet, dry)` mix gains for the device (defaults 1.0 / 0.0 when absent).
@@ -155,11 +158,7 @@ pub fn apply_wet_dry(dry_in: f32, wet_in: f32, wet: f32, dry: f32) -> f32 {
 /// Save `track_id`'s chain: its order plus every listed device's state.
 pub fn save_snapshot(project: &Project, track_id: &str) -> Result<ChainSnapshot> {
     let order = chain_order(project, track_id)?;
-    let by_id: BTreeMap<&str, &Node> = project
-        .devices
-        .iter()
-        .map(|d| (d.id.as_str(), d))
-        .collect();
+    let by_id: BTreeMap<&str, &Node> = project.devices.iter().map(|d| (d.id.as_str(), d)).collect();
     let mut devices = Vec::new();
     for id in &order {
         let dev = by_id

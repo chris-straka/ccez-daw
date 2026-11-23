@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::{ASSET_KIND_AUDIO, Engine};
+use crate::engine::{Engine, ASSET_KIND_AUDIO};
 
 /// Hard ceiling for sample buffers (10 M frames ≈ 3.8 min at 44.1 kHz
 /// mono): decode refuses anything larger rather than ballooning memory
@@ -38,7 +38,10 @@ pub struct SampleBuffer {
 
 impl SampleBuffer {
     pub fn new(sample_rate: f64, frames: Vec<f32>) -> Result<Self, String> {
-        let buf = Self { sample_rate, frames };
+        let buf = Self {
+            sample_rate,
+            frames,
+        };
         buf.validate()?;
         Ok(buf)
     }
@@ -220,8 +223,7 @@ impl DrumRack {
 
     /// Every mapped pad striking `note` (layered voices), in pad order.
     pub fn pads_for_note(&self, note: u8) -> Vec<&DrumPad> {
-        let mut out: Vec<&DrumPad> =
-            self.pads.values().filter(|p| p.note == note).collect();
+        let mut out: Vec<&DrumPad> = self.pads.values().filter(|p| p.note == note).collect();
         out.sort_by_key(|p| p.pad);
         out
     }
@@ -295,9 +297,12 @@ mod tests {
     fn drum_rack_maps_pads_to_notes_and_back() {
         let mut rack = DrumRack::new();
         assert!(rack.strike(0).is_none());
-        rack.set_pad(DrumPad::new(0, "drums", 36, 1.0, 0.0).expect("pad")).expect("set");
-        rack.set_pad(DrumPad::new(1, "drums", 36, 0.5, 12.0).expect("pad")).expect("set");
-        rack.set_pad(DrumPad::new(15, "perc", 42, 1.0, 0.0).expect("pad")).expect("set");
+        rack.set_pad(DrumPad::new(0, "drums", 36, 1.0, 0.0).expect("pad"))
+            .expect("set");
+        rack.set_pad(DrumPad::new(1, "drums", 36, 0.5, 12.0).expect("pad"))
+            .expect("set");
+        rack.set_pad(DrumPad::new(15, "perc", 42, 1.0, 0.0).expect("pad"))
+            .expect("set");
         // Pad -> (track, note).
         let hit = rack.strike(1).expect("hit");
         assert_eq!((hit.track_id.as_str(), hit.note), ("drums", 36));
@@ -306,7 +311,8 @@ mod tests {
         assert_eq!(layers, vec![0, 1]);
         assert!(rack.pads_for_note(99).is_empty());
         // Remap and clear.
-        rack.set_pad(DrumPad::new(0, "bass", 40, 1.0, 0.0).expect("pad")).expect("remap");
+        rack.set_pad(DrumPad::new(0, "bass", 40, 1.0, 0.0).expect("pad"))
+            .expect("remap");
         assert_eq!(rack.strike(0).expect("hit").track_id, "bass");
         assert!(rack.clear_pad(0));
         assert!(!rack.clear_pad(0));

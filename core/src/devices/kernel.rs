@@ -318,7 +318,11 @@ pub fn sampler_process(
     for o in output.iter_mut() {
         // AR envelope: linear ramp toward the gate target.
         let target = if state.gate_open { 1.0 } else { 0.0 };
-        let step = if state.gate_open { attack_step } else { release_step };
+        let step = if state.gate_open {
+            attack_step
+        } else {
+            release_step
+        };
         if step.is_infinite() {
             env = target;
         } else if env < target {
@@ -376,10 +380,16 @@ mod tests {
         let dc = vec![1.0f32; 2048];
         let mut out = vec![0.0; 2048];
         lowpass_process(1000.0, 44100.0, &mut s, &dc, &mut out).expect("dc");
-        assert!((out[2047] - 1.0).abs() < 1e-3, "dc settles to {}", out[2047]);
+        assert!(
+            (out[2047] - 1.0).abs() < 1e-3,
+            "dc settles to {}",
+            out[2047]
+        );
 
         let mut s = LowpassState::default();
-        let nyquist: Vec<f32> = (0..1024).map(|t| if t % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let nyquist: Vec<f32> = (0..1024)
+            .map(|t| if t % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
         let mut out = vec![0.0; 1024];
         lowpass_process(1000.0, 44100.0, &mut s, &nyquist, &mut out).expect("hf");
         let rms = (out.iter().map(|s| s * s).sum::<f32>() / out.len() as f32).sqrt();
@@ -395,7 +405,9 @@ mod tests {
         assert!(out[2047].abs() < 1e-3, "dc must drain, got {}", out[2047]);
 
         let mut s = HighpassState::default();
-        let nyquist: Vec<f32> = (0..1024).map(|t| if t % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let nyquist: Vec<f32> = (0..1024)
+            .map(|t| if t % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
         let mut out = vec![0.0; 1024];
         highpass_process(1000.0, 44100.0, &mut s, &nyquist, &mut out).expect("hf");
         let rms = (out.iter().map(|s| s * s).sum::<f32>() / out.len() as f32).sqrt();
@@ -432,8 +444,10 @@ mod tests {
         let mut out = vec![0.0; 64];
         // Instant envelope, wide-open filter: the voice settles to
         // sample * gain (frame 0 still carries the filter attack).
-        sampler_process(&sample, 0.0, 2.0, 0.0, 0.0, 20000.0, 44100.0, &mut s, &mut out)
-            .expect("play");
+        sampler_process(
+            &sample, 0.0, 2.0, 0.0, 0.0, 20000.0, 44100.0, &mut s, &mut out,
+        )
+        .expect("play");
         assert!(out[0] > 0.0, "voice must start immediately");
         for v in &out[32..] {
             assert!((v - 2.0).abs() < 1e-3, "voice must be unity, got {v}");
@@ -447,8 +461,10 @@ mod tests {
         let mut s = SamplerState::default();
         sampler_note_on(&mut s);
         let mut out = vec![0.0; 8];
-        sampler_process(&sample, 12.0, 1.0, 0.0, 0.0, 20000.0, 44100.0, &mut s, &mut out)
-            .expect("play");
+        sampler_process(
+            &sample, 12.0, 1.0, 0.0, 0.0, 20000.0, 44100.0, &mut s, &mut out,
+        )
+        .expect("play");
         // Rate 2.0 reads frames 0,2,4,...; filter is ~transparent at 20k.
         assert!((s.position - 16.0).abs() < 1e-9, "position {}", s.position);
         assert!((out[1] - 2.0).abs() < 0.15, "got {}", out[1]);
@@ -462,13 +478,17 @@ mod tests {
         sampler_note_on(&mut s);
         let mut out = vec![0.0; 100];
         // 100-sample attack at 1000 Hz: frame 50 sits near half level.
-        sampler_process(&sample, 0.0, 1.0, 0.1, 0.1, 20000.0, 1000.0, &mut s, &mut out)
-            .expect("attack");
+        sampler_process(
+            &sample, 0.0, 1.0, 0.1, 0.1, 20000.0, 1000.0, &mut s, &mut out,
+        )
+        .expect("attack");
         assert!(out[0] < out[99], "attack must ramp up");
         assert!((out[49] - 0.5).abs() < 0.15, "mid-attack {}", out[49]);
         sampler_note_off(&mut s);
-        sampler_process(&sample, 0.0, 1.0, 0.1, 0.1, 20000.0, 1000.0, &mut s, &mut out)
-            .expect("release");
+        sampler_process(
+            &sample, 0.0, 1.0, 0.1, 0.1, 20000.0, 1000.0, &mut s, &mut out,
+        )
+        .expect("release");
         assert!(out[0] > out[99], "release must ramp down");
         assert!(out[99] < 0.05, "release must settle, got {}", out[99]);
     }
@@ -479,8 +499,10 @@ mod tests {
         let mut s = SamplerState::default();
         sampler_note_on(&mut s);
         let mut out = vec![9.0; 8];
-        sampler_process(&sample, 0.0, 1.0, 0.0, 0.0, 20000.0, 44100.0, &mut s, &mut out)
-            .expect("play");
+        sampler_process(
+            &sample, 0.0, 1.0, 0.0, 0.0, 20000.0, 44100.0, &mut s, &mut out,
+        )
+        .expect("play");
         // Past the 2-frame sample the voice goes silent (tail of block —
         // the filter tail drains within a few frames at 20 kHz).
         assert!(out[7].abs() < 1e-4, "tail {}", out[7]);

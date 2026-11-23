@@ -29,9 +29,17 @@ use std::io::{self, Read, Write};
 /// One decoded message on the wire.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
-    Hello { name: String },
-    Ping { seq: u64, t_send_ms: u64 },
-    Pong { seq: u64, t_send_ms: u64 },
+    Hello {
+        name: String,
+    },
+    Ping {
+        seq: u64,
+        t_send_ms: u64,
+    },
+    Pong {
+        seq: u64,
+        t_send_ms: u64,
+    },
     RenderRequest {
         block: u64,
         seq: u64,
@@ -44,7 +52,10 @@ pub enum Message {
         degraded: bool,
         outputs: BTreeMap<String, Vec<f32>>,
     },
-    RenderError { block: u64, msg: String },
+    RenderError {
+        block: u64,
+        msg: String,
+    },
 }
 
 #[derive(Debug)]
@@ -319,7 +330,8 @@ pub fn read_message(r: &mut impl Read) -> Result<Message, CodecError> {
         return Err(CodecError::TooLarge(len));
     }
     let mut payload = vec![0u8; len as usize];
-    r.read_exact(&mut payload).map_err(|_| CodecError::Truncated)?;
+    r.read_exact(&mut payload)
+        .map_err(|_| CodecError::Truncated)?;
     decode_payload(&payload)
 }
 
@@ -381,7 +393,10 @@ mod tests {
         // NaN payloads and subnormals must round-trip bit-identically —
         // loopback render-equivalence depends on it.
         let mut m = BTreeMap::new();
-        m.insert("x".to_string(), vec![f32::NAN, -0.0, 1e-30, std::f32::consts::PI]);
+        m.insert(
+            "x".to_string(),
+            vec![f32::NAN, -0.0, 1e-30, std::f32::consts::PI],
+        );
         let msg = Message::RenderRequest {
             block: 0,
             seq: 0,

@@ -5,20 +5,24 @@
 
 use std::time::Duration;
 
-use ccez_core::ai::{
-    ai_actor, SIDECAR_CLEANUP, SIDECAR_GROOVE, SIDECAR_SEPARATION, SeparationDest, STEM_NAMES,
-    apply_cleanup_to_engine, apply_groove_to_engine, apply_separation_to_engine,
-    submit_cleanup, submit_groove_transfer, submit_separation,
-};
 use ccez_core::ai::JobStatus;
+use ccez_core::ai::{
+    ai_actor, apply_cleanup_to_engine, apply_groove_to_engine, apply_separation_to_engine,
+    submit_cleanup, submit_groove_transfer, submit_separation, SeparationDest, SIDECAR_CLEANUP,
+    SIDECAR_GROOVE, SIDECAR_SEPARATION, STEM_NAMES,
+};
 use ccez_core::bounce::decode_wav;
-use ccez_core::engine::{Engine, valid_actor};
+use ccez_core::engine::{valid_actor, Engine};
 use ccez_core::midi::{MidiClip, MidiNote};
 use ccez_core::model::{Project, Track};
 
 fn test_project() -> Project {
     let mut p = Project::new("proj_ai_sep", "ai-separation-test");
-    for (id, name) in [("trk_stems", "Stems"), ("trk_take", "Take"), ("trk_midi", "Midi")] {
+    for (id, name) in [
+        ("trk_stems", "Stems"),
+        ("trk_take", "Take"),
+        ("trk_midi", "Midi"),
+    ] {
         p.tracks.push(Track {
             id: id.to_string(),
             name: name.to_string(),
@@ -72,7 +76,10 @@ fn separation_job_yields_editable_stems() {
         .flatten()
         .expect("separation done");
     assert_eq!(sep.len(), mix.len());
-    assert!(sep.conservation_error(&mix) < 1e-4, "stems must sum to the mix");
+    assert!(
+        sep.conservation_error(&mix) < 1e-4,
+        "stems must sum to the mix"
+    );
     assert_eq!(job.poll(), (JobStatus::Done, 1.0));
 
     // Editable + undoable: four WAV-backed clips via ordinary ai: ops.
@@ -139,8 +146,7 @@ fn cleanup_job_yields_editable_take() {
         .expect("cleanup done");
     assert_eq!(clean.samples.len(), n);
     assert!(!clean.gated_regions.is_empty(), "floor must gate somewhere");
-    let floor: f32 =
-        clean.samples[..n / 8].iter().map(|s| s.abs()).sum::<f32>() / (n / 8) as f32;
+    let floor: f32 = clean.samples[..n / 8].iter().map(|s| s.abs()).sum::<f32>() / (n / 8) as f32;
     assert!(floor < 0.01, "floor {floor}");
 
     let dir = tmp_dir("cleanup");
@@ -181,7 +187,8 @@ fn swung_source() -> MidiClip {
 fn straight_target() -> MidiClip {
     let mut clip = MidiClip::new(2.0);
     for (i, start) in [0.0, 0.5, 1.0, 1.5].iter().enumerate() {
-        clip.add_note(MidiNote::new(i as u32, 64, 90, *start, 0.25)).unwrap();
+        clip.add_note(MidiNote::new(i as u32, 64, 90, *start, 0.25))
+            .unwrap();
     }
     clip
 }
@@ -193,7 +200,10 @@ fn groove_job_yields_editable_midi_clip() {
         .wait(Duration::from_secs(30))
         .flatten()
         .expect("groove done");
-    assert!(transferred.notes.iter().any(|n| n.timing_offset_beats.abs() > 0.01));
+    assert!(transferred
+        .notes
+        .iter()
+        .any(|n| n.timing_offset_beats.abs() > 0.01));
     for n in &transferred.notes {
         n.validate().expect("transferred note validates");
     }

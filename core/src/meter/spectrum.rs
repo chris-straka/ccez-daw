@@ -175,7 +175,9 @@ pub fn spectrum_magnitudes(samples: &[f32], sample_rate: f32, bins: usize) -> Ve
     (0..bins)
         .map(|b| {
             let (lo, hi) = (b * k / bins, (b + 1) * k / bins);
-            dft[lo..hi.max(lo + 1).min(k)].iter().fold(0.0f32, |a, &v| a.max(v))
+            dft[lo..hi.max(lo + 1).min(k)]
+                .iter()
+                .fold(0.0f32, |a, &v| a.max(v))
         })
         .collect()
 }
@@ -242,7 +244,12 @@ mod tests {
         let s = sine(1500.0, 0.8, sr, 4096);
         let dft = dft_magnitudes(&s);
         assert_eq!(dft.len(), 2048);
-        let best = dft.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
+        let best = dft
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
         assert_eq!(best, 128, "peak DFT bin for an on-bin 1500 Hz tone");
         assert!((dft[best] - 0.8).abs() < 0.02, "magnitude {}", dft[best]);
         assert!((dominant_freq(&s, sr) - 1500.0).abs() < 1.0);
@@ -254,7 +261,12 @@ mod tests {
         let s = sine(1000.0, 0.8, sr, 4096);
         let mags = spectrum_magnitudes(&s, sr, 64);
         assert_eq!(mags.len(), 64);
-        let best = mags.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
+        let best = mags
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
         let center = sr / 2.0 * (best as f32 + 0.5) / 64.0;
         assert!(
             (center - 1000.0).abs() / 1000.0 < 0.2,
@@ -272,9 +284,9 @@ mod tests {
 
     #[test]
     fn silence_and_empty_are_zero() {
-        assert!(
-            spectrum_magnitudes(&vec![0.0; 1024], 48_000.0, 32).iter().all(|&m| m == 0.0)
-        );
+        assert!(spectrum_magnitudes(&vec![0.0; 1024], 48_000.0, 32)
+            .iter()
+            .all(|&m| m == 0.0));
         assert_eq!(dominant_freq(&vec![0.0; 1024], 48_000.0), 0.0);
         assert_eq!(spectrum_magnitudes(&[], 48_000.0, 8), vec![0.0; 8]);
         assert_eq!(spectrum_magnitudes(&[1.0; 3], 48_000.0, 8), vec![0.0; 8]);
@@ -288,7 +300,11 @@ mod tests {
         let peak_bin = |freq: f32| {
             let s = sine(freq, 0.7, sr, 4096);
             let mags = spectrum_magnitudes(&s, sr, 64);
-            mags.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0
+            mags.iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap()
+                .0
         };
         let (lo, hi) = (peak_bin(55.0), peak_bin(12_000.0));
         assert!(lo < 4, "bass bin {lo}");

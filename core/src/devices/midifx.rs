@@ -187,7 +187,11 @@ pub fn arp_pattern(held: &[u8], mode: ArpMode, octaves: u8, seed: u64, steps: us
             (0..steps)
                 .map(|i| {
                     let k = i % cycle;
-                    if k < n { pool[k] } else { pool[cycle - k] }
+                    if k < n {
+                        pool[k]
+                    } else {
+                        pool[cycle - k]
+                    }
                 })
                 .collect()
         }
@@ -475,11 +479,8 @@ pub fn apply_midi_chain(
         .iter()
         .find(|t| t.id == track_id)
         .ok_or_else(|| format!("unknown midi chain track `{track_id}`"))?;
-    let by_id: std::collections::BTreeMap<&str, &Node> = project
-        .devices
-        .iter()
-        .map(|d| (d.id.as_str(), d))
-        .collect();
+    let by_id: std::collections::BTreeMap<&str, &Node> =
+        project.devices.iter().map(|d| (d.id.as_str(), d)).collect();
     let mut out = clip.clone();
     for id in &track.device_ids {
         let Some(node) = by_id.get(id.as_str()).copied() else {
@@ -503,7 +504,8 @@ mod tests {
     fn clip_with(chord: &[u8]) -> MidiClip {
         let mut clip = MidiClip::new(4.0);
         for (i, p) in chord.iter().enumerate() {
-            clip.add_note(MidiNote::new((i + 1) as u32, *p, 100, 0.0, 1.0)).unwrap();
+            clip.add_note(MidiNote::new((i + 1) as u32, *p, 100, 0.0, 1.0))
+                .unwrap();
         }
         clip
     }
@@ -531,7 +533,10 @@ mod tests {
             vec![60, 64, 67, 64, 60, 64, 67]
         );
         // A single held note just repeats in every mode.
-        assert_eq!(arp_pattern(&[60], ArpMode::UpDown, 1, 0, 3), vec![60, 60, 60]);
+        assert_eq!(
+            arp_pattern(&[60], ArpMode::UpDown, 1, 0, 3),
+            vec![60, 60, 60]
+        );
     }
 
     #[test]
@@ -548,15 +553,9 @@ mod tests {
 
     #[test]
     fn arp_octaves_extend_the_pool_and_clamp_at_127() {
-        assert_eq!(
-            arp_pattern(&[60], ArpMode::Up, 2, 0, 3),
-            vec![60, 72, 60]
-        );
+        assert_eq!(arp_pattern(&[60], ArpMode::Up, 2, 0, 3), vec![60, 72, 60]);
         // G9 (127) has no octave-up copy: the pool holds one pitch.
-        assert_eq!(
-            arp_pattern(&[127], ArpMode::Up, 4, 0, 2),
-            vec![127, 127]
-        );
+        assert_eq!(arp_pattern(&[127], ArpMode::Up, 4, 0, 2), vec![127, 127]);
         assert!(arp_pattern(&[], ArpMode::Up, 1, 0, 4).is_empty());
     }
 
@@ -684,7 +683,11 @@ mod tests {
             assert!(n.validate().is_ok());
         }
         // Zero amounts are a no-op (exact equality, not just bounds).
-        let flat = HumanizeParams { timing_beats: 0.0, velocity: 0.0, seed: 7 };
+        let flat = HumanizeParams {
+            timing_beats: 0.0,
+            velocity: 0.0,
+            seed: 7,
+        };
         assert_eq!(humanize_render(&clip, &flat).notes, clip.notes);
     }
 
@@ -693,7 +696,11 @@ mod tests {
         let mut clip = MidiClip::new(4.0);
         clip.add_note(MidiNote::new(1, 60, 1, 0.0, 1.0)).unwrap();
         clip.add_note(MidiNote::new(2, 64, 127, 1.0, 1.0)).unwrap();
-        let params = HumanizeParams { timing_beats: 0.25, velocity: 64.0, seed: 5 };
+        let params = HumanizeParams {
+            timing_beats: 0.25,
+            velocity: 64.0,
+            seed: 5,
+        };
         let out = humanize_render(&clip, &params);
         for n in &out.notes {
             assert!(n.timing_offset_beats.abs() <= 0.25);
@@ -713,11 +720,7 @@ mod tests {
             muted: false,
             solo: false,
             clip_ids: vec![],
-            device_ids: vec![
-                "chord".to_string(),
-                "gain".to_string(),
-                "hum".to_string(),
-            ],
+            device_ids: vec!["chord".to_string(), "gain".to_string(), "hum".to_string()],
         });
         p.devices.push(super::super::class::instantiate(
             DeviceClass::Chord,

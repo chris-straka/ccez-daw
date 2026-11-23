@@ -180,7 +180,9 @@ impl ClipProps {
         if !(self.fade_in_beats >= 0.0 && self.fade_in_beats.is_finite())
             || !(self.fade_out_beats >= 0.0 && self.fade_out_beats.is_finite())
         {
-            return Err(TimelineError::BadProps("fades must be finite and >= 0".into()));
+            return Err(TimelineError::BadProps(
+                "fades must be finite and >= 0".into(),
+            ));
         }
         Ok(())
     }
@@ -229,7 +231,11 @@ impl TimelineDoc {
     /// Insert or replace the prop set for one clip (validated).
     pub fn set_clip_props(&mut self, props: ClipProps) -> Result<()> {
         props.validate()?;
-        match self.clip_props.iter_mut().find(|p| p.clip_id == props.clip_id) {
+        match self
+            .clip_props
+            .iter_mut()
+            .find(|p| p.clip_id == props.clip_id)
+        {
             Some(slot) => *slot = props,
             None => self.clip_props.push(props),
         }
@@ -327,7 +333,9 @@ pub fn launcher_slots(project: &Project, doc: &TimelineDoc) -> Vec<LauncherSlot>
                 .clips
                 .iter()
                 .filter(|c| {
-                    c.track_id == track.id && c.start_beats < end && clip_end(c) > section.start_beats
+                    c.track_id == track.id
+                        && c.start_beats < end
+                        && clip_end(c) > section.start_beats
                 })
                 .map(|c| (c.id.as_str(), c.start_beats))
                 .collect();
@@ -435,10 +443,18 @@ pub fn sample_timeline_project() -> Project {
         kind: ClipKind::Midi,
         source: format!("take:{id}"),
     };
-    project.clips.push(clip("clip_verse_1", "trk_drums", "Verse-1", 0.0, 8.0));
-    project.clips.push(clip("clip_verse_2", "trk_bass", "Verse-2", 8.0, 8.0));
-    project.clips.push(clip("clip_chorus_1", "trk_drums", "Chorus-1", 16.0, 8.0));
-    project.clips.push(clip("clip_chorus_2", "trk_bass", "Chorus-2", 24.0, 8.0));
+    project
+        .clips
+        .push(clip("clip_verse_1", "trk_drums", "Verse-1", 0.0, 8.0));
+    project
+        .clips
+        .push(clip("clip_verse_2", "trk_bass", "Verse-2", 8.0, 8.0));
+    project
+        .clips
+        .push(clip("clip_chorus_1", "trk_drums", "Chorus-1", 16.0, 8.0));
+    project
+        .clips
+        .push(clip("clip_chorus_2", "trk_bass", "Chorus-2", 24.0, 8.0));
     project
 }
 
@@ -522,7 +538,10 @@ mod tests {
         assert_eq!(op.target, "clip_chorus_2");
         let payload: serde_json::Value =
             serde_json::from_str(&op.value_json).expect("payload is JSON");
-        assert_eq!(payload.get("startBeats").and_then(|v| v.as_f64()), Some(32.0));
+        assert_eq!(
+            payload.get("startBeats").and_then(|v| v.as_f64()),
+            Some(32.0)
+        );
 
         let seq = engine
             .apply(&op.actor, op.kind.clone(), &op.target, &op.value_json)
@@ -597,8 +616,8 @@ mod tests {
         assert_eq!(radio[2].offset_beats, 32.0);
         assert_eq!(radio[2].section_id, "sec_chorus");
         // Total length follows the order, not the timeline: 16+16+16.
-        let total = radio.last().expect("last").offset_beats
-            + radio.last().expect("last").length_beats;
+        let total =
+            radio.last().expect("last").offset_beats + radio.last().expect("last").length_beats;
         assert_eq!(total, 48.0);
     }
 

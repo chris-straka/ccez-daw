@@ -37,5 +37,5 @@ pub use model::{
     BeamGroup, Chord, KeySig, Measure, MeasureEvent, Meter, NotationNote, NotationRest, NoteValue,
     Score, SpelledPitch, Step,
 };
-pub use musicxml::{DIVISIONS, export_xml, parse_xml};
-pub use quantize::{QuantizeOptions, quantize, to_midi};
+pub use musicxml::{export_xml, parse_xml, DIVISIONS};
+pub use quantize::{quantize, to_midi, QuantizeOptions};

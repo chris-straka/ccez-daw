@@ -191,7 +191,11 @@ pub const STRUCTS: &[StructDef] = &[
         fields: &[
             f!("id", F_STRING, Z_STRING),
             f!("target", "ParamAddress", "ParamAddressSchema"),
-            f!("points", "AutomationPoint[]", "z.array(AutomationPointSchema)"),
+            f!(
+                "points",
+                "AutomationPoint[]",
+                "z.array(AutomationPointSchema)"
+            ),
         ],
     },
     StructDef {
@@ -208,7 +212,11 @@ pub const STRUCTS: &[StructDef] = &[
             f!("clips", "Clip[]", "z.array(ClipSchema)"),
             f!("devices", "Node[]", "z.array(NodeSchema)"),
             f!("routing", "Edge[]", "z.array(EdgeSchema)"),
-            f!("automation", "AutomationLane[]", "z.array(AutomationLaneSchema)"),
+            f!(
+                "automation",
+                "AutomationLane[]",
+                "z.array(AutomationLaneSchema)"
+            ),
         ],
     },
     StructDef {
@@ -271,7 +279,11 @@ pub const STRUCTS: &[StructDef] = &[
         doc: "A named game state plus its continuous parameter values.",
         fields: &[
             f!("state", F_STRING, Z_STRING),
-            f!("values", "GameStateValue[]", "z.array(GameStateValueSchema)"),
+            f!(
+                "values",
+                "GameStateValue[]",
+                "z.array(GameStateValueSchema)"
+            ),
         ],
     },
     StructDef {
@@ -307,7 +319,11 @@ pub const STRUCTS: &[StructDef] = &[
             f!("tempo", F_NUMBER, Z_NUMBER),
             f!("default_state", F_STRING, Z_STRING),
             f!("layers", "CueLayer[]", "z.array(CueLayerSchema)"),
-            f!("transitions", "TransitionRule[]", "z.array(TransitionRuleSchema)"),
+            f!(
+                "transitions",
+                "TransitionRule[]",
+                "z.array(TransitionRuleSchema)"
+            ),
         ],
     },
     StructDef {
@@ -389,8 +405,7 @@ pub fn render_project_ts() -> String {
     ));
     for e in ENUMS {
         out.push_str(&format!("/** {} */\n", e.doc));
-        let variants: Vec<String> =
-            e.variants.iter().map(|v| format!("\"{v}\"")).collect();
+        let variants: Vec<String> = e.variants.iter().map(|v| format!("\"{v}\"")).collect();
         out.push_str(&format!(
             "export const {0}Schema = z.enum([{1}]);\n",
             e.name,
@@ -445,7 +460,10 @@ pub fn render_ipc_ts() -> String {
         scan(e.payload_ts);
     }
     let names: Vec<&str> = refs.into_iter().collect();
-    out.push_str(&format!("import type {{ {} }} from \"./project\";\n\n", names.join(", ")));
+    out.push_str(&format!(
+        "import type {{ {} }} from \"./project\";\n\n",
+        names.join(", ")
+    ));
     for c in COMMANDS {
         out.push_str(&format!("/** {} */\n", c.doc));
         out.push_str(&format!(
@@ -460,7 +478,10 @@ pub fn render_ipc_ts() -> String {
     out.push_str("] as const;\n\n");
     out.push_str("export const EVENTS = {\n");
     for e in EVENTS {
-        out.push_str(&format!("  /** {} */\n  {}: \"{}\",\n", e.doc, e.name, e.name));
+        out.push_str(&format!(
+            "  /** {} */\n  {}: \"{}\",\n",
+            e.doc, e.name, e.name
+        ));
     }
     out.push_str("} as const;\n\nexport type EventName = keyof typeof EVENTS;\n");
     out

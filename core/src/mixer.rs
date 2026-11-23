@@ -89,7 +89,8 @@ pub fn strips(project: &Project) -> Vec<Strip> {
     let mut outs: BTreeMap<&str, &str> = BTreeMap::new();
     for edge in &project.routing {
         if edge.kind == EdgeKind::Audio {
-            outs.entry(edge.from_node.as_str()).or_insert(edge.to_node.as_str());
+            outs.entry(edge.from_node.as_str())
+                .or_insert(edge.to_node.as_str());
         }
     }
     project
@@ -125,7 +126,9 @@ pub struct VcaGroup {
 impl VcaGroup {
     pub fn new(id: &str, name: &str, members: Vec<String>, gain_db: f64) -> Result<Self> {
         if id.is_empty() {
-            return Err(MixerError::BadValue("group id must be non-empty".to_string()));
+            return Err(MixerError::BadValue(
+                "group id must be non-empty".to_string(),
+            ));
         }
         if !gain_db.is_finite() || gain_db < SILENCE_DB || gain_db > 24.0 {
             return Err(MixerError::BadValue(format!(
@@ -154,7 +157,9 @@ impl VcaGroup {
 
     pub fn set_gain_db(&mut self, db: f64) -> Result<()> {
         if !db.is_finite() || db < SILENCE_DB || db > 24.0 {
-            return Err(MixerError::BadValue(format!("gain_db {db} out of [-120, +24]")));
+            return Err(MixerError::BadValue(format!(
+                "gain_db {db} out of [-120, +24]"
+            )));
         }
         self.gain = db_to_gain(db);
         Ok(())
@@ -295,10 +300,26 @@ pub struct MixerSnapshot {
 pub fn capture(project: &Project, groups: &[VcaGroup], name: &str) -> MixerSnapshot {
     MixerSnapshot {
         name: name.to_string(),
-        volumes: project.tracks.iter().map(|t| (t.id.clone(), t.volume)).collect(),
-        pans: project.tracks.iter().map(|t| (t.id.clone(), t.pan)).collect(),
-        mutes: project.tracks.iter().map(|t| (t.id.clone(), t.muted)).collect(),
-        solos: project.tracks.iter().map(|t| (t.id.clone(), t.solo)).collect(),
+        volumes: project
+            .tracks
+            .iter()
+            .map(|t| (t.id.clone(), t.volume))
+            .collect(),
+        pans: project
+            .tracks
+            .iter()
+            .map(|t| (t.id.clone(), t.pan))
+            .collect(),
+        mutes: project
+            .tracks
+            .iter()
+            .map(|t| (t.id.clone(), t.muted))
+            .collect(),
+        solos: project
+            .tracks
+            .iter()
+            .map(|t| (t.id.clone(), t.solo))
+            .collect(),
         group_gains: groups.iter().map(|g| (g.id.clone(), g.gain)).collect(),
     }
 }
@@ -353,7 +374,13 @@ pub fn recall_strict(
 /// Strip ids whose fader state differs between two snapshots.
 pub fn snapshot_diff(a: &MixerSnapshot, b: &MixerSnapshot) -> Vec<String> {
     let mut ids = BTreeSet::new();
-    for id in a.volumes.keys().chain(a.pans.keys()).chain(a.mutes.keys()).chain(a.solos.keys()) {
+    for id in a
+        .volumes
+        .keys()
+        .chain(a.pans.keys())
+        .chain(a.mutes.keys())
+        .chain(a.solos.keys())
+    {
         let changed = a.volumes.get(id) != b.volumes.get(id)
             || a.pans.get(id) != b.pans.get(id)
             || a.mutes.get(id) != b.mutes.get(id)
@@ -475,9 +502,8 @@ pub fn spatial_monitor_stereo(
     let mut left = vec![0.0f32; mono.len()];
     let mut right = vec![0.0f32; mono.len()];
     for (i, &s) in mono.iter().enumerate() {
-        let [l, r] = crate::spatial::decode_stereo(crate::spatial::encode_mono(
-            s, az, el, params.gain,
-        ));
+        let [l, r] =
+            crate::spatial::decode_stereo(crate::spatial::encode_mono(s, az, el, params.gain));
         left[i] = l;
         right[i] = r;
     }
@@ -570,8 +596,13 @@ mod tests {
         p.routing.push(edge("e1", "drums", "bus_rhythm"));
         p.routing.push(edge("e2", "bass", "bus_rhythm"));
         p.routing.push(edge("e3", "bus_rhythm", "master"));
-        let groups = vec![VcaGroup::new("g_rhythm", "Rhythm", vec!["drums".into(), "bass".into()], -6.0)
-            .expect("group")];
+        let groups = vec![VcaGroup::new(
+            "g_rhythm",
+            "Rhythm",
+            vec!["drums".into(), "bass".into()],
+            -6.0,
+        )
+        .expect("group")];
         (p, groups)
     }
 
@@ -623,7 +654,10 @@ mod tests {
         let map: BTreeMap<_, _> = strips(&p).into_iter().map(|s| (s.id, s.out)).collect();
         assert_eq!(map["drums"], Some("bus_rhythm".to_string()));
         assert_eq!(map["ref_commercial"], None);
-        assert_eq!(bus_children(&p, "bus_rhythm"), vec!["bass".to_string(), "drums".to_string()]);
+        assert_eq!(
+            bus_children(&p, "bus_rhythm"),
+            vec!["bass".to_string(), "drums".to_string()]
+        );
         assert_eq!(bus_roots(&p), vec!["master".to_string()]);
         // Reference never sounds in the mix, even unmuted and unsoloed.
         assert!(!audible(&p, "ref_commercial").unwrap());
@@ -648,7 +682,10 @@ mod tests {
         let (p, _) = desk();
         assert_eq!(reference_tracks(&p), vec!["ref_commercial".to_string()]);
         assert!(!mix_tracks_excluding_reference(&p).contains(&"ref_commercial".to_string()));
-        let plan: BTreeMap<_, _> = cue_plan(&p, "ref_commercial").unwrap().into_iter().collect();
+        let plan: BTreeMap<_, _> = cue_plan(&p, "ref_commercial")
+            .unwrap()
+            .into_iter()
+            .collect();
         assert!(plan["ref_commercial"]);
         assert!(!plan["drums"]);
         assert!(cue_plan(&p, "drums").is_err()); // mix tracks are not cueable refs
@@ -665,8 +702,8 @@ mod tests {
     }
 
     fn spatial_desk() -> Project {
-        use crate::devices::class::{instantiate, DeviceClass};
         use crate::devices::class::set_param_value;
+        use crate::devices::class::{instantiate, DeviceClass};
         let (mut p, _) = desk();
         // Track "drums" gets a Spatial placement at hard-left, unity gain.
         let mut sp = instantiate(DeviceClass::Spatial, "sp_drums", "Place");
@@ -675,7 +712,8 @@ mod tests {
         set_param_value(&mut sp, "gain", 1.0).expect("gain");
         p.devices.push(sp);
         // A non-spatial device on the same chain must not confuse lookup.
-        p.devices.push(instantiate(DeviceClass::Gain, "g_drums", "Trim"));
+        p.devices
+            .push(instantiate(DeviceClass::Gain, "g_drums", "Trim"));
         p.tracks
             .iter_mut()
             .find(|t| t.id == "drums")
@@ -723,7 +761,11 @@ mod tests {
     fn spatial_monitor_gain_scales_through_param_sets() {
         use crate::devices::class::set_param_value;
         let mut p = spatial_desk();
-        let sp = p.devices.iter_mut().find(|d| d.id == "sp_drums").expect("sp");
+        let sp = p
+            .devices
+            .iter_mut()
+            .find(|d| d.id == "sp_drums")
+            .expect("sp");
         // ParamSet path: clamped writes, typo-loud ids (no schema change).
         set_param_value(sp, "gain", 2.0).expect("gain");
         assert!(matches!(

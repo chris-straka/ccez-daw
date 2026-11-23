@@ -159,7 +159,9 @@ impl Region {
         let v = vel as f32;
         let mut g = 1.0f32;
         if in_hi > in_lo && v < in_hi as f32 {
-            g *= ((v - in_lo as f32) / (in_hi - in_lo) as f32).clamp(0.0, 1.0).sqrt();
+            g *= ((v - in_lo as f32) / (in_hi - in_lo) as f32)
+                .clamp(0.0, 1.0)
+                .sqrt();
         }
         if out_hi > out_lo && v > out_lo as f32 {
             g *= (1.0 - (v - out_lo as f32) / (out_hi - out_lo) as f32)
@@ -465,7 +467,7 @@ fn render_region(
     let env = r.env;
     let srf = sr as f32;
     let rel_k = (-6.9 / (release * srf)).exp(); // -60 dB over `release`
-    // Attack, hold, decay to sustain: the level `t` seconds into the note.
+                                                // Attack, hold, decay to sustain: the level `t` seconds into the note.
     let level = |t: f32| -> f32 {
         if env.attack > 0.0 && t < env.attack {
             t / env.attack
@@ -549,7 +551,13 @@ pub(crate) mod tests {
     use super::*;
 
     /// A sine "recording" at `hz` on disk: what the parsers point at.
-    pub(crate) fn sine_wav(dir: &std::path::Path, name: &str, hz: f32, secs: f32, sr: u32) -> PathBuf {
+    pub(crate) fn sine_wav(
+        dir: &std::path::Path,
+        name: &str,
+        hz: f32,
+        secs: f32,
+        sr: u32,
+    ) -> PathBuf {
         let n = (secs * sr as f32) as usize;
         let s: Vec<f32> = (0..n)
             .map(|i| 0.5 * (std::f32::consts::TAU * hz * i as f32 / sr as f32).sin())
@@ -604,7 +612,11 @@ pub(crate) mod tests {
         narrow.lokey = 60;
         narrow.hikey = 60;
         let mut n = SampledInstrument::new(vec![narrow], PlayStyle::default());
-        assert!(n.render_note(40, 0.8, 0.5, 48_000, 0.0).unwrap().0.is_empty());
+        assert!(n
+            .render_note(40, 0.8, 0.5, 48_000, 0.0)
+            .unwrap()
+            .0
+            .is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -645,7 +657,10 @@ pub(crate) mod tests {
         let off = (0.2 * 48_000.0) as usize;
         let before = peak(&l[off - 480..off]);
         let after = peak(&l[off..]);
-        assert!(after <= before * 1.01, "swelled after note-off: {before} -> {after}");
+        assert!(
+            after <= before * 1.01,
+            "swelled after note-off: {before} -> {after}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -675,8 +690,14 @@ pub(crate) mod tests {
             let (l, _) = inst.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
             // The cosine itself never steps more than 0.5 * 2π/48 ≈ 0.066.
             let held = &l[..48_000];
-            let worst = held.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0f32, f32::max);
-            assert!(worst < 0.07, "trailer {trailer}: step {worst} at the loop seam");
+            let worst = held
+                .windows(2)
+                .map(|w| (w[1] - w[0]).abs())
+                .fold(0f32, f32::max);
+            assert!(
+                worst < 0.07,
+                "trailer {trailer}: step {worst} at the loop seam"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -711,7 +732,11 @@ pub(crate) mod tests {
             .collect();
         s.resize(4_800, 0.0);
         let p = dir.join("looped.wav");
-        std::fs::write(&p, with_smpl_loop(wavread::encode_pcm16(48_000, &[s]), 0, 2_399)).unwrap();
+        std::fs::write(
+            &p,
+            with_smpl_loop(wavread::encode_pcm16(48_000, &[s]), 0, 2_399),
+        )
+        .unwrap();
         let regions = super::super::sfz::parse("<region> sample=looped.wav key=69", &dir).unwrap();
         assert_eq!(regions[0].loop_mode, LoopMode::FromFile);
         let sus = PlayStyle {
@@ -726,7 +751,10 @@ pub(crate) mod tests {
             .chunks(480)
             .map(|w| (w.iter().map(|x| x * x).sum::<f32>() / w.len() as f32).sqrt())
             .fold(f32::MAX, f32::min);
-        assert!(quietest > 0.3, "the file loop sounds throughout (quietest 10 ms: {quietest})");
+        assert!(
+            quietest > 0.3,
+            "the file loop sounds throughout (quietest 10 ms: {quietest})"
+        );
         // A hit rings its recording once: no loop.
         let ring = PlayStyle {
             one_shot: true,
@@ -734,7 +762,10 @@ pub(crate) mod tests {
         };
         let mut hit = SampledInstrument::new(regions, ring);
         let (l, _) = hit.render_note(69, 1.0, 1.0, 48_000, 0.0).unwrap();
-        assert!(peak(&l[2_500..]) < 1e-3, "one-shot plays the silence after the loop");
+        assert!(
+            peak(&l[2_500..]) < 1e-3,
+            "one-shot plays the silence after the loop"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -772,7 +803,10 @@ pub(crate) mod tests {
 
     fn assert_loops(got: Option<f32>, want: f32, what: &str) {
         let got = got.unwrap_or_else(|| panic!("{what}: did not loop"));
-        assert!((got - want).abs() < 0.02, "{what}: settled rms {got:.3}, want {want:.3}");
+        assert!(
+            (got - want).abs() < 0.02,
+            "{what}: settled rms {got:.3}, want {want:.3}"
+        );
     }
 
     // SFZ defaults each loop point on its own: an unset `loop_start` is
@@ -830,7 +864,10 @@ pub(crate) mod tests {
         let late = &rr[2 * 48_000..2 * 48_000 + 4_800];
         let rms = (late.iter().map(|x| x * x).sum::<f32>() / late.len() as f32).sqrt();
         assert!(rms > 0.1, "late rms {rms}");
-        assert!(l.iter().all(|x| x.abs() < 1e-6), "hard right pan leaves left silent");
+        assert!(
+            l.iter().all(|x| x.abs() < 1e-6),
+            "hard right pan leaves left silent"
+        );
         let (gl, gr) = pan_gains(0.0);
         assert!((gl - 1.0).abs() < 1e-6 && (gr - 1.0).abs() < 1e-6);
         let _ = std::fs::remove_dir_all(&dir);

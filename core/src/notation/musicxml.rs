@@ -48,9 +48,10 @@ fn unescape(text: &str) -> String {
 
 /// Export a score as a MusicXML 4.0 score-partwise document.
 pub fn export_xml(score: &Score) -> Result<String, String> {
-    let bar = score.meter.bar_beats().ok_or_else(|| {
-        format!("bad meter {}/{}", score.meter.num, score.meter.den)
-    })?;
+    let bar = score
+        .meter
+        .bar_beats()
+        .ok_or_else(|| format!("bad meter {}/{}", score.meter.num, score.meter.den))?;
     score.validate(bar)?;
 
     // Beam lookup: event index -> (position in group, group length).
@@ -60,7 +61,10 @@ pub fn export_xml(score: &Score) -> Result<String, String> {
         "<!DOCTYPE score-partwise PUBLIC \"-//Recordare//DTD MusicXML 4.0 Partwise//EN\" \"http://www.musicxml.org/dtds/partwise.dtd\">\n",
     );
     out.push_str("<score-partwise version=\"4.0\">\n");
-    out.push_str(&format!("  <work><work-title>{}</work-title></work>\n", escape(&score.title)));
+    out.push_str(&format!(
+        "  <work><work-title>{}</work-title></work>\n",
+        escape(&score.title)
+    ));
     out.push_str("  <part-list><score-part id=\"P1\"><part-name>Music</part-name></score-part></part-list>\n");
     out.push_str("  <part id=\"P1\">\n");
 
@@ -118,12 +122,7 @@ fn beam_tags(m: &Measure) -> std::collections::HashMap<usize, &'static str> {
     tags
 }
 
-fn push_note(
-    out: &mut String,
-    n: &NotationNote,
-    chord_tail: bool,
-    beam: Option<&'static str>,
-) {
+fn push_note(out: &mut String, n: &NotationNote, chord_tail: bool, beam: Option<&'static str>) {
     out.push_str("      <note>\n");
     if chord_tail {
         out.push_str("        <chord/>\n");
@@ -138,7 +137,10 @@ fn push_note(
         },
         n.pitch.octave
     ));
-    out.push_str(&format!("        <duration>{}</duration>\n", ticks(n.beats())));
+    out.push_str(&format!(
+        "        <duration>{}</duration>\n",
+        ticks(n.beats())
+    ));
     out.push_str("        <voice>1</voice>\n");
     out.push_str(&format!("        <type>{}</type>\n", n.value.xml_type()));
     for _ in 0..n.dots {
@@ -159,7 +161,10 @@ fn push_note(
 fn push_rest(out: &mut String, r: &NotationRest) {
     out.push_str("      <note>\n");
     out.push_str("        <rest/>\n");
-    out.push_str(&format!("        <duration>{}</duration>\n", ticks(r.beats())));
+    out.push_str(&format!(
+        "        <duration>{}</duration>\n",
+        ticks(r.beats())
+    ));
     out.push_str("        <voice>1</voice>\n");
     out.push_str(&format!("        <type>{}</type>\n", r.value.xml_type()));
     for _ in 0..r.dots {
@@ -209,8 +214,8 @@ fn child_text(block: &str, tag: &str) -> Option<String> {
 fn parse_raw_note(block: &str) -> Result<RawNote, String> {
     let chord_tail = block.contains("<chord");
     let is_rest = block.contains("<rest");
-    let type_name = child_text(block, "type")
-        .ok_or_else(|| "note element missing <type>".to_string())?;
+    let type_name =
+        child_text(block, "type").ok_or_else(|| "note element missing <type>".to_string())?;
     let value = NoteValue::from_xml_type(&type_name)
         .ok_or_else(|| format!("unknown note type `{type_name}`"))?;
     let dots = block.matches("<dot").count() as u8;
@@ -226,8 +231,8 @@ fn parse_raw_note(block: &str) -> Result<RawNote, String> {
         let pitch_block = take_block(block, 0, "pitch")
             .ok_or_else(|| "note element missing <pitch>".to_string())?
             .0;
-        let step = child_text(pitch_block, "step")
-            .ok_or_else(|| "pitch missing <step>".to_string())?;
+        let step =
+            child_text(pitch_block, "step").ok_or_else(|| "pitch missing <step>".to_string())?;
         let step_ch = step
             .chars()
             .next()
@@ -243,7 +248,18 @@ fn parse_raw_note(block: &str) -> Result<RawNote, String> {
             .map_err(|e| format!("bad octave: {e}"))?;
         (Some(step_ch), alter, octave)
     };
-    Ok(RawNote { chord_tail, step, alter, octave, is_rest, value, dots, tie_start, tie_stop, beam })
+    Ok(RawNote {
+        chord_tail,
+        step,
+        alter,
+        octave,
+        is_rest,
+        value,
+        dots,
+        tie_start,
+        tie_stop,
+        beam,
+    })
 }
 
 /// Parse a document produced by [`export_xml`] back into a [`Score`].
@@ -251,7 +267,9 @@ fn parse_raw_note(block: &str) -> Result<RawNote, String> {
 /// events do not sum to the bar length — the same invariants `export`
 /// guarantees, so any failure here means the XML did not come from us.
 pub fn parse_xml(xml: &str) -> Result<Score, String> {
-    let title = take_block(xml, 0, "work-title").map(|(b, _)| unescape(b.trim())).unwrap_or_default();
+    let title = take_block(xml, 0, "work-title")
+        .map(|(b, _)| unescape(b.trim()))
+        .unwrap_or_default();
 
     // First measure's attributes give meter + key (exporter repeats them
     // per measure; all copies must agree — checked below).
@@ -333,8 +351,13 @@ pub fn parse_xml(xml: &str) -> Result<Score, String> {
                 }));
                 beam_marks.push(None);
             } else {
-                let step = Step::from_char(raw.step.expect("pitch checked")).expect("pitch checked");
-                let pitch = SpelledPitch { step, alter: raw.alter, octave: raw.octave };
+                let step =
+                    Step::from_char(raw.step.expect("pitch checked")).expect("pitch checked");
+                let pitch = SpelledPitch {
+                    step,
+                    alter: raw.alter,
+                    octave: raw.octave,
+                };
                 let midi = pitch.to_midi()?;
                 let note = NotationNote {
                     pitch,
@@ -349,12 +372,12 @@ pub fn parse_xml(xml: &str) -> Result<Score, String> {
                     // duration mismatches are errors. The tail shares the
                     // head's beam slot: its mark must agree, and no second
                     // slot is pushed (marks stay parallel to events).
-                    let prev = events.pop().ok_or_else(|| {
-                        format!("measure {number}: chord tail with no head")
-                    })?;
-                    let head_mark = beam_marks.pop().ok_or_else(|| {
-                        format!("measure {number}: chord tail with no head")
-                    })?;
+                    let prev = events
+                        .pop()
+                        .ok_or_else(|| format!("measure {number}: chord tail with no head"))?;
+                    let head_mark = beam_marks
+                        .pop()
+                        .ok_or_else(|| format!("measure {number}: chord tail with no head"))?;
                     if head_mark != raw.beam {
                         return Err(format!("measure {number}: chord beam marks disagree"));
                     }
@@ -407,7 +430,9 @@ pub fn parse_xml(xml: &str) -> Result<Score, String> {
                         return Err(format!("measure {number}: beam end with no begin"));
                     }
                     run.push(idx);
-                    beams.push(BeamGroup { events: std::mem::take(&mut run) });
+                    beams.push(BeamGroup {
+                        events: std::mem::take(&mut run),
+                    });
                 }
                 Some(other) => return Err(format!("measure {number}: bad beam `{other}`")),
             }
@@ -415,17 +440,26 @@ pub fn parse_xml(xml: &str) -> Result<Score, String> {
         if !run.is_empty() {
             return Err(format!("measure {number}: beam run left open"));
         }
-        measures.push(Measure { number, events, beams });
+        measures.push(Measure {
+            number,
+            events,
+            beams,
+        });
     }
 
     let (meter, key) = match (meter, key) {
         (Some(m), Some(k)) => (m, k),
         _ => return Err("document holds no measures".to_string()),
     };
-    let bar = meter.bar_beats().ok_or_else(|| {
-        format!("bad meter {}/{}", meter.num, meter.den)
-    })?;
-    let score = Score { title, meter, key, measures };
+    let bar = meter
+        .bar_beats()
+        .ok_or_else(|| format!("bad meter {}/{}", meter.num, meter.den))?;
+    let score = Score {
+        title,
+        meter,
+        key,
+        measures,
+    };
     score.validate(bar)?;
     Ok(score)
 }
@@ -434,7 +468,7 @@ pub fn parse_xml(xml: &str) -> Result<Score, String> {
 mod tests {
     use super::*;
     use crate::midi::{MidiClip, MidiNote};
-    use crate::notation::quantize::{QuantizeOptions, quantize};
+    use crate::notation::quantize::{quantize, QuantizeOptions};
 
     fn demo_score() -> Score {
         // G major, 4/4: triad + beamed eighths + tied cross-bar whole feel.
@@ -448,7 +482,8 @@ mod tests {
             (6, 71, 2.0, 2.0),
             (7, 72, 3.0, 2.0),
         ] {
-            clip.add_note(MidiNote::new(id, pitch, 90, start, len)).unwrap();
+            clip.add_note(MidiNote::new(id, pitch, 90, start, len))
+                .unwrap();
         }
         let opts = QuantizeOptions {
             key: KeySig::major(1),
@@ -465,9 +500,18 @@ mod tests {
         assert!(xml.contains("<fifths>1</fifths>"));
         assert!(xml.contains("<beats>4</beats><beat-type>4</beat-type>"));
         assert!(xml.contains("<chord/>"), "triad must emit chord joins");
-        assert!(xml.contains("<beam number=\"1\">begin</beam>"), "eighths must beam");
-        assert!(xml.contains("<tie type=\"start\""), "bar 1->2 whole note must tie");
-        assert!(xml.contains("<step>F</step><alter>1</alter>"), "F# spelling must survive");
+        assert!(
+            xml.contains("<beam number=\"1\">begin</beam>"),
+            "eighths must beam"
+        );
+        assert!(
+            xml.contains("<tie type=\"start\""),
+            "bar 1->2 whole note must tie"
+        );
+        assert!(
+            xml.contains("<step>F</step><alter>1</alter>"),
+            "F# spelling must survive"
+        );
         // Two bars: the 4-beat note at beat 4 fills bar 2.
         assert_eq!(xml.matches("<measure number=").count(), 2);
     }

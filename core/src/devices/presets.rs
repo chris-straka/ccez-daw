@@ -708,7 +708,8 @@ mod tests {
     fn scratch(name: &str) -> std::path::PathBuf {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("ccez-presets-{name}-{}-{n}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ccez-presets-{name}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -792,17 +793,30 @@ mod tests {
         let preset = find_preset("dly_dotted_groove").expect("seeded preset");
         let dir = scratch("undo");
         let mut project = Project::new("p", "P");
-        project.devices.push(instantiate(DeviceClass::Delay, "dly1", "Echo"));
+        project
+            .devices
+            .push(instantiate(DeviceClass::Delay, "dly1", "Echo"));
         let before: Vec<f64> = project.devices[0].params.iter().map(|p| p.value).collect();
         let mut e = Engine::create(&dir, project).expect("create");
         let mut seqs = Vec::new();
         for (target, value_json) in preset_op_payloads("dly1", preset) {
             // Every payload parses as a bare number: the engine's ParamSet path.
-            assert!(serde_json::from_str::<f64>(&value_json).is_ok(), "{value_json}");
-            seqs.push(e.apply("ui", OpKind::ParamSet, &target, &value_json).expect("apply"));
+            assert!(
+                serde_json::from_str::<f64>(&value_json).is_ok(),
+                "{value_json}"
+            );
+            seqs.push(
+                e.apply("ui", OpKind::ParamSet, &target, &value_json)
+                    .expect("apply"),
+            );
         }
         assert_eq!(seqs.len(), preset.params.len());
-        let live = e.project().devices.iter().find(|d| d.id == "dly1").expect("device");
+        let live = e
+            .project()
+            .devices
+            .iter()
+            .find(|d| d.id == "dly1")
+            .expect("device");
         for (param, value) in preset.params {
             let got = live.params.iter().find(|p| p.id == *param).expect("param");
             assert_eq!(got.value, *value);
@@ -810,7 +824,12 @@ mod tests {
         for _ in &seqs {
             e.undo().expect("undo");
         }
-        let restored = e.project().devices.iter().find(|d| d.id == "dly1").expect("device");
+        let restored = e
+            .project()
+            .devices
+            .iter()
+            .find(|d| d.id == "dly1")
+            .expect("device");
         let after: Vec<f64> = restored.params.iter().map(|p| p.value).collect();
         assert_eq!(after, before, "undo must restore exact defaults");
         let _ = std::fs::remove_dir_all(&dir);
@@ -823,7 +842,11 @@ mod tests {
         assert!(apply_preset(&mut other, preset).is_err());
         assert!(find_preset("no_such_preset").is_none());
         // A hand-corrupted preset (bad param id) surfaces, not vanishes.
-        let bad = NativePreset { id: "bad", params: &[("nope", 1.0)], ..*preset };
+        let bad = NativePreset {
+            id: "bad",
+            params: &[("nope", 1.0)],
+            ..*preset
+        };
         let mut node = instantiate(preset.class, "lp", "LP");
         assert!(apply_preset(&mut node, &bad).is_err());
     }

@@ -3,7 +3,7 @@
 //! Run: `cargo test --manifest-path core/Cargo.toml --test midi_roundtrip`.
 
 use ccez_core::engine::Engine;
-use ccez_core::midi::{GrooveTemplate, MidiClip, MidiNote, Recorder, expand};
+use ccez_core::midi::{expand, GrooveTemplate, MidiClip, MidiNote, Recorder};
 use ccez_core::midi::{groove, transport};
 use ccez_core::model::Project;
 
@@ -42,15 +42,22 @@ fn midi_asset_round_trip_through_engine() {
     let _ = std::fs::remove_dir_all(&dir);
     let mut engine = Engine::create(&dir, Project::new("p", "Midi RT")).expect("create");
     let clip = sample_clip();
-    clip.save_to_engine(&mut engine, "take1.mid.json").expect("save");
+    clip.save_to_engine(&mut engine, "take1.mid.json")
+        .expect("save");
     // Manifest carries the blob as midi-kind without reading bytes.
-    assert!(engine.asset_keys().iter().any(|e| e.key == "take1.mid.json" && e.kind == "midi"));
+    assert!(engine
+        .asset_keys()
+        .iter()
+        .any(|e| e.key == "take1.mid.json" && e.kind == "midi"));
     let back = MidiClip::load_from_engine(&engine, "take1.mid.json").expect("load");
     assert_eq!(clip, back);
     // Reopen: the asset survives restart (lazy load, not project.json).
     drop(engine);
     let engine2 = Engine::open(&dir).expect("reopen");
-    assert_eq!(MidiClip::load_from_engine(&engine2, "take1.mid.json").expect("load2"), clip);
+    assert_eq!(
+        MidiClip::load_from_engine(&engine2, "take1.mid.json").expect("load2"),
+        clip
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -75,7 +82,15 @@ fn midi_record_playback_round_trip() {
     // Events are sorted by onset: feed them to the recorder in order.
     let mut rec = Recorder::new(4.0);
     for e in &events {
-        rec.note_on(e.pitch, e.velocity, e.channel, e.on_beats, e.pitch_bend, e.pressure, e.timbre);
+        rec.note_on(
+            e.pitch,
+            e.velocity,
+            e.channel,
+            e.on_beats,
+            e.pitch_bend,
+            e.pressure,
+            e.timbre,
+        );
     }
     for e in &events {
         rec.note_off(e.pitch, e.channel, e.off_beats);
@@ -121,18 +136,33 @@ fn groove_extract_transfer_round_trip() {
 
     let template = groove::extract(&perf, 2).expect("extract");
     // Step 1 (the off-beat) learned +0.03; step 0 stayed ~0.
-    assert!((template.offsets[1] - 0.03).abs() < 1e-9, "offsets={:?}", template.offsets);
+    assert!(
+        (template.offsets[1] - 0.03).abs() < 1e-9,
+        "offsets={:?}",
+        template.offsets
+    );
     assert!(template.offsets[0].abs() < 1e-9);
 
     let mut straight = MidiClip::new(4.0);
-    straight.add_note(MidiNote::new(9, 62, 100, 0.0, 0.25)).unwrap();
-    straight.add_note(MidiNote::new(10, 62, 100, 0.5, 0.25)).unwrap();
+    straight
+        .add_note(MidiNote::new(9, 62, 100, 0.0, 0.25))
+        .unwrap();
+    straight
+        .add_note(MidiNote::new(10, 62, 100, 0.5, 0.25))
+        .unwrap();
     groove::apply(&mut straight, &template, 1.0).expect("apply");
-    let off: f64 = straight.notes.iter().find(|n| n.note_id == 10).unwrap().timing_offset_beats;
+    let off: f64 = straight
+        .notes
+        .iter()
+        .find(|n| n.note_id == 10)
+        .unwrap()
+        .timing_offset_beats;
     assert!((off - 0.03).abs() < 1e-9);
     // Zero amount is a no-op.
     let mut untouched = MidiClip::new(4.0);
-    untouched.add_note(MidiNote::new(11, 62, 100, 0.5, 0.25)).unwrap();
+    untouched
+        .add_note(MidiNote::new(11, 62, 100, 0.5, 0.25))
+        .unwrap();
     groove::apply(&mut untouched, &template, 0.0).expect("apply0");
     assert_eq!(untouched.notes[0].timing_offset_beats, 0.0);
 

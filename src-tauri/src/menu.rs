@@ -76,10 +76,22 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
         spec.push((
             "App",
             vec![
-                A { id: "app.about", title: "About ccez-daw", accelerator: None },
-                A { id: "app.update.check", title: "Check for Updates…", accelerator: None },
+                A {
+                    id: "app.about",
+                    title: "About ccez-daw",
+                    accelerator: None,
+                },
+                A {
+                    id: "app.update.check",
+                    title: "Check for Updates…",
+                    accelerator: None,
+                },
                 S,
-                A { id: "app.preferences", title: "Preferences…", accelerator: Some("CmdOrCtrl+,") },
+                A {
+                    id: "app.preferences",
+                    title: "Preferences…",
+                    accelerator: Some("CmdOrCtrl+,"),
+                },
                 S,
                 N(NativeRole::Services),
                 S,
@@ -93,21 +105,49 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
     }
 
     let mut file = vec![
-        A { id: "project.new", title: "New Project…", accelerator: Some("CmdOrCtrl+N") },
-        A { id: "project.open", title: "Open…", accelerator: Some("CmdOrCtrl+O") },
-        A { id: "project.save", title: "Save", accelerator: Some("CmdOrCtrl+S") },
+        A {
+            id: "project.new",
+            title: "New Project…",
+            accelerator: Some("CmdOrCtrl+N"),
+        },
+        A {
+            id: "project.open",
+            title: "Open…",
+            accelerator: Some("CmdOrCtrl+O"),
+        },
+        A {
+            id: "project.save",
+            title: "Save",
+            accelerator: Some("CmdOrCtrl+S"),
+        },
         S,
-        A { id: "branch.merge", title: "Merge Branch…", accelerator: None },
+        A {
+            id: "branch.merge",
+            title: "Merge Branch…",
+            accelerator: None,
+        },
     ];
     if !macos {
         file.push(S);
-        file.push(A { id: "app.quit", title: "Quit", accelerator: Some("CmdOrCtrl+Q") });
+        file.push(A {
+            id: "app.quit",
+            title: "Quit",
+            accelerator: Some("CmdOrCtrl+Q"),
+        });
     }
     spec.push(("File", file));
 
     let mut edit = vec![
-        A { id: "project.undo", title: "Undo", accelerator: Some("CmdOrCtrl+Z") },
-        A { id: "project.redo", title: "Redo", accelerator: Some("Shift+CmdOrCtrl+Z") },
+        A {
+            id: "project.undo",
+            title: "Undo",
+            accelerator: Some("CmdOrCtrl+Z"),
+        },
+        A {
+            id: "project.redo",
+            title: "Redo",
+            accelerator: Some("Shift+CmdOrCtrl+Z"),
+        },
         S,
         N(NativeRole::Cut),
         N(NativeRole::Copy),
@@ -127,17 +167,49 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
     spec.push((
         "View",
         vec![
-            A { id: "palette.open", title: "Command Palette…", accelerator: Some("CmdOrCtrl+K") },
+            A {
+                id: "palette.open",
+                title: "Command Palette…",
+                accelerator: Some("CmdOrCtrl+K"),
+            },
             S,
-            A { id: "view.zoom.in", title: "Zoom In", accelerator: Some("CmdOrCtrl+=") },
-            A { id: "view.zoom.out", title: "Zoom Out", accelerator: Some("CmdOrCtrl+-") },
-            A { id: "view.zoom.reset", title: "Reset Zoom", accelerator: Some("CmdOrCtrl+0") },
+            A {
+                id: "view.zoom.in",
+                title: "Zoom In",
+                accelerator: Some("CmdOrCtrl+="),
+            },
+            A {
+                id: "view.zoom.out",
+                title: "Zoom Out",
+                accelerator: Some("CmdOrCtrl+-"),
+            },
+            A {
+                id: "view.zoom.reset",
+                title: "Reset Zoom",
+                accelerator: Some("CmdOrCtrl+0"),
+            },
             S,
-            A { id: "view.fullscreen", title: "Toggle Fullscreen", accelerator: Some("F11") },
-            A { id: "view.focusSession", title: "Focus Session", accelerator: None },
+            A {
+                id: "view.fullscreen",
+                title: "Toggle Fullscreen",
+                accelerator: Some("F11"),
+            },
+            A {
+                id: "view.focusSession",
+                title: "Focus Session",
+                accelerator: None,
+            },
             S,
-            A { id: "session.launch", title: "Launch Session Slot…", accelerator: None },
-            A { id: "session.jam_record", title: "Record Jam to Timeline", accelerator: None },
+            A {
+                id: "session.launch",
+                title: "Launch Session Slot…",
+                accelerator: None,
+            },
+            A {
+                id: "session.jam_record",
+                title: "Record Jam to Timeline",
+                accelerator: None,
+            },
         ],
     ));
 
@@ -146,46 +218,118 @@ pub fn menu_spec(macos: bool) -> Vec<(&'static str, Vec<MenuItemKind>)> {
         vec![
             // No accelerators here on purpose: transport keys (Space / s) belong
             // to the mode-aware vim layer, not to mode-unaware menu shortcuts.
-            A { id: "transport.play", title: "Play", accelerator: None },
-            A { id: "transport.stop", title: "Stop", accelerator: None },
+            A {
+                id: "transport.play",
+                title: "Play",
+                accelerator: None,
+            },
+            A {
+                id: "transport.stop",
+                title: "Stop",
+                accelerator: None,
+            },
             S,
-            A { id: "engine.set_tempo", title: "Set Tempo…", accelerator: None },
-            A { id: "record.punch", title: "Punch In/Out", accelerator: None },
-            A { id: "link.join", title: "Join Link Session", accelerator: None },
+            A {
+                id: "engine.set_tempo",
+                title: "Set Tempo…",
+                accelerator: None,
+            },
+            A {
+                id: "record.punch",
+                title: "Punch In/Out",
+                accelerator: None,
+            },
+            A {
+                id: "link.join",
+                title: "Join Link Session",
+                accelerator: None,
+            },
         ],
     ));
 
     spec.push((
         "Track",
         vec![
-            A { id: "track.add", title: "Add Track", accelerator: Some("CmdOrCtrl+T") },
-            A { id: "track.list", title: "List Tracks", accelerator: None },
+            A {
+                id: "track.add",
+                title: "Add Track",
+                accelerator: Some("CmdOrCtrl+T"),
+            },
+            A {
+                id: "track.list",
+                title: "List Tracks",
+                accelerator: None,
+            },
             S,
-            A { id: "track.delete", title: "Delete Selected Track", accelerator: None },
+            A {
+                id: "track.delete",
+                title: "Delete Selected Track",
+                accelerator: None,
+            },
         ],
     ));
 
     spec.push((
         "Clip",
         vec![
-            A { id: "clip.add", title: "Add Clip", accelerator: Some("CmdOrCtrl+L") },
-            A { id: "clip.duplicate", title: "Duplicate Clip", accelerator: Some("CmdOrCtrl+D") },
-            A { id: "clip.delete", title: "Delete Clip", accelerator: Some("CmdOrCtrl+Backspace") },
+            A {
+                id: "clip.add",
+                title: "Add Clip",
+                accelerator: Some("CmdOrCtrl+L"),
+            },
+            A {
+                id: "clip.duplicate",
+                title: "Duplicate Clip",
+                accelerator: Some("CmdOrCtrl+D"),
+            },
+            A {
+                id: "clip.delete",
+                title: "Delete Clip",
+                accelerator: Some("CmdOrCtrl+Backspace"),
+            },
             S,
-            A { id: "automation.point_set", title: "Set Automation Point…", accelerator: None },
-            A { id: "comp.commit", title: "Commit Comp…", accelerator: None },
-            A { id: "groove.apply", title: "Apply Groove…", accelerator: None },
+            A {
+                id: "automation.point_set",
+                title: "Set Automation Point…",
+                accelerator: None,
+            },
+            A {
+                id: "comp.commit",
+                title: "Commit Comp…",
+                accelerator: None,
+            },
+            A {
+                id: "groove.apply",
+                title: "Apply Groove…",
+                accelerator: None,
+            },
         ],
     ));
 
     let mut help = vec![
-        A { id: "help.open_docs", title: "Documentation", accelerator: Some("F1") },
-        A { id: "help.show_shortcuts", title: "Keyboard Shortcuts", accelerator: None },
+        A {
+            id: "help.open_docs",
+            title: "Documentation",
+            accelerator: Some("F1"),
+        },
+        A {
+            id: "help.show_shortcuts",
+            title: "Keyboard Shortcuts",
+            accelerator: None,
+        },
     ];
     if !macos {
         help.push(S);
-        help.push(A { id: "app.update.check", title: "Check for Updates…", accelerator: None });
-        help.push(A { id: "app.about", title: "About ccez-daw", accelerator: None });
+        help.push(A {
+            id: "app.update.check",
+            title: "Check for Updates…",
+            accelerator: None,
+        });
+        help.push(A {
+            id: "app.about",
+            title: "About ccez-daw",
+            accelerator: None,
+        });
     }
     spec.push(("Help", help));
 
@@ -219,10 +363,9 @@ pub fn action_for_native(role: NativeRole) -> Option<&'static str> {
         NativeRole::Copy => Some("edit.copy"),
         NativeRole::Paste => Some("edit.paste"),
         NativeRole::SelectAll => Some("edit.select_all"),
-        NativeRole::Services
-        | NativeRole::Hide
-        | NativeRole::HideOthers
-        | NativeRole::ShowAll => None,
+        NativeRole::Services | NativeRole::Hide | NativeRole::HideOthers | NativeRole::ShowAll => {
+            None
+        }
     }
 }
 
@@ -246,7 +389,11 @@ pub fn build_app_menu<R: Runtime, M: Manager<R>>(
         let mut sub = SubmenuBuilder::new(manager, title);
         for item in items {
             match item {
-                MenuItemKind::Action { id, title, accelerator } => {
+                MenuItemKind::Action {
+                    id,
+                    title,
+                    accelerator,
+                } => {
                     let mut b = MenuItemBuilder::with_id(id, title);
                     if let Some(acc) = accelerator {
                         b = b.accelerator(acc);
@@ -344,7 +491,9 @@ pub fn install<R: Runtime>(app: &mut App<R>) -> tauri::Result<()> {
 fn emit_action<R: Runtime>(app: &AppHandle<R>, action: &str) {
     let _ = app.emit(
         MENU_ACTION_EVENT,
-        MenuActionPayload { action: action.to_string() },
+        MenuActionPayload {
+            action: action.to_string(),
+        },
     );
 }
 
@@ -421,7 +570,11 @@ mod tests {
             .into_iter()
             .flat_map(|(_, items)| items)
             .filter_map(|item| match item {
-                MenuItemKind::Action { id, title, accelerator } => Some((id, title, accelerator)),
+                MenuItemKind::Action {
+                    id,
+                    title,
+                    accelerator,
+                } => Some((id, title, accelerator)),
                 _ => None,
             })
             .collect()
@@ -429,14 +582,21 @@ mod tests {
 
     #[test]
     fn submenu_titles_cover_app_file_edit_view_transport_track_clip_help() {
-        let mac_titles: Vec<_> =
-            menu_spec(true).into_iter().map(|(t, _)| t).collect();
+        let mac_titles: Vec<_> = menu_spec(true).into_iter().map(|(t, _)| t).collect();
         assert_eq!(
             mac_titles,
-            vec!["App", "File", "Edit", "View", "Transport", "Track", "Clip", "Help"]
+            vec![
+                "App",
+                "File",
+                "Edit",
+                "View",
+                "Transport",
+                "Track",
+                "Clip",
+                "Help"
+            ]
         );
-        let other_titles: Vec<_> =
-            menu_spec(false).into_iter().map(|(t, _)| t).collect();
+        let other_titles: Vec<_> = menu_spec(false).into_iter().map(|(t, _)| t).collect();
         assert_eq!(
             other_titles,
             vec!["File", "Edit", "View", "Transport", "Track", "Clip", "Help"]
@@ -460,8 +620,10 @@ mod tests {
     #[test]
     fn core_registry_actions_are_reachable_from_the_menu() {
         for macos in [true, false] {
-            let mut ids: HashSet<_> =
-                action_items(macos).into_iter().map(|(id, _, _)| id).collect();
+            let mut ids: HashSet<_> = action_items(macos)
+                .into_iter()
+                .map(|(id, _, _)| id)
+                .collect();
             // Native roles reachable via best-effort sync emission count too.
             for (_, items) in menu_spec(macos) {
                 for item in items {
@@ -490,7 +652,10 @@ mod tests {
                 "app.preferences",
                 "app.update.check",
             ] {
-                assert!(ids.contains(expected), "{expected:?} missing (macos={macos})");
+                assert!(
+                    ids.contains(expected),
+                    "{expected:?} missing (macos={macos})"
+                );
             }
         }
     }
@@ -596,7 +761,9 @@ mod tests {
 
     #[test]
     fn menu_action_payload_shape() {
-        let p = MenuActionPayload { action: "transport.play".to_string() };
+        let p = MenuActionPayload {
+            action: "transport.play".to_string(),
+        };
         let v = serde_json::to_value(&p).expect("serializes");
         assert_eq!(v, serde_json::json!({ "action": "transport.play" }));
         assert_eq!(MENU_ACTION_EVENT, "menu-action");
@@ -612,7 +779,10 @@ mod tests {
     fn route_prefers_custom_ids_then_native_table() {
         let native = vec![(MenuId::new("muda-native-copy"), "edit.copy")];
         // Custom id wins even when a native row exists.
-        assert_eq!(route_menu_event("transport.play", &native), Some("transport.play"));
+        assert_eq!(
+            route_menu_event("transport.play", &native),
+            Some("transport.play")
+        );
         // Native runtime id resolves through the table.
         assert_eq!(
             route_menu_event("muda-native-copy", &native),

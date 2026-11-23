@@ -193,7 +193,12 @@ impl AdaptiveEngine {
         } else {
             0
         };
-        let target: BTreeSet<String> = self.cue.layers_for_state(&to).iter().map(|l| l.id.clone()).collect();
+        let target: BTreeSet<String> = self
+            .cue
+            .layers_for_state(&to)
+            .iter()
+            .map(|l| l.id.clone())
+            .collect();
         let layer_ids: Vec<String> = self.layers.keys().cloned().collect();
         for id in layer_ids {
             let to_gain = if target.contains(&id) { 1.0 } else { 0.0 };
@@ -204,10 +209,19 @@ impl AdaptiveEngine {
                 mix.gain = to_gain;
                 mix.ramp = None;
             } else {
-                mix.ramp = Some(Ramp { from: from_gain, to: to_gain, start: at, end: at + fade_samples });
+                mix.ramp = Some(Ramp {
+                    from: from_gain,
+                    to: to_gain,
+                    start: at,
+                    end: at + fade_samples,
+                });
             }
         }
-        if degraded { Degraded::Yes } else { Degraded::No }
+        if degraded {
+            Degraded::Yes
+        } else {
+            Degraded::No
+        }
     }
 
     /// Post a snapshot effective immediately at the engine clock origin.
@@ -220,12 +234,20 @@ impl AdaptiveEngine {
     ///
     /// `stems` maps layer id → mono stem (looped by wrapping). Missing layers
     /// contribute silence. Output is silence when `frames == 0`.
-    pub fn render(&mut self, stems: &BTreeMap<String, Vec<f32>>, start: u64, frames: usize) -> Vec<f32> {
+    pub fn render(
+        &mut self,
+        stems: &BTreeMap<String, Vec<f32>>,
+        start: u64,
+        frames: usize,
+    ) -> Vec<f32> {
         let mut out = vec![0.0f32; frames];
         if frames == 0 {
             return out;
         }
-        let solo_any = self.layers.values().any(|m| m.override_state == LayerOverride::Soloed);
+        let solo_any = self
+            .layers
+            .values()
+            .any(|m| m.override_state == LayerOverride::Soloed);
         // Settle ramps fully behind us so state stays bounded on long renders.
         for mix in self.layers.values_mut() {
             mix.settle(start);
@@ -340,7 +362,10 @@ mod tests {
     }
 
     fn snap(state: &str) -> GameStateSnapshot {
-        GameStateSnapshot { state: state.to_string(), values: vec![] }
+        GameStateSnapshot {
+            state: state.to_string(),
+            values: vec![],
+        }
     }
 
     fn stems() -> BTreeMap<String, Vec<f32>> {
@@ -374,7 +399,11 @@ mod tests {
         // ...and the boundary sample starts the crossfade exactly: drums gain
         // ramps 0 -> 1 while the always-on bed holds at 1.
         let edge = engine.render(&stems(), at, 2);
-        assert!((edge[0] - 0.8).abs() < 1e-6, "fade starts at 0, got {}", edge[0]);
+        assert!(
+            (edge[0] - 0.8).abs() < 1e-6,
+            "fade starts at 0, got {}",
+            edge[0]
+        );
         // Mid-fade drums gain ~= 0.5 -> 0.8 + 0.9 * 0.5 = 1.25.
         let mid = engine.render(&stems(), at + 48_000, 1);
         assert!((mid[0] - 1.25).abs() < 1e-4, "mid-fade mix, got {}", mid[0]);
@@ -403,7 +432,11 @@ mod tests {
         for (offset, gain) in [(24_000u64, 0.25f32), (72_000, 0.75)] {
             let out = engine.render(&stems(), at + offset, 1);
             let want = 0.8 + 0.9 * gain;
-            assert!((out[0] - want).abs() < 1e-4, "offset {offset}: got {}, want {want}", out[0]);
+            assert!(
+                (out[0] - want).abs() < 1e-4,
+                "offset {offset}: got {}, want {want}",
+                out[0]
+            );
         }
     }
 

@@ -99,7 +99,9 @@ pub fn validate_lane(lane: &AutomationLane) -> Result<()> {
         ));
     }
     if lane.points.is_empty() {
-        return Err(AutomationError::BadLane("lane needs at least one point".into()));
+        return Err(AutomationError::BadLane(
+            "lane needs at least one point".into(),
+        ));
     }
     let mut prev = f64::NEG_INFINITY;
     for p in &lane.points {
@@ -188,7 +190,9 @@ impl AutomationClip {
             )));
         }
         if self.points.is_empty() {
-            return Err(AutomationError::BadClip("clip needs at least one point".into()));
+            return Err(AutomationError::BadClip(
+                "clip needs at least one point".into(),
+            ));
         }
         let mut prev = f64::NEG_INFINITY;
         for p in &self.points {
@@ -238,10 +242,7 @@ pub fn instantiate_clip(clip: &AutomationClip, start_beat: f64) -> Result<Vec<Au
 /// Merge stamped points into a lane: same-beat points are replaced, new
 /// beats are inserted, order is restored. Returns the merged point list
 /// (the caller writes it back to the frozen lane + op log).
-pub fn merge_points(
-    lane: &AutomationLane,
-    stamped: &[AutomationPoint],
-) -> Vec<AutomationPoint> {
+pub fn merge_points(lane: &AutomationLane, stamped: &[AutomationPoint]) -> Vec<AutomationPoint> {
     let mut pts = lane.points.clone();
     for p in stamped {
         match pts.iter().position(|q| q.beat == p.beat) {
@@ -328,7 +329,9 @@ pub struct ModRoute {
 impl ModRoute {
     pub fn validate(&self) -> Result<()> {
         if self.id.is_empty() {
-            return Err(AutomationError::BadRoute("route id must be non-empty".into()));
+            return Err(AutomationError::BadRoute(
+                "route id must be non-empty".into(),
+            ));
         }
         if self.target.node.is_empty() || self.target.param.is_empty() {
             return Err(AutomationError::BadRoute(
@@ -473,7 +476,16 @@ pub fn render_block(
         let key = format!("{}:{}", target.node, target.param);
         out.insert(
             key,
-            resolve_param_samples(project, &target, lane, matrix, start_beat, tempo, sample_rate, frames)?,
+            resolve_param_samples(
+                project,
+                &target,
+                lane,
+                matrix,
+                start_beat,
+                tempo,
+                sample_rate,
+                frames,
+            )?,
         );
     }
     Ok(out)
@@ -499,7 +511,10 @@ impl AutomationDoc {
     pub fn add_clip(&mut self, clip: AutomationClip) -> Result<()> {
         clip.validate()?;
         if self.clips.iter().any(|c| c.id == clip.id) {
-            return Err(AutomationError::BadClip(format!("duplicate clip `{}`", clip.id)));
+            return Err(AutomationError::BadClip(format!(
+                "duplicate clip `{}`",
+                clip.id
+            )));
         }
         self.clips.push(clip);
         Ok(())
@@ -536,8 +551,14 @@ pub fn sample_automation_doc() -> AutomationDoc {
             name: "Swell".to_string(),
             length_beats: 4.0,
             points: vec![
-                AutomationPoint { beat: 0.0, value: 0.0 },
-                AutomationPoint { beat: 4.0, value: 1.0 },
+                AutomationPoint {
+                    beat: 0.0,
+                    value: 0.0,
+                },
+                AutomationPoint {
+                    beat: 4.0,
+                    value: 1.0,
+                },
             ],
         }],
         routes: vec![ModRoute {
@@ -569,8 +590,14 @@ mod tests {
                 param: "volume".to_string(),
             },
             points: vec![
-                AutomationPoint { beat: 0.0, value: 0.0 },
-                AutomationPoint { beat: 4.0, value: 1.0 },
+                AutomationPoint {
+                    beat: 0.0,
+                    value: 0.0,
+                },
+                AutomationPoint {
+                    beat: 4.0,
+                    value: 1.0,
+                },
             ],
         }
     }
@@ -608,10 +635,7 @@ mod tests {
         // Sample i sits at beat i/4; ramp is beat/4, so value = i/16.
         for (i, &v) in out.iter().enumerate() {
             let want = (i as f64 / 16.0).min(1.0);
-            assert!(
-                (v - want).abs() < 1e-12,
-                "sample {i}: got {v}, want {want}"
-            );
+            assert!((v - want).abs() < 1e-12, "sample {i}: got {v}, want {want}");
         }
         // Pin the headline frames exactly.
         assert_eq!(out[0], 0.0);
@@ -643,21 +667,36 @@ mod tests {
             name: "C".to_string(),
             length_beats: 2.0,
             points: vec![
-                AutomationPoint { beat: 0.0, value: 0.5 },
-                AutomationPoint { beat: 2.0, value: 0.9 },
+                AutomationPoint {
+                    beat: 0.0,
+                    value: 0.5,
+                },
+                AutomationPoint {
+                    beat: 2.0,
+                    value: 0.9,
+                },
             ],
         };
         let stamped = instantiate_clip(&clip, 8.0).expect("stamps");
         assert_eq!(
             stamped,
             vec![
-                AutomationPoint { beat: 8.0, value: 0.5 },
-                AutomationPoint { beat: 10.0, value: 0.9 },
+                AutomationPoint {
+                    beat: 8.0,
+                    value: 0.5
+                },
+                AutomationPoint {
+                    beat: 10.0,
+                    value: 0.9
+                },
             ]
         );
         // Merging onto a lane that already has beat 8 replaces it.
         let mut target = lane();
-        target.points.push(AutomationPoint { beat: 8.0, value: 0.0 });
+        target.points.push(AutomationPoint {
+            beat: 8.0,
+            value: 0.0,
+        });
         let merged = merge_points(&target, &stamped);
         let beats: Vec<f64> = merged.iter().map(|p| p.beat).collect();
         assert_eq!(beats, vec![0.0, 4.0, 8.0, 10.0]);
@@ -676,7 +715,10 @@ mod tests {
         let lane = AutomationLane {
             id: "l".to_string(),
             target: target.clone(),
-            points: vec![AutomationPoint { beat: 0.0, value: 0.8 }],
+            points: vec![AutomationPoint {
+                beat: 0.0,
+                value: 0.8,
+            }],
         };
         let matrix = ModMatrix {
             routes: vec![ModRoute {
@@ -686,9 +728,8 @@ mod tests {
                 depth: 1.0,
             }],
         };
-        let out =
-            resolve_param_samples(&p, &target, Some(&lane), &matrix, 0.0, 120.0, 44100.0, 8)
-                .expect("resolves");
+        let out = resolve_param_samples(&p, &target, Some(&lane), &matrix, 0.0, 120.0, 44100.0, 8)
+            .expect("resolves");
         assert!(out.iter().all(|&v| v == 1.5), "must clamp: {out:?}");
     }
 
@@ -709,15 +750,18 @@ mod tests {
                 depth: 100.0,
             }],
         };
-        let out =
-            resolve_param_samples(&p, &target, None, &matrix, 0.0, 120.0, 44100.0, 4)
-                .expect("resolves");
+        let out = resolve_param_samples(&p, &target, None, &matrix, 0.0, 120.0, 44100.0, 4)
+            .expect("resolves");
         assert_eq!(out, vec![1100.0; 4]);
     }
 
     #[test]
     fn sine_lfo_is_bipolar_and_periodic() {
-        let lfo = Lfo { shape: LfoShape::Sine, freq_hz: 1.0, phase: 0.0 };
+        let lfo = Lfo {
+            shape: LfoShape::Sine,
+            freq_hz: 1.0,
+            phase: 0.0,
+        };
         assert_eq!(lfo.value_at(0.0), 0.0);
         assert!((lfo.value_at(0.25) - 1.0).abs() < 1e-12);
         assert!(lfo.value_at(0.5).abs() < 1e-12);
@@ -732,23 +776,40 @@ mod tests {
             node: "trk_music".to_string(),
             param: "reverb_size".to_string(),
         };
-        let err = resolve_param_samples(&p, &target, None, &ModMatrix::default(), 0.0, 120.0, 44100.0, 4)
-            .expect_err("must fail");
+        let err = resolve_param_samples(
+            &p,
+            &target,
+            None,
+            &ModMatrix::default(),
+            0.0,
+            120.0,
+            44100.0,
+            4,
+        )
+        .expect_err("must fail");
         assert!(matches!(err, AutomationError::UnknownParam(_)), "{err}");
     }
 
     #[test]
     fn bad_lanes_and_routes_rejected() {
         let mut bad = lane();
-        bad.points.push(AutomationPoint { beat: 4.0, value: 0.0 });
+        bad.points.push(AutomationPoint {
+            beat: 4.0,
+            value: 0.0,
+        });
         assert!(validate_lane(&bad).is_err());
         let doc = &mut AutomationDoc::empty();
-        assert!(doc.add_route(ModRoute {
-            id: "".to_string(),
-            source: ModSource::Constant(1.0),
-            target: ParamAddress { node: "n".to_string(), param: "p".to_string() },
-            depth: 1.0,
-        }).is_err());
+        assert!(doc
+            .add_route(ModRoute {
+                id: "".to_string(),
+                source: ModSource::Constant(1.0),
+                target: ParamAddress {
+                    node: "n".to_string(),
+                    param: "p".to_string()
+                },
+                depth: 1.0,
+            })
+            .is_err());
         assert!(sample_automation_doc().clips[0].validate().is_ok());
     }
 

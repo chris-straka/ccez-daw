@@ -123,7 +123,9 @@ pub fn encode_pcm16(sample_rate: u32, channels: &[Vec<f32>]) -> Vec<u8> {
     out.extend_from_slice(&data_len.to_le_bytes());
     for i in 0..n {
         for c in channels {
-            out.extend_from_slice(&((c[i].clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes());
+            out.extend_from_slice(
+                &((c[i].clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes(),
+            );
         }
     }
     out
@@ -138,7 +140,10 @@ mod tests {
         let l: Vec<f32> = (0..100).map(|i| (i as f32 / 50.0) - 1.0).collect();
         let r: Vec<f32> = l.iter().map(|x| -x * 0.5).collect();
         let a = decode(&encode_pcm16(44_100, &[l.clone(), r.clone()])).unwrap();
-        assert_eq!((a.sample_rate, a.channels.len(), a.frames()), (44_100, 2, 100));
+        assert_eq!(
+            (a.sample_rate, a.channels.len(), a.frames()),
+            (44_100, 2, 100)
+        );
         assert!((a.left()[10] - l[10]).abs() < 1e-4);
         assert!((a.right()[10] - r[10]).abs() < 1e-4);
         assert!(decode(b"RIFF....WAVEjunk").is_err());

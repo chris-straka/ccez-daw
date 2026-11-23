@@ -237,9 +237,14 @@ impl Resequencer {
                 self.current_state = to_state.clone();
                 self.pending = None;
             }
-            SwitchPlan::AtBar { to_state, switch_beat }
+            SwitchPlan::AtBar {
+                to_state,
+                switch_beat,
+            }
             | SwitchPlan::StingerThenCut {
-                to_state, switch_beat, ..
+                to_state,
+                switch_beat,
+                ..
             } => {
                 // Zero-wait deferred plan (request landed on the bar line,
                 // or zero-length stinger resolved above): fire at once.

@@ -106,7 +106,12 @@ pub fn direction(azimuth_rad: f64, elevation_rad: f64) -> [f64; 3] {
 pub fn encode_mono(sample: f32, azimuth_rad: f64, elevation_rad: f64, gain: f64) -> [f32; 4] {
     let [front, left, up] = direction(azimuth_rad, elevation_rad);
     let s = sample as f64 * gain;
-    [s as f32, (s * front) as f32, (s * left) as f32, (s * up) as f32]
+    [
+        s as f32,
+        (s * front) as f32,
+        (s * left) as f32,
+        (s * up) as f32,
+    ]
 }
 
 /// Encode one stereo sample into FOA `WXYZ`.
@@ -217,7 +222,11 @@ pub fn decode_block_stereo(
 }
 
 fn param_of(node: &Node, id: &str, default: f64) -> f64 {
-    node.params.iter().find(|p| p.id == id).map(|p| p.value).unwrap_or(default)
+    node.params
+        .iter()
+        .find(|p| p.id == id)
+        .map(|p| p.value)
+        .unwrap_or(default)
 }
 
 /// Read a device node's spatial params (missing = defaults: front-center,
@@ -238,10 +247,7 @@ pub fn read_spatial_params(node: &Node) -> SpatialParams {
 /// `(target, value_json)` pairs against `device:{param}` addresses, mirroring
 /// [`crate::devices::presets::preset_op_payloads`]: every payload parses as a
 /// bare number on the engine's `ParamSet` path.
-pub fn spatial_op_payloads(
-    device_id: &str,
-    params: &SpatialParams,
-) -> Vec<(String, String)> {
+pub fn spatial_op_payloads(device_id: &str, params: &SpatialParams) -> Vec<(String, String)> {
     [
         (AZIMUTH_PARAM, params.azimuth_deg),
         (ELEVATION_PARAM, params.elevation_deg),
@@ -278,7 +284,10 @@ mod tests {
         assert!(approx(w, 1.0) && approx(x, 0.0) && approx(y, 0.0) && approx(z, 1.0));
         // Gain scales every channel, including silence staying silent.
         assert_eq!(encode_mono(0.5, 0.0, 0.0, 2.0), [1.0, 1.0, 0.0, 0.0]);
-        assert_eq!(encode_mono(0.0, 33.0 * DEG, 12.0 * DEG, 4.0), [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(
+            encode_mono(0.0, 33.0 * DEG, 12.0 * DEG, 4.0),
+            [0.0, 0.0, 0.0, 0.0]
+        );
     }
 
     #[test]
@@ -311,7 +320,10 @@ mod tests {
                 approx(l + r, wxyz[0] + wxyz[1] / 2.0),
                 "sum identity at ({az_deg}, {el_deg})"
             );
-            assert!(approx(l - r, wxyz[2]), "diff identity at ({az_deg}, {el_deg})");
+            assert!(
+                approx(l - r, wxyz[2]),
+                "diff identity at ({az_deg}, {el_deg})"
+            );
         }
         // Front renders hotter than rear (the monitor's cardioid property).
         let front = decode_stereo(encode_mono(1.0, 0.0, 0.0, 1.0));
@@ -344,16 +356,14 @@ mod tests {
     #[test]
     fn block_maps_match_scalar_maps_and_reject_ragged_blocks() {
         let input = vec![1.0f32, 0.5, -0.25, 0.0];
-        let (mut w, mut x, mut y, mut z) = (
-            vec![0.0; 4],
-            vec![0.0; 4],
-            vec![0.0; 4],
-            vec![0.0; 4],
-        );
+        let (mut w, mut x, mut y, mut z) = (vec![0.0; 4], vec![0.0; 4], vec![0.0; 4], vec![0.0; 4]);
         encode_block_mono(&input, 45.0 * DEG, 0.0, 1.0, &mut w, &mut x, &mut y, &mut z)
             .expect("encode");
         for i in 0..4 {
-            assert_eq!([w[i], x[i], y[i], z[i]], encode_mono(input[i], 45.0 * DEG, 0.0, 1.0));
+            assert_eq!(
+                [w[i], x[i], y[i], z[i]],
+                encode_mono(input[i], 45.0 * DEG, 0.0, 1.0)
+            );
         }
         let (mut l, mut r) = (vec![0.0; 4], vec![0.0; 4]);
         decode_block_stereo(&w, &x, &y, &z, &mut l, &mut r).expect("decode");
@@ -370,12 +380,8 @@ mod tests {
             decode_block_stereo(&w, &x, &y, &z, &mut l, &mut short),
             Err(SpatialError::BadBlock(_))
         ));
-        let (mut e0, mut e1, mut e2, mut e3): (
-            Vec<f32>,
-            Vec<f32>,
-            Vec<f32>,
-            Vec<f32>,
-        ) = (vec![], vec![], vec![], vec![]);
+        let (mut e0, mut e1, mut e2, mut e3): (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) =
+            (vec![], vec![], vec![], vec![]);
         encode_block_mono(&[], 0.0, 0.0, 1.0, &mut e0, &mut e1, &mut e2, &mut e3)
             .expect("empty encode ok");
     }

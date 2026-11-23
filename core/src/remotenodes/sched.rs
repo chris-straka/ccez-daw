@@ -115,8 +115,7 @@ impl Registry {
         let mut used: BTreeMap<&str, usize> = BTreeMap::new();
         let mut out = BTreeMap::new();
         // Deterministic request order regardless of caller order.
-        let mut sorted: Vec<(&str, &NodeKind)> =
-            requests.iter().map(|(id, k)| (*id, k)).collect();
+        let mut sorted: Vec<(&str, &NodeKind)> = requests.iter().map(|(id, k)| (*id, k)).collect();
         sorted.sort_by(|a, b| a.0.cmp(b.0));
         for (id, kind) in sorted {
             let mut best: Option<&NodeCapability> = None;
@@ -129,11 +128,7 @@ impl Registry {
                 }
                 best = Some(match best {
                     None => cap,
-                    Some(b)
-                        if (cap.load, &cap.endpoint) < (b.load, &b.endpoint) =>
-                    {
-                        cap
-                    }
+                    Some(b) if (cap.load, &cap.endpoint) < (b.load, &b.endpoint) => cap,
                     Some(b) => b,
                 });
             }
@@ -192,7 +187,10 @@ impl PartitionPolicy {
             .filter(|(id, _)| {
                 // Rule 2: sinks (mix buses) stay local — they have no
                 // consumers, so keep only nodes that feed something.
-                !consumers.get(id.as_str()).map(|c| c.is_empty()).unwrap_or(true)
+                !consumers
+                    .get(id.as_str())
+                    .map(|c| c.is_empty())
+                    .unwrap_or(true)
             })
             .filter(|(id, node)| {
                 node_kind_of(project, id) // rule 3
@@ -203,8 +201,8 @@ impl PartitionPolicy {
             .map(|(id, node)| (id, node.latency))
             .collect();
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0))); // rule 5 order
-        let budget = (self.max_remote_share.clamp(0.0, 1.0) * graph.nodes.len() as f32).floor()
-            as usize;
+        let budget =
+            (self.max_remote_share.clamp(0.0, 1.0) * graph.nodes.len() as f32).floor() as usize;
         let remote: BTreeSet<String> = candidates
             .into_iter()
             .take(budget)
@@ -244,7 +242,12 @@ impl PartitionPlan {
         let requests: Vec<(&str, NodeKind)> = self
             .remote
             .iter()
-            .map(|id| (id.as_str(), node_kind_of(project, id).cloned().unwrap_or(NodeKind::Bus)))
+            .map(|id| {
+                (
+                    id.as_str(),
+                    node_kind_of(project, id).cloned().unwrap_or(NodeKind::Bus),
+                )
+            })
             .collect();
         self.endpoints = registry.assign(&requests);
         let stranded: Vec<String> = self
@@ -398,7 +401,12 @@ mod tests {
         p.devices.push(device("heavy", 256.0));
         p.devices.push(device("light", 16.0));
         let mut n = 0;
-        for (from, to) in [("a", "heavy"), ("heavy", "mix"), ("b", "light"), ("light", "mix")] {
+        for (from, to) in [
+            ("a", "heavy"),
+            ("heavy", "mix"),
+            ("b", "light"),
+            ("light", "mix"),
+        ] {
             n += 1;
             p.routing.push(edge(&format!("e{n}"), from, to));
         }
@@ -470,7 +478,10 @@ mod tests {
         let mut r = registry_two_workers();
         // Only farm-b is online: both devices land there.
         let got = r.assign(&[("heavy", NodeKind::Device), ("light", NodeKind::Device)]);
-        assert_eq!(got.get("heavy").map(String::as_str), Some("tcp://farm-b:4412"));
+        assert_eq!(
+            got.get("heavy").map(String::as_str),
+            Some("tcp://farm-b:4412")
+        );
         // Unknown heartbeat must not conjure a worker.
         r.heartbeat("tcp://ghost:4412", 0.0);
         assert!(r.get("tcp://ghost:4412").is_none());
@@ -483,7 +494,10 @@ mod tests {
             online: true,
         });
         let got = r.assign(&[("heavy", NodeKind::Device)]);
-        assert_eq!(got.get("heavy").map(String::as_str), Some("tcp://farm-b:4412"));
+        assert_eq!(
+            got.get("heavy").map(String::as_str),
+            Some("tcp://farm-b:4412")
+        );
     }
 
     #[test]
@@ -533,13 +547,19 @@ mod tests {
             frames: 512,
         };
         let json = serde_json::to_string(&job).expect("encode");
-        assert_eq!(serde_json::from_str::<RemoteJob>(&json).expect("decode"), job);
+        assert_eq!(
+            serde_json::from_str::<RemoteJob>(&json).expect("decode"),
+            job
+        );
         let res = RemoteResult {
             job_id: "j1".to_string(),
             node_id: "heavy".to_string(),
             samples: vec![0.5; 512],
         };
         let json = serde_json::to_string(&res).expect("encode");
-        assert_eq!(serde_json::from_str::<RemoteResult>(&json).expect("decode"), res);
+        assert_eq!(
+            serde_json::from_str::<RemoteResult>(&json).expect("decode"),
+            res
+        );
     }
 }

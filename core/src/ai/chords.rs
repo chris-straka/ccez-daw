@@ -106,13 +106,7 @@ pub fn transcribe_chords(
         let start = bar as f64 * beats_per_bar;
         for interval in [0, third, 7] {
             let pitch = 48 + label.root + interval;
-            let note = MidiNote::new(
-                note_id,
-                pitch,
-                80,
-                start,
-                beats_per_bar * 0.95,
-            );
+            let note = MidiNote::new(note_id, pitch, 80, start, beats_per_bar * 0.95);
             note_id += 1;
             clip.add_note(note)?;
         }
@@ -122,10 +116,7 @@ pub fn transcribe_chords(
 }
 
 /// Run [`transcribe_chords`] as a background [`Job`] with progress.
-pub fn submit_chords(
-    chromas: Vec<[f64; 12]>,
-    beats_per_bar: f64,
-) -> Job<ChordTranscription> {
+pub fn submit_chords(chromas: Vec<[f64; 12]>, beats_per_bar: f64) -> Job<ChordTranscription> {
     Job::submit(move |ctl: &JobControl| {
         let n = chromas.len().max(1);
         let length_beats = beats_per_bar * chromas.len() as f64;
@@ -178,10 +169,7 @@ mod tests {
     }
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "ccez-ai-chords-{name}-{}",
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("ccez-ai-chords-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         d
     }
@@ -219,7 +207,9 @@ mod tests {
         });
         let dir = tmp_dir("job");
         let mut engine = Engine::create(&dir, project).expect("create");
-        edited.save_to_engine(&mut engine, "take:chords-ai").expect("save");
+        edited
+            .save_to_engine(&mut engine, "take:chords-ai")
+            .expect("save");
         let draft = Clip {
             id: "clip_chords_ai".to_string(),
             track_id: "trk_harm".to_string(),

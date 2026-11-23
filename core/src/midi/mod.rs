@@ -29,8 +29,8 @@ pub mod groove;
 pub mod transport;
 
 pub use clip::MidiClip;
-pub use groove::{ApplyParams, GroovePool, GrooveTemplate, apply_full, extract};
-pub use transport::{Recorder, ScheduledNote, expand};
+pub use groove::{apply_full, extract, ApplyParams, GroovePool, GrooveTemplate};
+pub use transport::{expand, Recorder, ScheduledNote};
 
 use serde::{Deserialize, Serialize};
 
@@ -118,7 +118,10 @@ impl MidiNote {
             return Err(format!("channel {} out of range 0..=15", self.channel));
         }
         if !(0.0..=1.0).contains(&self.probability) {
-            return Err(format!("probability {} out of range 0..=1", self.probability));
+            return Err(format!(
+                "probability {} out of range 0..=1",
+                self.probability
+            ));
         }
         if self.ratchets < 1 {
             return Err("ratchets must be >= 1".to_string());
@@ -130,7 +133,10 @@ impl MidiNote {
             ));
         }
         if self.pitch_bend.abs() > 48.0 || !self.pitch_bend.is_finite() {
-            return Err(format!("pitch_bend {} out of range ±48 semitones", self.pitch_bend));
+            return Err(format!(
+                "pitch_bend {} out of range ±48 semitones",
+                self.pitch_bend
+            ));
         }
         if !(0.0..=1.0).contains(&self.pressure) {
             return Err(format!("pressure {} out of range 0..=1", self.pressure));
@@ -170,7 +176,10 @@ pub fn assign_mpe_channels(clip: &mut MidiClip, members: &[u8]) {
     for idx in order {
         let (start, end) = {
             let n = &clip.notes[idx];
-            (n.start_beats + n.timing_offset_beats, n.start_beats + n.len_beats)
+            (
+                n.start_beats + n.timing_offset_beats,
+                n.start_beats + n.len_beats,
+            )
         };
         // First free channel wins; else steal the earliest-finishing one.
         let mut pick = 0;

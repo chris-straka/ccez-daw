@@ -68,8 +68,8 @@ pub mod wasm;
 pub mod worker;
 
 pub use clap::{ClapBackend, ClapError, ClapPluginInfo};
-pub use vst3::{Vst3Backend, Vst3BackendClass, Vst3BackendError};
 pub use host::{ClapNote, PluginDescriptor, PluginHost, PluginKind, PluginState};
-pub use latency::{DelayLine, LatencyError, LatencyMap, align_dry};
-pub use sandbox::{DEFAULT_WORKER_TIMEOUT, SandboxError, SandboxedPlugin};
+pub use latency::{align_dry, DelayLine, LatencyError, LatencyMap};
+pub use sandbox::{SandboxError, SandboxedPlugin, DEFAULT_WORKER_TIMEOUT};
 pub use scan::{PluginFormat, ScanError, ScanList, ScannedPlugin};
+pub use vst3::{Vst3Backend, Vst3BackendClass, Vst3BackendError};

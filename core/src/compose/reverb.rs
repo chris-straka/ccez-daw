@@ -56,7 +56,10 @@ impl Room {
             e.push(format!("room.decay_secs {} want 0.3..=8", self.decay_secs));
         }
         if !(0.0..=120.0).contains(&self.predelay_ms) {
-            e.push(format!("room.predelay_ms {} want 0..=120", self.predelay_ms));
+            e.push(format!(
+                "room.predelay_ms {} want 0..=120",
+                self.predelay_ms
+            ));
         }
         if !(0.0..=1.0).contains(&self.damping) {
             e.push(format!("room.damping {} want 0..=1", self.damping));
@@ -124,14 +127,21 @@ pub fn process(l: &[f32], r: &[f32], sr: u32, room: &Room) -> (Vec<f32>, Vec<f32
     // Early reflections (each side also hears a little of the other).
     for &(ms, g, side) in &EARLY {
         let d = (ms * 0.001 * sr as f32) as usize;
-        let (own, other) = if side == 0 { (&inp[0], &inp[1]) } else { (&inp[1], &inp[0]) };
+        let (own, other) = if side == 0 {
+            (&inp[0], &inp[1])
+        } else {
+            (&inp[1], &inp[0])
+        };
         let out = if side == 0 { &mut out_l } else { &mut out_r };
         for i in d..n {
             out[i] += g * (0.8 * own[i - d] + 0.2 * other[i - d]);
         }
     }
     // FDN tail.
-    let lens: Vec<usize> = LINES.iter().map(|&d| ((d as f32 * scale) as usize).max(8)).collect();
+    let lens: Vec<usize> = LINES
+        .iter()
+        .map(|&d| ((d as f32 * scale) as usize).max(8))
+        .collect();
     let mut bufs: Vec<Vec<f32>> = lens.iter().map(|&d| vec![0.0; d]).collect();
     let mut pos = [0usize; 8];
     let gains: Vec<f32> = lens
@@ -202,6 +212,14 @@ mod tests {
         let diff: f32 = wl.iter().zip(&wr).map(|(a, b)| (a - b).abs()).sum();
         assert!(diff > 0.1, "{diff}");
         assert!(Room::default().validate().is_empty());
-        assert_eq!(Room { decay_secs: 20.0, ..Room::default() }.validate().len(), 1);
+        assert_eq!(
+            Room {
+                decay_secs: 20.0,
+                ..Room::default()
+            }
+            .validate()
+            .len(),
+            1
+        );
     }
 }

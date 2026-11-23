@@ -576,7 +576,10 @@ mod updater_feed {
             let status = super::update_status(&handle).await.unwrap();
             println!("{status}");
             let expected = std::env::var("EXPECT_UPDATE_VERSION").unwrap();
-            assert_eq!(status, format!("update: {expected} available (running {running})"));
+            assert_eq!(
+                status,
+                format!("update: {expected} available (running {running})")
+            );
             // download() checks the minisign signature against the pubkey.
             let update = handle.updater().unwrap().check().await.unwrap().unwrap();
             let bytes = update.download(|_, _| {}, || {}).await.unwrap();
@@ -680,7 +683,12 @@ mod regression_tests {
         let expected = serde_json::to_value(original.project()).unwrap();
         let log_before = std::fs::read(saved.join("ops.jsonl")).unwrap();
         let state = fixture.app.state::<AppState>();
-        project_open(app(&fixture), saved.to_string_lossy().into_owned(), state.clone()).unwrap();
+        project_open(
+            app(&fixture),
+            saved.to_string_lossy().into_owned(),
+            state.clone(),
+        )
+        .unwrap();
         state.transport.lock().unwrap().play_null();
         let fresh = project_new(app(&fixture), "Fresh".into(), state.clone()).unwrap();
         assert_eq!(fresh.name, "Fresh");
@@ -794,7 +802,12 @@ mod regression_tests {
         let saved = fixture.root.join("other");
         Engine::create(&saved, Project::new("other", "Other")).unwrap();
         state.transport.lock().unwrap().record_null();
-        project_open(app(&fixture), saved.to_string_lossy().into_owned(), state.clone()).unwrap();
+        project_open(
+            app(&fixture),
+            saved.to_string_lossy().into_owned(),
+            state.clone(),
+        )
+        .unwrap();
         assert_eq!(heard(), ["\"Stopped\""]);
         state.transport.lock().unwrap().play_null();
         project_new(app(&fixture), "Fresh".into(), state.clone()).unwrap();
@@ -811,7 +824,12 @@ mod regression_tests {
         Engine::create(&saved, Project::new("other", "Other")).unwrap();
         let state = fixture.app.state::<AppState>();
         state.transport.lock().unwrap().record_null();
-        project_open(app(&fixture), saved.to_string_lossy().into_owned(), state.clone()).unwrap();
+        project_open(
+            app(&fixture),
+            saved.to_string_lossy().into_owned(),
+            state.clone(),
+        )
+        .unwrap();
         assert_eq!(
             state.transport.lock().unwrap().engine_state(),
             EngineState::Stopped

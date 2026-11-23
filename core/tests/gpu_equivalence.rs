@@ -98,7 +98,10 @@ fn device_selection_probe_is_safe_and_selection_is_honored() {
     for power in [PowerPreference::HighPerformance, PowerPreference::LowPower] {
         let devices = KernelRunner::probe_devices(power);
         // No duplicates from multi-backend enumeration.
-        let mut names: Vec<_> = devices.iter().map(|d| (d.name.clone(), d.backend.clone())).collect();
+        let mut names: Vec<_> = devices
+            .iter()
+            .map(|d| (d.name.clone(), d.backend.clone()))
+            .collect();
         names.sort();
         names.dedup();
         assert_eq!(names.len(), devices.len());

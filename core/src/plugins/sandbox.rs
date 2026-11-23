@@ -243,30 +243,28 @@ impl SandboxedPlugin {
         std::thread::spawn(move || {
             let mut reader = reader;
             let mut answer = String::new();
-            let read = reader.read_line(&mut answer).map(Some).map_err(|e| e.to_string());
+            let read = reader
+                .read_line(&mut answer)
+                .map(Some)
+                .map_err(|e| e.to_string());
             let _ = tx.send((reader, read, answer));
         });
         let timeout = self.timeout;
         let (reader, read, answer) = match rx.recv_timeout(timeout) {
             Ok(triple) => triple,
             Err(_) => {
-                return Err(self.timeout_of(format!(
-                    "worker timed out after {}ms",
-                    timeout.as_millis()
-                )));
+                return Err(
+                    self.timeout_of(format!("worker timed out after {}ms", timeout.as_millis()))
+                );
             }
         };
         self.stdout = Some(reader);
         match read {
             Ok(Some(0)) | Ok(None) => Err(self.death_of("EOF on worker stdout".to_string())),
             Ok(Some(_)) => {
-                let resp: WorkerResponse =
-                    serde_json::from_str(answer.trim()).map_err(|e| {
-                        SandboxError::Protocol(format!(
-                            "bad worker reply `{}`: {e}",
-                            answer.trim()
-                        ))
-                    })?;
+                let resp: WorkerResponse = serde_json::from_str(answer.trim()).map_err(|e| {
+                    SandboxError::Protocol(format!("bad worker reply `{}`: {e}", answer.trim()))
+                })?;
                 if resp.ok {
                     Ok(resp)
                 } else {
@@ -384,7 +382,9 @@ impl SandboxedPlugin {
         if !self.alive() {
             self.respawn()?;
         }
-        self.call(&WorkerRequest::SetState { state: state.clone() })?;
+        self.call(&WorkerRequest::SetState {
+            state: state.clone(),
+        })?;
         self.last_good = Some(state.clone());
         Ok(())
     }
@@ -410,7 +410,9 @@ impl SandboxedPlugin {
         }
         let state = self.last_good.clone().ok_or(SandboxError::NoSnapshot)?;
         self.respawn()?;
-        self.call(&WorkerRequest::SetState { state: state.clone() })?;
+        self.call(&WorkerRequest::SetState {
+            state: state.clone(),
+        })?;
         self.last_good = Some(state.clone());
         Ok(state)
     }

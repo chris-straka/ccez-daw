@@ -373,18 +373,30 @@ mod tests {
         assert_eq!(r.stems, 4);
         assert!(r.warnings.is_empty(), "{:?}", r.warnings);
         let long = vec![
-            PlanStep { section: "calm".into(), bars: Some(64), intensity: 1 };
+            PlanStep {
+                section: "calm".into(),
+                bars: Some(64),
+                intensity: 1
+            };
             1
         ];
         let r2 = export(&c, &long, &dir).unwrap();
         assert!(r2.warnings[0].contains("up to 120 s"), "{:?}", r2.warnings);
-        assert!(r.loop_seams.iter().all(|s| s.seamless), "{:?}", r.loop_seams);
+        assert!(
+            r.loop_seams.iter().all(|s| s.seamless),
+            "{:?}",
+            r.loop_seams
+        );
         // Stems are stereo 16-bit with the loop in a smpl chunk.
         let wav = std::fs::read(dir.join("stems/calm_bed.wav")).unwrap();
         let a = super::super::wavread::decode(&wav).unwrap();
-        assert_eq!((a.channels.len(), a.sample_rate, a.frames()), (2, 48_000, 4 * 48_000));
+        assert_eq!(
+            (a.channels.len(), a.sample_rate, a.frames()),
+            (2, 48_000, 4 * 48_000)
+        );
         assert_eq!(a.sample_loop, Some((0, 4 * 48_000)));
-        let m: Value = serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        let m: Value =
+            serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(m["channels"], 2);
         assert_eq!(m["instruments"][0]["kind"], "synth");
         for f in [

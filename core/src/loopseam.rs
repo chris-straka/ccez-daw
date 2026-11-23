@@ -118,14 +118,15 @@ pub fn parse_waivers(json: &str) -> Result<Vec<Waiver>, String> {
     let list = value
         .get("waivers")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| "invalid waiver file: want { \"waivers\": [{ \"path\", \"reason\" }] }".to_string())?;
+        .ok_or_else(|| {
+            "invalid waiver file: want { \"waivers\": [{ \"path\", \"reason\" }] }".to_string()
+        })?;
     let mut out = Vec::with_capacity(list.len());
     let mut seen = HashSet::new();
     for entry in list {
-        let path = entry
-            .get("path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "invalid waiver file: every entry needs a string \"path\"".to_string())?;
+        let path = entry.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
+            "invalid waiver file: every entry needs a string \"path\"".to_string()
+        })?;
         let reason = entry
             .get("reason")
             .and_then(|v| v.as_str())
@@ -134,7 +135,9 @@ pub fn parse_waivers(json: &str) -> Result<Vec<Waiver>, String> {
             return Err("invalid waiver file: waiver path must not be empty".to_string());
         }
         if reason.trim().is_empty() {
-            return Err(format!("invalid waiver file: '{path}' needs a non-empty reason"));
+            return Err(format!(
+                "invalid waiver file: '{path}' needs a non-empty reason"
+            ));
         }
         if !seen.insert(path.to_string()) {
             return Err(format!("invalid waiver file: '{path}' waived twice"));
@@ -160,10 +163,10 @@ pub fn waivers_to_json(waivers: &[Waiver]) -> String {
 
 /// Read a waiver file from disk into [`LoopSeamOptions`]-ready entries.
 pub fn load_waivers(path: &std::path::Path) -> Result<Vec<Waiver>, String> {
-    let bytes =
-        std::fs::read(path).map_err(|e| format!("cannot read waiver file {}: {e}", path.display()))?;
-    let text =
-        String::from_utf8(bytes).map_err(|_| format!("waiver file {} is not UTF-8", path.display()))?;
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("cannot read waiver file {}: {e}", path.display()))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| format!("waiver file {} is not UTF-8", path.display()))?;
     parse_waivers(&text)
 }
 
@@ -280,12 +283,23 @@ pub fn auto_fit_loop_to_tempo(
         conformed = true;
     }
     let out_frames = out.len();
-    Ok((out, LoopFit { ratio, out_frames, seam, conformed }))
+    Ok((
+        out,
+        LoopFit {
+            ratio,
+            out_frames,
+            seam,
+            conformed,
+        },
+    ))
 }
 
 /// Waiver entries that name no stem in `stem_paths` are stale (a renamed
 /// stem would silently lose its gate), so they fail loudly.
-pub fn stale_waiver_errors(waivers: &HashMap<String, String>, stem_paths: &HashSet<String>) -> Vec<String> {
+pub fn stale_waiver_errors(
+    waivers: &HashMap<String, String>,
+    stem_paths: &HashSet<String>,
+) -> Vec<String> {
     let mut errors: Vec<String> = waivers
         .keys()
         .filter(|p| !stem_paths.contains(p.as_str()))
@@ -309,7 +323,8 @@ mod tests {
         let smooth = |x: f32| x * x * (3.0 - 2.0 * x);
         (0..n)
             .map(|t| {
-                let s = (0.5 * (2.0 * std::f64::consts::PI * cycles * t as f64 / n as f64).sin()) as f32;
+                let s = (0.5 * (2.0 * std::f64::consts::PI * cycles * t as f64 / n as f64).sin())
+                    as f32;
                 let g = if t < f {
                     smooth(t as f32 / f as f32)
                 } else if t >= n - f {
@@ -329,7 +344,9 @@ mod tests {
     fn inject_click(samples: &mut [f32], seed: u64, len: usize, height: f32) {
         let mut state = seed;
         let mut next = || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((state >> 33) as f64) / (u32::MAX as f64)
         };
         let start = samples.len().saturating_sub(len);
@@ -351,7 +368,11 @@ mod tests {
         let mut clicked = clean.clone();
         inject_click(&mut clicked, 2026, 32, 0.3);
         let report = analyze_seam(&clicked, DEFAULT_CLICK_THRESHOLD);
-        assert!(report.step > DEFAULT_CLICK_THRESHOLD, "step={}", report.step);
+        assert!(
+            report.step > DEFAULT_CLICK_THRESHOLD,
+            "step={}",
+            report.step
+        );
         let err = check_stem("stems/a.wav", &clicked, &LoopSeamOptions::default())
             .expect("seeded click must be detected");
         assert!(err.contains("clicks at the loop seam"), "{err}");
@@ -382,7 +403,9 @@ mod tests {
 
         let stems: HashSet<String> = ["stems/a.wav".to_string()].into_iter().collect();
         assert!(stale_waiver_errors(&options.waivers, &stems).is_empty());
-        options.waivers.insert("stems/ghost.wav".to_string(), "stale".to_string());
+        options
+            .waivers
+            .insert("stems/ghost.wav".to_string(), "stale".to_string());
         let stale = stale_waiver_errors(&options.waivers, &stems);
         assert_eq!(stale.len(), 1);
         assert!(stale[0].contains("stems/ghost.wav"), "{stale:?}");
@@ -396,7 +419,9 @@ mod tests {
         }];
         let json = waivers_to_json(&waivers);
         assert_eq!(parse_waivers(&json).expect("round-trip"), waivers);
-        assert!(parse_waivers(r#"{"waivers": []}"#).expect("empty ok").is_empty());
+        assert!(parse_waivers(r#"{"waivers": []}"#)
+            .expect("empty ok")
+            .is_empty());
         assert!(parse_waivers(r#"{"waivers": [{"path": "s.wav", "reason": "  "}]}"#).is_err());
         assert!(parse_waivers(r#"{"nope": []}"#).is_err());
     }
@@ -437,7 +462,10 @@ mod tests {
             auto_fit_loop_to_tempo(&clean, 120.0, 120.0, DEFAULT_CLICK_THRESHOLD).unwrap();
         assert!((fit.ratio - 1.0).abs() < 1e-12);
         assert_eq!(out.len(), fit.out_frames);
-        assert!(!fit.conformed, "clean loop at ratio 1 must not need conform");
+        assert!(
+            !fit.conformed,
+            "clean loop at ratio 1 must not need conform"
+        );
         assert!(!fit.seam.is_click());
         assert!(auto_fit_loop_to_tempo(&clean, 0.0, 120.0, DEFAULT_CLICK_THRESHOLD).is_err());
         assert!(auto_fit_loop_to_tempo(&clean, 120.0, f64::NAN, DEFAULT_CLICK_THRESHOLD).is_err());
@@ -450,9 +478,15 @@ mod tests {
         let (out, fit) =
             auto_fit_loop_to_tempo(&clicked, 120.0, 140.0, DEFAULT_CLICK_THRESHOLD).unwrap();
         assert!((fit.ratio - 140.0 / 120.0).abs() < 1e-12);
-        assert_eq!(out.len(), crate::timepitch::resampled_len(8000, fit.ratio).unwrap());
+        assert_eq!(
+            out.len(),
+            crate::timepitch::resampled_len(8000, fit.ratio).unwrap()
+        );
         assert!(fit.conformed, "fitted click must trigger the conform fade");
-        assert!(!fit.seam.is_click(), "post-conform seam must meet threshold");
+        assert!(
+            !fit.seam.is_click(),
+            "post-conform seam must meet threshold"
+        );
         assert!(check_stem("stems/a.wav", &out, &LoopSeamOptions::default()).is_none());
     }
 

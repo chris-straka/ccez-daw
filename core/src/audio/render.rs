@@ -109,12 +109,21 @@ impl RenderGraph {
                             s.spawn(|| {
                                 (
                                     id.clone(),
-                                    self.render_node(id, frames, &buffers, edge_delays, start_frame),
+                                    self.render_node(
+                                        id,
+                                        frames,
+                                        &buffers,
+                                        edge_delays,
+                                        start_frame,
+                                    ),
                                 )
                             })
                         })
                         .collect();
-                    handles.into_iter().map(|h| h.join().expect("render thread")).collect()
+                    handles
+                        .into_iter()
+                        .map(|h| h.join().expect("render thread"))
+                        .collect()
                 });
                 for (id, buf) in outs {
                     buffers.insert(id, buf);
@@ -327,7 +336,12 @@ mod tests {
             kind: EdgeKind::Audio,
         });
         let mut g = RenderGraph::from_audio_graph(AudioGraph::from_project(&p));
-        g.set_proc("mix", Proc::Loop { buf: vec![1.0, 2.0, 3.0, 4.0] });
+        g.set_proc(
+            "mix",
+            Proc::Loop {
+                buf: vec![1.0, 2.0, 3.0, 4.0],
+            },
+        );
         let out = g.render(4, 1, &BTreeMap::new(), 0).expect("renders");
         assert_eq!(out["mix"], vec![1.0, 2.0, 3.0, 4.0]);
         let out = g.render(4, 1, &BTreeMap::new(), 2).expect("renders");

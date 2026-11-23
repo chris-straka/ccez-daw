@@ -186,11 +186,18 @@ mod tests {
         }
         tap.publish();
         let snap = reader.snapshot().expect("published");
-        assert!((snap.true_peak - 0.5).abs() < 0.02, "peak {}", snap.true_peak);
+        assert!(
+            (snap.true_peak - 0.5).abs() < 0.02,
+            "peak {}",
+            snap.true_peak
+        );
         let integ = snap.integrated_lufs.expect("tone above gate");
         assert!((integ + 9.0).abs() < 1.0, "integrated {integ}");
         let peak_hz = reader.spectrum_peak_hz(SPECTRUM_WINDOW).expect("spectrum");
-        assert!((peak_hz - 1000.0).abs() / 1000.0 < 0.2, "spectrum peak {peak_hz}");
+        assert!(
+            (peak_hz - 1000.0).abs() / 1000.0 < 0.2,
+            "spectrum peak {peak_hz}"
+        );
     }
 
     #[test]
@@ -252,7 +259,11 @@ mod tests {
         tap.observe_node(&bufs, "mix");
         tap.publish();
         let snap = tap.reader().snapshot().expect("read");
-        assert!((snap.true_peak - 0.25).abs() < 1e-6, "peak {}", snap.true_peak);
+        assert!(
+            (snap.true_peak - 0.25).abs() < 1e-6,
+            "peak {}",
+            snap.true_peak
+        );
     }
 
     #[test]
@@ -261,6 +272,9 @@ mod tests {
         tap.observe(&sine(1000.0, 0.9, 48_000.0, 8192));
         tap.publish();
         tap.reset();
-        assert_eq!(tap.reader().snapshot().expect("read"), MeterSnapshot::silent());
+        assert_eq!(
+            tap.reader().snapshot().expect("read"),
+            MeterSnapshot::silent()
+        );
     }
 }

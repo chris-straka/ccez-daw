@@ -42,10 +42,9 @@ pub enum ScheduleError {
 impl std::fmt::Display for ScheduleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::RemoteUnimplemented(id) => write!(
-                f,
-                "remote node `{id}` is a phase-2 hook: no transport yet"
-            ),
+            Self::RemoteUnimplemented(id) => {
+                write!(f, "remote node `{id}` is a phase-2 hook: no transport yet")
+            }
             Self::Graph(e) => write!(f, "schedule graph: {e}"),
         }
     }
@@ -91,14 +90,16 @@ impl Schedule {
             .keys()
             .map(|id| (id.clone(), Placement::Local))
             .collect();
-        Ok(Self {
-            levels,
-            placements,
-        })
+        Ok(Self { levels, placements })
     }
 
     /// Mark a node remote (phase-2 hook). Unknown ids error like the graph.
-    pub fn mark_remote(&mut self, graph: &AudioGraph, id: &str, endpoint: &str) -> Result<(), GraphError> {
+    pub fn mark_remote(
+        &mut self,
+        graph: &AudioGraph,
+        id: &str,
+        endpoint: &str,
+    ) -> Result<(), GraphError> {
         if !graph.nodes.contains_key(id) {
             return Err(GraphError::UnknownNode(id.to_string()));
         }
@@ -130,7 +131,9 @@ impl Schedule {
     /// Nodes in execution order (level by level). Remote nodes are included;
     /// pair with [`Schedule::require_all_local`] before rendering.
     pub fn ordered_nodes(&self) -> impl Iterator<Item = &str> {
-        self.levels.iter().flat_map(|level| level.iter().map(|s| s.as_str()))
+        self.levels
+            .iter()
+            .flat_map(|level| level.iter().map(|s| s.as_str()))
     }
 }
 
@@ -203,16 +206,11 @@ mod tests {
         let g = fixture();
         let mut s = Schedule::build(&g).expect("acyclic");
         s.require_all_local().expect("all local by default");
-        s.mark_remote(&g, "dly", "tcp://farm:4412").expect("known node");
-        assert!(matches!(
-            s.placement("dly"),
-            Some(Placement::Remote(_))
-        ));
+        s.mark_remote(&g, "dly", "tcp://farm:4412")
+            .expect("known node");
+        assert!(matches!(s.placement("dly"), Some(Placement::Remote(_))));
         let err = s.require_all_local().expect_err("remote must block render");
-        assert_eq!(
-            err,
-            ScheduleError::RemoteUnimplemented("dly".to_string())
-        );
+        assert_eq!(err, ScheduleError::RemoteUnimplemented("dly".to_string()));
         assert!(s.mark_remote(&g, "ghost", "tcp://x").is_err());
     }
 }

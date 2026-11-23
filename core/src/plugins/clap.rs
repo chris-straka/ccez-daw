@@ -206,7 +206,9 @@ impl ClapBackend {
             .filter_map(|d| d.id().map(|id| id.to_string_lossy().into_owned()))
             .any(|id| id == plugin_id)
         {
-            return Err(ClapError::NoPlugin(format!("{path}: no plugin `{plugin_id}`")));
+            return Err(ClapError::NoPlugin(format!(
+                "{path}: no plugin `{plugin_id}`"
+            )));
         }
         let clap_id =
             CString::new(plugin_id).map_err(|_| ClapError::NoPlugin(plugin_id.to_string()))?;
@@ -225,11 +227,12 @@ impl ClapBackend {
             &clap_id,
             &host_info,
         )
-        .map_err(|e| ClapError::Load(format!("instantiate {}: {e:?}", clap_id.to_string_lossy())))?;
-
-        let (slots, params) = discover_params(&mut instance).map_err(|e| {
-            ClapError::Load(format!("{}: {e}", clap_id.to_string_lossy()))
+        .map_err(|e| {
+            ClapError::Load(format!("instantiate {}: {e:?}", clap_id.to_string_lossy()))
         })?;
+
+        let (slots, params) = discover_params(&mut instance)
+            .map_err(|e| ClapError::Load(format!("{}: {e}", clap_id.to_string_lossy())))?;
 
         check_mono_layout(&mut instance)
             .map_err(|e| ClapError::PortLayout(format!("{}: {e}", plugin_name)))?;
@@ -302,7 +305,13 @@ impl ClapBackend {
             let processor = processor
                 .as_mut()
                 .ok_or_else(|| ClapError::Process("processor not started".to_string()))?;
-            out.extend(Self::process_chunk(processor, slots, params, plugin_name, chunk)?);
+            out.extend(Self::process_chunk(
+                processor,
+                slots,
+                params,
+                plugin_name,
+                chunk,
+            )?);
         }
         Ok(out)
     }
@@ -312,54 +321,54 @@ impl ClapBackend {
     /// the processor loan beside the param tables without double-borrowing.
     fn process_chunk(
         processor: &mut StartedPluginAudioProcessor<SandboxHost>,
-    slots: &[ParamSlot],
-    params: &BTreeMap<String, f64>,
-    plugin_name: &str,
-    chunk: &[f32],
-) -> Result<Vec<f32>> {
-    let mut in_events = EventBuffer::default();
-    for slot in slots {
-        if let Some(value) = params.get(&slot.name) {
-            let event =
-                ParamValueEvent::new(0, slot.id, Pckn::new(0u16, 0u16, 0u16, 0u32), *value);
-            in_events.push(&event);
+        slots: &[ParamSlot],
+        params: &BTreeMap<String, f64>,
+        plugin_name: &str,
+        chunk: &[f32],
+    ) -> Result<Vec<f32>> {
+        let mut in_events = EventBuffer::default();
+        for slot in slots {
+            if let Some(value) = params.get(&slot.name) {
+                let event =
+                    ParamValueEvent::new(0, slot.id, Pckn::new(0u16, 0u16, 0u16, 0u32), *value);
+                in_events.push(&event);
+            }
         }
+        let input_events = in_events.as_input();
+        let mut out_events_buf = EventBuffer::default();
+        let mut output_events = out_events_buf.as_output();
+
+        let mut input_block = chunk.to_vec();
+        let mut output_block = vec![0.0f32; chunk.len()];
+
+        let mut in_ports = AudioPorts::with_capacity(1, 1);
+        let inputs = in_ports.with_input_buffers([AudioPortBuffer {
+            latency: 0,
+            channels: AudioPortBufferType::f32_input_only(core::iter::once(InputChannel {
+                buffer: input_block.as_mut_slice(),
+                is_constant: false,
+            })),
+        }]);
+        let mut out_ports = AudioPorts::with_capacity(1, 1);
+        let mut outputs = out_ports.with_output_buffers([AudioPortBuffer {
+            latency: 0,
+            channels: AudioPortBufferType::f32_output_only(core::iter::once(
+                output_block.as_mut_slice(),
+            )),
+        }]);
+
+        processor
+            .process(
+                &inputs,
+                &mut outputs,
+                &input_events,
+                &mut output_events,
+                None,
+                None,
+            )
+            .map_err(|e| ClapError::Process(format!("{plugin_name}: {e:?}")))?;
+        Ok(output_block)
     }
-    let input_events = in_events.as_input();
-    let mut out_events_buf = EventBuffer::default();
-    let mut output_events = out_events_buf.as_output();
-
-    let mut input_block = chunk.to_vec();
-    let mut output_block = vec![0.0f32; chunk.len()];
-
-    let mut in_ports = AudioPorts::with_capacity(1, 1);
-    let inputs = in_ports.with_input_buffers([AudioPortBuffer {
-        latency: 0,
-        channels: AudioPortBufferType::f32_input_only(core::iter::once(InputChannel {
-            buffer: input_block.as_mut_slice(),
-            is_constant: false,
-        })),
-    }]);
-    let mut out_ports = AudioPorts::with_capacity(1, 1);
-    let mut outputs = out_ports.with_output_buffers([AudioPortBuffer {
-        latency: 0,
-        channels: AudioPortBufferType::f32_output_only(core::iter::once(
-            output_block.as_mut_slice(),
-        )),
-    }]);
-
-    processor
-        .process(
-            &inputs,
-            &mut outputs,
-            &input_events,
-            &mut output_events,
-            None,
-            None,
-        )
-        .map_err(|e| ClapError::Process(format!("{plugin_name}: {e:?}")))?;
-    Ok(output_block)
-}
 
     /// Current processing latency in samples: a live query of the CLAP
     /// latency extension (0 when the plugin exposes none). Feeds
@@ -439,7 +448,9 @@ fn discover_params(
 
 /// v1 accepts exactly one mono input port and one mono output port.
 /// Anything else is a clean refusal, never silent misrouting.
-fn check_mono_layout(instance: &mut PluginInstance<SandboxHost>) -> std::result::Result<(), String> {
+fn check_mono_layout(
+    instance: &mut PluginInstance<SandboxHost>,
+) -> std::result::Result<(), String> {
     use clack_extensions::audio_ports::{AudioPortInfoBuffer, PluginAudioPorts};
     let handle = instance.plugin_handle();
     let Some(ports) = handle.get_extension::<PluginAudioPorts>() else {
@@ -493,7 +504,8 @@ pub(crate) mod fixture {
     pub(crate) fn ensure_fixture_built() -> PathBuf {
         BUNDLE
             .get_or_init(|| {
-                let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("clap-gain/Cargo.toml");
+                let manifest =
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("clap-gain/Cargo.toml");
                 let target = std::env::var_os("CARGO_TARGET_DIR")
                     .filter(|v| !v.is_empty())
                     .map(PathBuf::from)
@@ -575,7 +587,10 @@ pub(crate) mod fixture {
         assert_eq!(backend.plugin_id(), "com.ccez.gain-two");
         assert_eq!(backend.plugin_name(), "Ccez Gain Two");
         backend.set_param("gain", 0.5).expect("set_param");
-        assert_eq!(backend.process(&[1.0, -1.0]).expect("process"), vec![0.5, -0.5]);
+        assert_eq!(
+            backend.process(&[1.0, -1.0]).expect("process"),
+            vec![0.5, -0.5]
+        );
     }
 
     #[test]

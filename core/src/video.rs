@@ -269,7 +269,9 @@ pub fn timecode_from_frame(frame: i64, rate: &FrameRate, drop_frame: bool) -> Re
         let rest = rest / 60;
         let mm = rest % 60;
         let hh = rest / 60;
-        return Ok(Timecode::new(hh as u32, mm as u8, ss as u8, ff as u32, false));
+        return Ok(Timecode::new(
+            hh as u32, mm as u8, ss as u8, ff as u32, false,
+        ));
     }
     let step = rate.drop_step().ok_or_else(|| {
         VideoError::DropUnsupported(format!(
@@ -292,7 +294,9 @@ pub fn timecode_from_frame(frame: i64, rate: &FrameRate, drop_frame: bool) -> Re
     let rest = rest / 60;
     let mm = rest % 60;
     let hh = rest / 60;
-    Ok(Timecode::new(hh as u32, mm as u8, ss as u8, ff as u32, true))
+    Ok(Timecode::new(
+        hh as u32, mm as u8, ss as u8, ff as u32, true,
+    ))
 }
 
 /// SMPTE address -> frame count at `rate`. Inverse of
@@ -306,9 +310,9 @@ pub fn timecode_to_frame(tc: &Timecode, rate: &FrameRate) -> Result<i64> {
             rate.fps()
         )));
     }
-    let nominal_count =
-        ((tc.hours as i64 * 3600) + (tc.minutes as i64 * 60) + tc.seconds as i64) * nominal
-            + tc.frames as i64;
+    let nominal_count = ((tc.hours as i64 * 3600) + (tc.minutes as i64 * 60) + tc.seconds as i64)
+        * nominal
+        + tc.frames as i64;
     if !tc.drop_frame {
         return Ok(nominal_count);
     }
@@ -640,8 +644,7 @@ pub fn drift_in_samples(
     video_frame: i64,
     rate: &FrameRate,
 ) -> i64 {
-    audio_samples_for_frame(video_frame, sample_rate, rate)
-        .wrapping_sub(audio_samples)
+    audio_samples_for_frame(video_frame, sample_rate, rate).wrapping_sub(audio_samples)
 }
 
 /// Drift in seconds (display; control decisions use [`drift_in_samples`]).
@@ -661,7 +664,10 @@ pub enum DriftAction {
     InSync { drift_samples: i64 },
     /// Past tolerance: re-seek picture by `skip_samples` (signed: + means
     /// picture is ahead, hold/skip forward the audio-side expectation).
-    Resync { drift_samples: i64, skip_samples: i64 },
+    Resync {
+        drift_samples: i64,
+        skip_samples: i64,
+    },
 }
 
 /// Watches one audio-rate / frame-rate pair. The default tolerance is half
@@ -679,9 +685,8 @@ impl DriftMonitor {
         if sample_rate == 0 {
             return Err(VideoError::BadRange("sample_rate must be nonzero".into()));
         }
-        let half_frame =
-            (frame_rate.den as i64 * sample_rate as i64 + frame_rate.num as i64 - 1)
-                / (2 * frame_rate.num as i64);
+        let half_frame = (frame_rate.den as i64 * sample_rate as i64 + frame_rate.num as i64 - 1)
+            / (2 * frame_rate.num as i64);
         Ok(Self {
             sample_rate,
             frame_rate,
@@ -696,7 +701,12 @@ impl DriftMonitor {
 
     /// Classify one joint observation of the two clocks.
     pub fn observe(&self, audio_samples: i64, video_frame: i64) -> DriftAction {
-        let drift = drift_in_samples(audio_samples, self.sample_rate, video_frame, &self.frame_rate);
+        let drift = drift_in_samples(
+            audio_samples,
+            self.sample_rate,
+            video_frame,
+            &self.frame_rate,
+        );
         if drift.abs() <= self.threshold_samples {
             DriftAction::InSync {
                 drift_samples: drift,
@@ -833,7 +843,11 @@ impl ThumbStripRequest {
         }
         let n = self.effective_count();
         let dur = self.duration_hint_seconds.unwrap_or(60.0);
-        let dur = if dur.is_finite() && dur > 0.0 { dur } else { 60.0 };
+        let dur = if dur.is_finite() && dur > 0.0 {
+            dur
+        } else {
+            60.0
+        };
         (0..n).map(|i| dur * (i as f64 + 0.5) / n as f64).collect()
     }
 }
@@ -904,7 +918,8 @@ pub fn thumb_jpeg_native(w: u32, h: u32, rgb: &[u8]) -> Option<Vec<u8>> {
     let mut enc = jpeg_encoder::Encoder::new(&mut out, 72);
     enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_2_2);
     enc.set_optimized_huffman_tables(true);
-    enc.encode(rgb, w16, h16, jpeg_encoder::ColorType::Rgb).ok()?;
+    enc.encode(rgb, w16, h16, jpeg_encoder::ColorType::Rgb)
+        .ok()?;
     Some(out)
 }
 
@@ -1144,7 +1159,10 @@ mod tests {
             timecode_to_frame(&parse_timecode("00:01:00;02", &rate).unwrap(), &rate).unwrap(),
             1800
         );
-        assert_eq!(timecode_from_frame(1800, &rate, true).unwrap().to_string(), "00:01:00;02");
+        assert_eq!(
+            timecode_from_frame(1800, &rate, true).unwrap().to_string(),
+            "00:01:00;02"
+        );
         // Skipped labels are errors, not silent reinterpretations.
         assert!(parse_timecode("00:01:00;00", &rate).is_err());
         assert!(parse_timecode("00:01:00;01", &rate).is_err());
@@ -1152,7 +1170,9 @@ mod tests {
         assert!(parse_timecode("00:01:00;02", &FrameRate::R24).is_err());
         // Non-drop separator formats with ':'.
         assert_eq!(
-            timecode_from_frame(1800, &FrameRate::R30, false).unwrap().to_string(),
+            timecode_from_frame(1800, &FrameRate::R30, false)
+                .unwrap()
+                .to_string(),
             "00:01:00:00"
         );
     }
@@ -1163,7 +1183,11 @@ mod tests {
         let frames: Vec<i64> = (0..44000).step_by(29).collect();
         for f in frames {
             let tc = timecode_from_frame(f, &rate, true).unwrap();
-            assert_eq!(timecode_to_frame(&tc, &rate).unwrap(), f, "59.94 df frame {f}");
+            assert_eq!(
+                timecode_to_frame(&tc, &rate).unwrap(),
+                f,
+                "59.94 df frame {f}"
+            );
         }
         // 10 minutes at 59.94 df: 36000 - 4*9 = 35964.
         assert_eq!(
@@ -1209,7 +1233,10 @@ mod tests {
             DriftAction::InSync { drift_samples: 0 }
         ));
         match mon.observe(tick, frame + 5) {
-            DriftAction::Resync { drift_samples, skip_samples } => {
+            DriftAction::Resync {
+                drift_samples,
+                skip_samples,
+            } => {
                 assert_eq!(drift_samples, skip_samples);
                 assert!(drift_samples > 5 * 1600);
             }
@@ -1234,11 +1261,17 @@ mod tests {
         assert_eq!(tc.to_string(), "01:00:02:00");
         // Before the head: no picture.
         assert_eq!(timecode_for_transport(scene, 15.9, 120.0).unwrap(), None);
-        assert_eq!(media_seconds_for_transport(scene, 15.9, 120.0).unwrap(), None);
+        assert_eq!(
+            media_seconds_for_transport(scene, 15.9, 120.0).unwrap(),
+            None
+        );
         // Slip: +2 beats offset pushes picture later (transport leads).
         let mut slipped = scene.clone();
         slipped.offset_beats = 2.0;
-        assert_eq!(media_seconds_for_transport(&slipped, 16.0, 120.0).unwrap(), None);
+        assert_eq!(
+            media_seconds_for_transport(&slipped, 16.0, 120.0).unwrap(),
+            None
+        );
         assert_eq!(
             media_seconds_for_transport(&slipped, 18.0, 120.0).unwrap(),
             Some(0.0)
@@ -1281,7 +1314,10 @@ mod tests {
         // Drop-frame on 24 fps: unsupported.
         let mut bad = sample_video_doc().tracks[1].clone();
         bad.drop_frame = true;
-        assert!(matches!(bad.validate(), Err(VideoError::DropUnsupported(_))));
+        assert!(matches!(
+            bad.validate(),
+            Err(VideoError::DropUnsupported(_))
+        ));
         // Timecode flag disagreeing with the track flag.
         let mut bad = sample_video_doc().tracks[1].clone();
         bad.start_timecode = Timecode::new(0, 0, 0, 0, true);
@@ -1319,7 +1355,10 @@ mod tests {
         let strip = extract_strip(&req);
         assert!(strip.is_placeholder());
         assert_eq!(strip.frames.len(), 4);
-        assert!(strip.frames.iter().all(|f| f.placeholder && f.path.is_none()));
+        assert!(strip
+            .frames
+            .iter()
+            .all(|f| f.placeholder && f.path.is_none()));
         // Slice centers over 32 s: 4, 12, 20, 28.
         let ats: Vec<f64> = strip.frames.iter().map(|f| f.at_seconds).collect();
         assert_eq!(ats, vec![4.0, 12.0, 20.0, 28.0]);

@@ -36,7 +36,9 @@ pub struct ScheduledNote {
 /// Deterministic 64-bit mix (splitmix64 finalizer over `(note_id, seed)`).
 /// Uniform in `[0, 1)`: the note sounds when `gate < probability`.
 fn gate(note_id: u32, seed: u64) -> f64 {
-    let mut z = (note_id as u64).wrapping_add(0x9E3779B97F4A7C15).wrapping_add(seed);
+    let mut z = (note_id as u64)
+        .wrapping_add(0x9E3779B97F4A7C15)
+        .wrapping_add(seed);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
     z ^= z >> 31;

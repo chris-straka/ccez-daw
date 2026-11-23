@@ -815,12 +815,9 @@ fn negotiate_mono_format(
     scope: u32,
     sample_rate: f64,
 ) -> Result<(), AuError> {
-    if let Ok(current) = au_get::<ffi::AudioStreamBasicDescription>(
-        handle,
-        au_const::PROP_STREAM_FORMAT,
-        scope,
-        0,
-    ) {
+    if let Ok(current) =
+        au_get::<ffi::AudioStreamBasicDescription>(handle, au_const::PROP_STREAM_FORMAT, scope, 0)
+    {
         let mut patched = current;
         patched.sample_rate = sample_rate;
         patched.channels_per_frame = 1;
@@ -863,7 +860,13 @@ fn au_set_bytes(
 }
 
 #[cfg(target_os = "macos")]
-fn au_set<T>(handle: *mut std::ffi::c_void, id: u32, scope: u32, element: u32, value: &T) -> Result<(), AuError> {
+fn au_set<T>(
+    handle: *mut std::ffi::c_void,
+    id: u32,
+    scope: u32,
+    element: u32,
+    value: &T,
+) -> Result<(), AuError> {
     // SAFETY: `T` is always a plain-data FFI struct; its bytes are the
     // property payload by CoreAudio contract.
     let bytes = unsafe {
@@ -918,7 +921,8 @@ fn cf_to_string(ptr: *const std::ffi::c_void) -> Option<String> {
     let cap = (units as usize + 1) * 4;
     let mut buf = vec![0 as c_char; cap];
     // SAFETY: `buf` is valid writable memory of `cap` bytes.
-    let ok = unsafe { ffi::CFStringGetCString(ptr, buf.as_mut_ptr(), cap as isize, au_const::CF_UTF8) };
+    let ok =
+        unsafe { ffi::CFStringGetCString(ptr, buf.as_mut_ptr(), cap as isize, au_const::CF_UTF8) };
     if ok == 0 {
         return None;
     }
@@ -1048,7 +1052,14 @@ impl AuBackend {
         // SAFETY: `GetPropertyInfo` only writes the size out-param.
         let mut size: u32 = 0;
         let status = unsafe {
-            ffi::AudioUnitGetPropertyInfo(handle, PROP_PARAMETER_LIST, SCOPE_GLOBAL, 0, &mut size, std::ptr::null_mut())
+            ffi::AudioUnitGetPropertyInfo(
+                handle,
+                PROP_PARAMETER_LIST,
+                SCOPE_GLOBAL,
+                0,
+                &mut size,
+                std::ptr::null_mut(),
+            )
         };
         if status != 0 || size == 0 || !size.is_multiple_of(4) {
             return;
@@ -1103,13 +1114,15 @@ impl AuBackend {
             }
             let mut live: f32 = 0.0;
             // SAFETY: `live` is valid writable `f32` memory.
-            let seed = if unsafe { ffi::AudioUnitGetParameter(handle, id, SCOPE_GLOBAL, 0, &mut live) } == 0
-                && live.is_finite()
-            {
-                live as f64
-            } else {
-                info.default_value as f64
-            };
+            let seed =
+                if unsafe { ffi::AudioUnitGetParameter(handle, id, SCOPE_GLOBAL, 0, &mut live) }
+                    == 0
+                    && live.is_finite()
+                {
+                    live as f64
+                } else {
+                    info.default_value as f64
+                };
             self.params.insert(
                 name.clone(),
                 seed.clamp(info.min_value as f64, info.max_value as f64),
@@ -1159,7 +1172,8 @@ impl AuBackend {
     /// Set one param by worker id (matches unit names case-insensitively,
     /// or a bare parameter number; unknown ids are an error, never sent).
     pub fn set_param(&mut self, id: &str, value: f64) -> Result<(), AuError> {
-        let slot = find_au_slot(&self.slots, id).ok_or_else(|| AuError::BadParam(id.to_string()))?;
+        let slot =
+            find_au_slot(&self.slots, id).ok_or_else(|| AuError::BadParam(id.to_string()))?;
         let clamped = value.clamp(slot.min, slot.max);
         #[cfg(target_os = "macos")]
         {
@@ -1193,7 +1207,8 @@ impl AuBackend {
     /// Read one param back from the unit (worker-id rules as
     /// [`AuBackend::set_param`]).
     pub fn get_param(&self, id: &str) -> Result<f64, AuError> {
-        let slot = find_au_slot(&self.slots, id).ok_or_else(|| AuError::BadParam(id.to_string()))?;
+        let slot =
+            find_au_slot(&self.slots, id).ok_or_else(|| AuError::BadParam(id.to_string()))?;
         #[cfg(not(target_os = "macos"))]
         {
             let _ = slot;
@@ -1204,7 +1219,13 @@ impl AuBackend {
             let mut live: f32 = 0.0;
             // SAFETY: `live` is valid writable `f32` memory.
             let status = unsafe {
-                ffi::AudioUnitGetParameter(self.unit.handle, slot.id, au_const::SCOPE_GLOBAL, 0, &mut live)
+                ffi::AudioUnitGetParameter(
+                    self.unit.handle,
+                    slot.id,
+                    au_const::SCOPE_GLOBAL,
+                    0,
+                    &mut live,
+                )
             };
             if status != 0 {
                 return Err(AuError::ParamFailed { status });
@@ -1331,9 +1352,10 @@ impl AuBackend {
                 au_const::SCOPE_GLOBAL,
                 0,
             ) {
-                Ok(secs) if secs.is_finite() && secs > 0.0 => {
-                    (secs * self.sample_rate).round().clamp(0.0, u32::MAX as f64) as u32
-                }
+                Ok(secs) if secs.is_finite() && secs > 0.0 => (secs * self.sample_rate)
+                    .round()
+                    .clamp(0.0, u32::MAX as f64)
+                    as u32,
                 _ => 0,
             }
         }
@@ -1697,7 +1719,8 @@ mod tests {
         let backend = super::AuBackend::load(&apple_delay(), 44100.0).expect("load AUDelay");
         assert_eq!(backend.latency_samples(), 0);
         let mut map = LatencyMap::new();
-        map.report("au-delay", backend.latency_samples()).expect("report");
+        map.report("au-delay", backend.latency_samples())
+            .expect("report");
         assert_eq!(map.chain_latency(&["au-delay".to_string()]), 0);
     }
 

@@ -331,8 +331,7 @@ impl WasmtimeDelay {
         if fuel_per_block.is_some() {
             config.consume_fuel(true);
         }
-        let engine =
-            wasmtime::Engine::new(&config).map_err(|e| Error::Backend(e.to_string()))?;
+        let engine = wasmtime::Engine::new(&config).map_err(|e| Error::Backend(e.to_string()))?;
         let module = wasmtime::Module::new(&engine, module_bytes)
             .map_err(|e| Error::Backend(format!("bad module: {e}")))?;
         let mut store = wasmtime::Store::new(&engine, ());
@@ -382,7 +381,9 @@ impl WasmtimeDelay {
         if rc == PARAM_OK {
             Ok(())
         } else {
-            Err(Error::UnknownParam(format!("code {code} refused (rc {rc})")))
+            Err(Error::UnknownParam(format!(
+                "code {code} refused (rc {rc})"
+            )))
         }
     }
 
@@ -465,13 +466,21 @@ mod tests {
             (37.5, 0.9, 1.0),
         ] {
             let mut native = crate::dsp::Delay::new(sr);
-            native.apply_param(crate::dsp::delay::PARAM_TIME_MS, time_ms).unwrap();
-            native.apply_param(crate::dsp::delay::PARAM_FEEDBACK, feedback).unwrap();
-            native.apply_param(crate::dsp::delay::PARAM_MIX, mix).unwrap();
+            native
+                .apply_param(crate::dsp::delay::PARAM_TIME_MS, time_ms)
+                .unwrap();
+            native
+                .apply_param(crate::dsp::delay::PARAM_FEEDBACK, feedback)
+                .unwrap();
+            native
+                .apply_param(crate::dsp::delay::PARAM_MIX, mix)
+                .unwrap();
             let mut dev = WasmDevice::new_simulated("dev_dly", sr).unwrap();
             let id = dev.id().to_string();
-            dev.set_param_address(&format!("{id}:time_ms"), time_ms).unwrap();
-            dev.set_param_address(&format!("{id}:feedback"), feedback).unwrap();
+            dev.set_param_address(&format!("{id}:time_ms"), time_ms)
+                .unwrap();
+            dev.set_param_address(&format!("{id}:feedback"), feedback)
+                .unwrap();
             dev.set_param_address(&format!("{id}:mix"), mix).unwrap();
 
             // Impulse: echoes must land on the same grid with the same decay.
@@ -491,7 +500,10 @@ mod tests {
                 native.process(b, w);
                 dev.process(b, g).unwrap();
             }
-            assert_eq!(got, want, "impulse drift at t={time_ms} fb={feedback} mix={mix}");
+            assert_eq!(
+                got, want,
+                "impulse drift at t={time_ms} fb={feedback} mix={mix}"
+            );
 
             // Sine across two blocks: state carries over identically.
             let sine: Vec<f32> = (0..4096)
@@ -517,7 +529,9 @@ mod tests {
         native.process(&input, &mut w);
         dev.process(&input, &mut g).unwrap();
         assert_eq!(g, w);
-        native.apply_param(crate::dsp::delay::PARAM_FEEDBACK, 0.8).unwrap();
+        native
+            .apply_param(crate::dsp::delay::PARAM_FEEDBACK, 0.8)
+            .unwrap();
         dev.set_param_address("dev_dly:feedback", 0.8).unwrap();
         let silence = vec![0.0; 1024];
         native.process(&silence, &mut w);
@@ -572,7 +586,10 @@ mod tests {
             48_000.0,
         )
         .unwrap();
-        assert_eq!((dev.time_ms(), dev.feedback(), dev.mix()), (375.0, 0.35, 0.3));
+        assert_eq!(
+            (dev.time_ms(), dev.feedback(), dev.mix()),
+            (375.0, 0.35, 0.3)
+        );
         dev.set_param_address("dev_dly:mix", 1.0).unwrap();
         dev.process(&impulse(128), &mut vec![0.0; 128]).unwrap();
         dev.reset();
@@ -598,9 +615,15 @@ mod wasmtime_tests {
     fn real_guest_matches_native_sample_for_sample() {
         let sr = 48_000.0;
         let mut native = crate::dsp::Delay::new(sr);
-        native.apply_param(crate::dsp::delay::PARAM_TIME_MS, 100.0).unwrap();
-        native.apply_param(crate::dsp::delay::PARAM_FEEDBACK, 0.5).unwrap();
-        native.apply_param(crate::dsp::delay::PARAM_MIX, 1.0).unwrap();
+        native
+            .apply_param(crate::dsp::delay::PARAM_TIME_MS, 100.0)
+            .unwrap();
+        native
+            .apply_param(crate::dsp::delay::PARAM_FEEDBACK, 0.5)
+            .unwrap();
+        native
+            .apply_param(crate::dsp::delay::PARAM_MIX, 1.0)
+            .unwrap();
         let mut node = default_node("dev_dly", "WASM Delay");
         for (id, v) in [("time_ms", 100.0), ("feedback", 0.5), ("mix", 1.0)] {
             node.params.iter_mut().find(|p| p.id == id).unwrap().value = v;
@@ -622,7 +645,9 @@ mod wasmtime_tests {
         assert_eq!(got, want);
         // Addressed set steers the real guest too.
         dev.set_param_address("dev_dly:mix", 0.0).unwrap();
-        native.apply_param(crate::dsp::delay::PARAM_MIX, 0.0).unwrap();
+        native
+            .apply_param(crate::dsp::delay::PARAM_MIX, 0.0)
+            .unwrap();
         for ((w, g), b) in want
             .chunks_mut(4096)
             .zip(got.chunks_mut(4096))
@@ -641,8 +666,7 @@ mod wasmtime_tests {
             fuel_per_block: Some(1),
             ..SandboxCaps::default()
         };
-        let mut dev =
-            WasmDevice::from_node_wasmtime(&node, 48_000.0, GUEST, caps).unwrap();
+        let mut dev = WasmDevice::from_node_wasmtime(&node, 48_000.0, GUEST, caps).unwrap();
         let mut out = vec![0.0; 64];
         assert!(matches!(
             dev.process(&vec![0.0; 64], &mut out),

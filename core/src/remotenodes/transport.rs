@@ -288,8 +288,7 @@ impl RemoteSession {
         let remote_order = partition
             .remote_order(&graph.topo)
             .map_err(|e| TransportError::Server(format!("bad partition: {e}")))?;
-        let failover_exec =
-            RemoteExecutor::new(graph.clone(), remote_order, edge_delays.clone());
+        let failover_exec = RemoteExecutor::new(graph.clone(), remote_order, edge_delays.clone());
         let mut s = Self {
             addr,
             stream: None,
@@ -355,23 +354,24 @@ impl RemoteSession {
         let stream = self.stream.as_mut().unwrap();
         let send_ms = now_ms();
         let res: Result<f64, TransportError> = (|| {
-            codec::write_message(stream, &Message::Ping { seq, t_send_ms: send_ms })?;
+            codec::write_message(
+                stream,
+                &Message::Ping {
+                    seq,
+                    t_send_ms: send_ms,
+                },
+            )?;
             match codec::read_message(stream)? {
                 Message::Pong {
                     seq: got,
                     t_send_ms,
                 } => {
                     if got != seq || t_send_ms != send_ms {
-                        return Err(TransportError::SeqMismatch {
-                            expected: seq,
-                            got,
-                        });
+                        return Err(TransportError::SeqMismatch { expected: seq, got });
                     }
                     Ok(now_ms() as f64 - t0)
                 }
-                other => Err(TransportError::Server(format!(
-                    "bad pong reply: {other:?}"
-                ))),
+                other => Err(TransportError::Server(format!("bad pong reply: {other:?}"))),
             }
         })();
         match res {
@@ -431,7 +431,14 @@ impl RemoteSession {
             }
         }
         if !done.is_empty() {
-            render_subset(&self.graph, &done, buffers, frames, &self.edge_delays, start_frame);
+            render_subset(
+                &self.graph,
+                &done,
+                buffers,
+                frames,
+                &self.edge_delays,
+                start_frame,
+            );
         }
         done
     }
@@ -510,7 +517,12 @@ impl RemoteSession {
     /// all replies in sequence order. Requests beyond a mid-stream
     /// failure (and any seq-mismatched reply) fall back to local render,
     /// so the returned vec always has `count` complete blocks.
-    pub fn render_many(&mut self, start_block: u64, count: usize, frames: usize) -> Vec<BlockOutput> {
+    pub fn render_many(
+        &mut self,
+        start_block: u64,
+        count: usize,
+        frames: usize,
+    ) -> Vec<BlockOutput> {
         if self.status != SessionStatus::Live || self.stream.is_none() {
             return (0..count)
                 .map(|i| self.render_local(start_block + i as u64, frames))

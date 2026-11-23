@@ -52,7 +52,11 @@ fn blocks(text: &str) -> Result<Vec<(String, Ops)>, String> {
                     continue;
                 }
                 (Some(0), None) => {
-                    return Err(format!("line {}: unterminated header {:?}", ln + 1, rest.trim()));
+                    return Err(format!(
+                        "line {}: unterminated header {:?}",
+                        ln + 1,
+                        rest.trim()
+                    ));
                 }
                 (Some(s), _) => (&rest[..s], &rest[s..]),
                 _ => (rest, ""),
@@ -141,7 +145,9 @@ fn region(o: &Ops, control: &Ops, dir: &Path) -> Result<Option<Region>, String> 
     let Some(sample) = o.get("sample") else {
         return Ok(None);
     };
-    if o.get("trigger").is_some_and(|t| t != "attack" && t != "first" && t != "legato") {
+    if o.get("trigger")
+        .is_some_and(|t| t != "attack" && t != "first" && t != "legato")
+    {
         return Ok(None);
     }
     if sample.starts_with('*') {
@@ -177,7 +183,11 @@ fn region(o: &Ops, control: &Ops, dir: &Path) -> Result<Option<Region>, String> 
     if let Some(v) = g("hivel").and_then(num) {
         r.hivel = v.clamp(0.0, 127.0) as u8;
     }
-    let xf = |k: &str, d: u8| g(k).and_then(num).map(|v| v.clamp(0.0, 127.0) as u8).unwrap_or(d);
+    let xf = |k: &str, d: u8| {
+        g(k).and_then(num)
+            .map(|v| v.clamp(0.0, 127.0) as u8)
+            .unwrap_or(d)
+    };
     if ["xfin_lovel", "xfin_hivel", "xfout_lovel", "xfout_hivel"]
         .iter()
         .any(|k| o.contains_key(*k))
@@ -194,8 +204,7 @@ fn region(o: &Ops, control: &Ops, dir: &Path) -> Result<Option<Region>, String> 
     if let Some(v) = g("pitch_keytrack").and_then(num) {
         r.keytrack = v;
     }
-    r.volume_db = g("volume").and_then(num).unwrap_or(0.0)
-        + g("gain").and_then(num).unwrap_or(0.0);
+    r.volume_db = g("volume").and_then(num).unwrap_or(0.0) + g("gain").and_then(num).unwrap_or(0.0);
     r.pan = g("pan").and_then(num).unwrap_or(0.0) / 100.0;
     if let Some(v) = g("seq_length").and_then(num) {
         r.seq_length = v.max(1.0) as u32;
@@ -283,7 +292,9 @@ mod tests {
         let a = &rs[0];
         assert_eq!(
             a.sample,
-            SampleRef::Wav(PathBuf::from("/lib/Strings/Violin Section/susVib/Vln A3 v1.wav"))
+            SampleRef::Wav(PathBuf::from(
+                "/lib/Strings/Violin Section/susVib/Vln A3 v1.wav"
+            ))
         );
         assert_eq!((a.lokey, a.hikey, a.keycenter), (68, 73, 69.0));
         assert_eq!((a.lovel, a.hivel), (1, 62));
@@ -292,7 +303,11 @@ mod tests {
         assert_eq!(a.volume_db, -3.0, "global volume");
         let b = &rs[1];
         assert_eq!((b.lokey, b.hikey, b.keycenter), (60, 60, 60.0));
-        assert_eq!((b.volume_db, b.tune), (2.0, -12.0), "region overrides global");
+        assert_eq!(
+            (b.volume_db, b.tune),
+            (2.0, -12.0),
+            "region overrides global"
+        );
         let refs = referenced_samples(text).unwrap();
         assert_eq!(refs.len(), 2);
         assert!(refs[0].ends_with("susVib/Vln A3 v1.wav"), "{refs:?}");
@@ -317,7 +332,11 @@ mod tests {
         let e = parse("<region> sample=a.wav\nkey=60 volume=<3\n", Path::new("")).unwrap_err();
         assert!(e.contains("line 2"), "{e}");
         // Huge numbers saturate instead of overflowing.
-        let rs = parse("<region> sample=a.wav end=1e30 loop_start=0 loop_end=1e30", Path::new("")).unwrap();
+        let rs = parse(
+            "<region> sample=a.wav end=1e30 loop_start=0 loop_end=1e30",
+            Path::new(""),
+        )
+        .unwrap();
         assert_eq!(rs[0].end, Some(usize::MAX));
     }
 

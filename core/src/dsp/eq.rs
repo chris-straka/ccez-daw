@@ -148,8 +148,10 @@ impl Eq {
     fn retune(&mut self) {
         let sr = self.sample_rate;
         self.low.lowshelf(LOW_FREQ.min(sr * 0.45), self.low_db, sr);
-        self.mid.peaking(MID_FREQ.min(sr * 0.45), self.mid_db, MID_Q, sr);
-        self.high.highshelf(HIGH_FREQ.min(sr * 0.45), self.high_db, sr);
+        self.mid
+            .peaking(MID_FREQ.min(sr * 0.45), self.mid_db, MID_Q, sr);
+        self.high
+            .highshelf(HIGH_FREQ.min(sr * 0.45), self.high_db, sr);
     }
 
     pub fn process(&mut self, input: &[f32], output: &mut [f32]) {
@@ -274,7 +276,10 @@ mod tests {
         let air = sine(12_000.0, sr, 8192);
         e.process(&air, &mut o);
         let ratio = rms(&o[o.len() / 2..]) / rms(&air[air.len() / 2..]);
-        assert!((ratio - 1.0).abs() < 0.15, "treble untouched, ratio {ratio}");
+        assert!(
+            (ratio - 1.0).abs() < 0.15,
+            "treble untouched, ratio {ratio}"
+        );
     }
 
     #[test]

@@ -18,10 +18,17 @@ fn round_trip_pitch_edit_restores_every_note() {
     let clip = phrase();
     let bytes = clip.encode().unwrap();
     let up = timepitch::transpose_clip(&clip, 7.0).unwrap();
-    assert_eq!(up.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(), vec![67, 71, 74]);
+    assert_eq!(
+        up.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+        vec![67, 71, 74]
+    );
     let back = timepitch::transpose_clip(&up, -7.0).unwrap();
     assert_eq!(back, clip);
-    assert_eq!(back.encode().unwrap(), bytes, "round-trip must be byte-stable");
+    assert_eq!(
+        back.encode().unwrap(),
+        bytes,
+        "round-trip must be byte-stable"
+    );
 }
 
 #[test]
@@ -48,7 +55,10 @@ fn fractional_pitch_rides_bend_not_rounding() {
         edited.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
         vec![60, 64, 67]
     );
-    assert!(edited.notes.iter().all(|n| (n.pitch_bend - 0.3).abs() < 1e-12));
+    assert!(edited
+        .notes
+        .iter()
+        .all(|n| (n.pitch_bend - 0.3).abs() < 1e-12));
     // Undo the detune: bend returns to flat.
     let back = timepitch::apply_props_to_midi(&edited, -0.3, 1.0).unwrap();
     assert!(back.notes.iter().all(|n| n.pitch_bend.abs() < 1e-12));
@@ -63,10 +73,20 @@ fn warp_identity_and_small_shift_round_trip() {
 
     // One +0.1-beat pin over the whole phrase, then its negation: onsets
     // return within a tick (warp moves onsets only; lengths never change).
-    let map = WarpMap::new(vec![WarpMarker { at_beats: 0.0, shift_beats: 0.1 }]).unwrap();
+    let map = WarpMap::new(vec![WarpMarker {
+        at_beats: 0.0,
+        shift_beats: 0.1,
+    }])
+    .unwrap();
     let warped = timepitch::apply_warp_to_midi(&clip, &map);
     assert!(warped.notes.iter().all(|n| (n.start_beats
-        - (clip.notes.iter().find(|m| m.note_id == n.note_id).unwrap().start_beats + 0.1))
+        - (clip
+            .notes
+            .iter()
+            .find(|m| m.note_id == n.note_id)
+            .unwrap()
+            .start_beats
+            + 0.1))
         .abs()
         < 1e-9));
     assert_eq!(
@@ -75,7 +95,10 @@ fn warp_identity_and_small_shift_round_trip() {
     );
     let back = timepitch::apply_warp_to_midi(&warped, &map.negated());
     for (a, b) in back.notes.iter().zip(clip.notes.iter()) {
-        assert!((a.start_beats - b.start_beats).abs() < 1e-9, "{a:?} vs {b:?}");
+        assert!(
+            (a.start_beats - b.start_beats).abs() < 1e-9,
+            "{a:?} vs {b:?}"
+        );
     }
 }
 
@@ -83,7 +106,9 @@ fn warp_identity_and_small_shift_round_trip() {
 fn repair_cleanup_is_stable_and_convergent() {
     // declick + dc-remove on a dirty buffer converges: a second pass finds
     // nothing and the tone underneath survives.
-    let mut buf: Vec<f32> = (0..128).map(|i| (i as f32 * 0.3).sin() * 0.2 + 0.05).collect();
+    let mut buf: Vec<f32> = (0..128)
+        .map(|i| (i as f32 * 0.3).sin() * 0.2 + 0.05)
+        .collect();
     buf[64] = 0.95;
     let first = repair::declick(&mut buf, 0.5, 2, 4.0);
     assert_eq!(first, 1);
@@ -99,8 +124,15 @@ fn repair_cleanup_is_stable_and_convergent() {
     clip.add_note(a).unwrap();
     clip.add_note(MidiNote::new(2, 60, 100, 1.0, 1.0)).unwrap();
     let q = repair::quantize_clip(&clip, 0.5).unwrap();
-    assert_eq!(q.notes.iter().find(|n| n.note_id == 1).unwrap().start_beats, 0.0);
+    assert_eq!(
+        q.notes.iter().find(|n| n.note_id == 1).unwrap().start_beats,
+        0.0
+    );
     let mut q = q;
     assert_eq!(repair::fix_same_pitch_overlaps(&mut q), 1);
-    assert_eq!(repair::fix_same_pitch_overlaps(&mut q), 0, "second pass is a no-op");
+    assert_eq!(
+        repair::fix_same_pitch_overlaps(&mut q),
+        0,
+        "second pass is a no-op"
+    );
 }

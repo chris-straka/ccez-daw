@@ -99,7 +99,8 @@ impl Voices {
                 Some(PatchKind::Synth(p)) => (Voice::Synth(p), 0.0),
                 Some(PatchKind::Sampled(e)) => (
                     Voice::Sampled(Box::new(
-                        library::load(e).map_err(|m| format!("instrument {id:?} ({}): {m}", e.id))?,
+                        library::load(e)
+                            .map_err(|m| format!("instrument {id:?} ({}): {m}", e.id))?,
                     )),
                     e.pan,
                 ),
@@ -107,7 +108,10 @@ impl Voices {
                     let (regions, style) = library::local_spec(&inst.patch)
                         .expect("local patch")
                         .map_err(|m| format!("instrument {id:?}: {m}"))?;
-                    (Voice::Sampled(Box::new(SampledInstrument::new(regions, style))), 0.0)
+                    (
+                        Voice::Sampled(Box::new(SampledInstrument::new(regions, style))),
+                        0.0,
+                    )
                 }
                 None => return Ok(None),
             };
@@ -162,17 +166,22 @@ fn render_pair(
                 Voice::Synth(p) => {
                     let seed = (pi as u32) << 16 | ni as u32;
                     let m = render_note(p, n.pitch, n.velocity, dur, SAMPLE_RATE, seed);
-                    (m.iter().map(|s| s * pl).collect(), m.iter().map(|s| s * pr).collect())
+                    (
+                        m.iter().map(|s| s * pl).collect(),
+                        m.iter().map(|s| s * pr).collect(),
+                    )
                 }
                 Voice::Sampled(s) => {
-                    let (l, r) = s.render_note(n.pitch, n.velocity, dur, SAMPLE_RATE, note_rand(pi, ni))?;
+                    let (l, r) =
+                        s.render_note(n.pitch, n.velocity, dur, SAMPLE_RATE, note_rand(pi, ni))?;
                     if l.is_empty() {
                         silent += 1;
                     }
                     // Same gains, per channel: a mono recording (L == R)
                     // pans exactly like a synth; a stereo one gets a
                     // constant-power balance. Centre is unity either way.
-                    let scale = |x: Vec<f32>, g: f32| x.into_iter().map(|s| s * g).collect::<Vec<f32>>();
+                    let scale =
+                        |x: Vec<f32>, g: f32| x.into_iter().map(|s| s * g).collect::<Vec<f32>>();
                     (scale(l, pl), scale(r, pr))
                 }
             };
@@ -260,7 +269,12 @@ fn trim_tail(mut buf: [Vec<f32>; 2], min: usize) -> [Vec<f32>; 2] {
     let floor = 1e-4;
     let end = buf
         .iter()
-        .map(|ch| ch.iter().rposition(|s| s.abs() > floor).map(|i| i + 1).unwrap_or(0))
+        .map(|ch| {
+            ch.iter()
+                .rposition(|s| s.abs() > floor)
+                .map(|i| i + 1)
+                .unwrap_or(0)
+        })
         .max()
         .unwrap_or(0);
     for ch in &mut buf {
@@ -344,7 +358,12 @@ pub fn render_stems(c: &Composition) -> Result<Rendered, String> {
     let instrument_rms_dbfs = voices
         .energy
         .iter()
-        .map(|(id, (e, n))| (id.clone(), dbfs(((e / (*n).max(1) as f64).sqrt() as f32) * trim)))
+        .map(|(id, (e, n))| {
+            (
+                id.clone(),
+                dbfs(((e / (*n).max(1) as f64).sqrt() as f32) * trim),
+            )
+        })
         .collect();
     Ok(Rendered {
         stems,
@@ -591,8 +610,8 @@ pub fn render_preview(
             }
         }
         for i in 0..len {
-            step_energy[i] = 0.5
-                * ((step_sum[0][i] as f64).powi(2) + (step_sum[1][i] as f64).powi(2));
+            step_energy[i] =
+                0.5 * ((step_sum[0][i] as f64).powi(2) + (step_sum[1][i] as f64).powi(2));
         }
         let rms = (step_energy.iter().sum::<f64>() / len.max(1) as f64).sqrt() as f32;
         if layers.is_empty() {
@@ -637,7 +656,11 @@ pub fn render_preview(
         ));
     }
     let n = out[0].len();
-    let rms = ((out[0].iter().chain(&out[1]).map(|x| (x * x) as f64).sum::<f64>())
+    let rms = ((out[0]
+        .iter()
+        .chain(&out[1])
+        .map(|x| (x * x) as f64)
+        .sum::<f64>())
         / (2 * n.max(1)) as f64)
         .sqrt() as f32;
     Ok((
@@ -703,7 +726,12 @@ mod tests {
         let seams = seam_stats(&r.stems);
         assert!(seams.iter().all(|s| s.seamless), "{seams:?}");
         // The shared hall makes the two sides differ (a stereo room).
-        let diff: f32 = calm.left.iter().zip(&calm.right).map(|(a, b)| (a - b).abs()).sum();
+        let diff: f32 = calm
+            .left
+            .iter()
+            .zip(&calm.right)
+            .map(|(a, b)| (a - b).abs())
+            .sum();
         assert!(diff > 1.0, "{diff}");
     }
 
@@ -713,9 +741,16 @@ mod tests {
         c.instruments[0].pan = Some(-1.0);
         c.instruments[0].reverb = 0.0;
         let r = render_stems(&c).unwrap();
-        let calm = r.stems.iter().find(|s| s.section == "calm" && s.layer == "bed").unwrap();
+        let calm = r
+            .stems
+            .iter()
+            .find(|s| s.section == "calm" && s.layer == "bed")
+            .unwrap();
         let e = |x: &[f32]| x.iter().map(|v| v * v).sum::<f32>();
-        assert!(e(&calm.right) < 1e-9 * e(&calm.left).max(1.0), "hard left, dry");
+        assert!(
+            e(&calm.right) < 1e-9 * e(&calm.left).max(1.0),
+            "hard left, dry"
+        );
     }
 
     /// Sampled instruments take the stage pan too, with the synths' law:
@@ -725,19 +760,30 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ccez-render-pan-{}", std::process::id()));
         super::super::sampler::tests::sine_wav(&dir, "c4.wav", 261.63, 2.0, 44_100);
         let sfz = dir.join("t.sfz");
-        std::fs::write(&sfz, "<region> sample=c4.wav lokey=0 hikey=127 pitch_keycenter=60\n").unwrap();
+        std::fs::write(
+            &sfz,
+            "<region> sample=c4.wav lokey=0 hikey=127 pitch_keycenter=60\n",
+        )
+        .unwrap();
         let mut c = tiny();
         c.instruments[0].patch = format!("sfz:{}", sfz.display());
         c.instruments[0].reverb = 0.0;
         let bed = |c: &Composition| {
             let r = render_stems(c).unwrap();
-            let s = r.stems.into_iter().find(|s| s.section == "calm" && s.layer == "bed").unwrap();
+            let s = r
+                .stems
+                .into_iter()
+                .find(|s| s.section == "calm" && s.layer == "bed")
+                .unwrap();
             let e = |x: &[f32]| x.iter().map(|v| (v * v) as f64).sum::<f64>();
             (e(&s.left), e(&s.right))
         };
         c.instruments[0].pan = Some(0.0);
         let (l0, r0) = bed(&c);
-        assert!(l0 > 1.0 && (l0 - r0).abs() < 1e-6 * l0, "centre is balanced: {l0} {r0}");
+        assert!(
+            l0 > 1.0 && (l0 - r0).abs() < 1e-6 * l0,
+            "centre is balanced: {l0} {r0}"
+        );
         c.instruments[0].pan = Some(-1.0);
         let (l, r) = bed(&c);
         assert!(r < 1e-9 * l, "hard left, dry: {l} {r}");
@@ -816,11 +862,19 @@ mod tests {
         assert_eq!(c.validate(), Vec::<String>::new());
         c.parts[1].notes[0].pitch = 30; // below the region
         let r = render_stems(&c).unwrap();
-        let calm = r.stems.iter().find(|s| s.section == "calm" && s.layer == "bed").unwrap();
+        let calm = r
+            .stems
+            .iter()
+            .find(|s| s.section == "calm" && s.layer == "bed")
+            .unwrap();
         assert!(calm.left.iter().any(|s| s.abs() > 0.05), "the F4 sounds");
         assert!(seam_stats(&r.stems).iter().all(|s| s.seamless));
         assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
-        assert!(r.warnings[0].contains("1 note(s) have no recording"), "{:?}", r.warnings);
+        assert!(
+            r.warnings[0].contains("1 note(s) have no recording"),
+            "{:?}",
+            r.warnings
+        );
         c.instruments[0].patch = format!("sfz:{}", dir.join("missing.sfz").display());
         assert!(c.validate().iter().any(|e| e.contains("no file at")));
         let _ = std::fs::remove_dir_all(&dir);

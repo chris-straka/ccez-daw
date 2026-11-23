@@ -227,7 +227,9 @@ impl BranchStore {
 
     /// Tip sequence number of a branch (0 when empty).
     pub fn tip_seq(&self, name: &str) -> Option<u64> {
-        self.history(name).ok().and_then(|h| h.last().map(|op| op.seq))
+        self.history(name)
+            .ok()
+            .and_then(|h| h.last().map(|op| op.seq))
     }
 
     /// Full op history of a branch: shared prefix, then its own ops.
@@ -305,8 +307,14 @@ impl BranchStore {
         let seqs_b: HashSet<u64> = hb.iter().map(|op| op.seq).collect();
         let seqs_a: HashSet<u64> = ha.iter().map(|op| op.seq).collect();
         Ok(BranchDiff {
-            only_in_a: ha.into_iter().filter(|op| !seqs_b.contains(&op.seq)).collect(),
-            only_in_b: hb.into_iter().filter(|op| !seqs_a.contains(&op.seq)).collect(),
+            only_in_a: ha
+                .into_iter()
+                .filter(|op| !seqs_b.contains(&op.seq))
+                .collect(),
+            only_in_b: hb
+                .into_iter()
+                .filter(|op| !seqs_a.contains(&op.seq))
+                .collect(),
         })
     }
 
@@ -546,10 +554,8 @@ mod tests {
         assert_eq!(store.undo_depth(), 1);
         assert_eq!(store.redo_depth(), 1);
 
-        let path = std::env::temp_dir().join(format!(
-            "ccez-branch-test-{}.json",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("ccez-branch-test-{}.json", std::process::id()));
         store.save(&path).unwrap();
         let mut reloaded = BranchStore::load(&path).unwrap();
         let _ = std::fs::remove_file(&path);
@@ -609,28 +615,61 @@ mod tests {
     fn merge_conflicts_on_clip_moved_to_different_beats() {
         let mut store = BranchStore::new();
         store
-            .apply("main", "ui", OpKind::ClipAdded, "clip_b", "{\"id\":\"clip_b\"}")
+            .apply(
+                "main",
+                "ui",
+                OpKind::ClipAdded,
+                "clip_b",
+                "{\"id\":\"clip_b\"}",
+            )
             .unwrap();
         store.create_branch("arr", "main").unwrap();
         store
-            .apply("main", "ui", OpKind::ClipMoved, "clip_b", "{\"startBeats\": 8}")
+            .apply(
+                "main",
+                "ui",
+                OpKind::ClipMoved,
+                "clip_b",
+                "{\"startBeats\": 8}",
+            )
             .unwrap();
         store
-            .apply("arr", "ui", OpKind::ClipMoved, "clip_b", "{\"startBeats\": 2}")
+            .apply(
+                "arr",
+                "ui",
+                OpKind::ClipMoved,
+                "clip_b",
+                "{\"startBeats\": 2}",
+            )
             .unwrap();
         let outcome = store.merge_preview("arr", "main").unwrap();
         assert!(outcome.merged.is_empty());
         assert_eq!(outcome.conflicts.len(), 1);
         assert_eq!(outcome.conflicts[0].target, "clip_b");
-        assert_eq!(classify_op(&outcome.conflicts[0].source_op), OpCategory::Moved);
+        assert_eq!(
+            classify_op(&outcome.conflicts[0].source_op),
+            OpCategory::Moved
+        );
         // Same destination on both sides merges cleanly (idempotent).
         let mut calm = BranchStore::new();
-        calm.apply("main", "ui", OpKind::ClipAdded, "clip_b", "{\"id\":\"clip_b\"}")
-            .unwrap();
+        calm.apply(
+            "main",
+            "ui",
+            OpKind::ClipAdded,
+            "clip_b",
+            "{\"id\":\"clip_b\"}",
+        )
+        .unwrap();
         calm.create_branch("arr", "main").unwrap();
         for branch in ["main", "arr"] {
-            calm.apply(branch, "ui", OpKind::ClipMoved, "clip_b", "{\"startBeats\": 4}")
-                .unwrap();
+            calm.apply(
+                branch,
+                "ui",
+                OpKind::ClipMoved,
+                "clip_b",
+                "{\"startBeats\": 4}",
+            )
+            .unwrap();
         }
         let outcome = calm.merge_preview("arr", "main").unwrap();
         assert!(outcome.conflicts.is_empty());
@@ -662,10 +701,7 @@ mod tests {
         let outcome = store.merge_preview("auto", "main").unwrap();
         assert!(outcome.conflicts.is_empty());
         assert_eq!(outcome.merged.len(), 1);
-        assert_eq!(
-            classify_op(&outcome.merged[0]),
-            OpCategory::Automation
-        );
+        assert_eq!(classify_op(&outcome.merged[0]), OpCategory::Automation);
 
         // Same lane, different value: one conflict, nothing smuggled in.
         store

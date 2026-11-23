@@ -39,9 +39,9 @@ use crate::plugins::chain::{apply_wet_dry, is_oversampled, wet_dry};
 use super::class::{classify, DeviceClass, DEVICE_CLASS_PARAM};
 use super::kernel::{
     delay_process, distortion_process, gain_process, highpass_process, lowpass_process,
-    sampler_note_off, sampler_note_on, sampler_process, ATTACK_PARAM, CUTOFF_PARAM,
-    DELAY_SAMPLES_PARAM, DRIVE_PARAM, FEEDBACK_PARAM, GAIN_PARAM, RELEASE_PARAM,
-    TRANSPOSE_PARAM, DelayState, HighpassState, LowpassState, SamplerState,
+    sampler_note_off, sampler_note_on, sampler_process, DelayState, HighpassState, LowpassState,
+    SamplerState, ATTACK_PARAM, CUTOFF_PARAM, DELAY_SAMPLES_PARAM, DRIVE_PARAM, FEEDBACK_PARAM,
+    GAIN_PARAM, RELEASE_PARAM, TRANSPOSE_PARAM,
 };
 use super::sampler::SampleBank;
 use super::DeviceError;
@@ -124,7 +124,9 @@ impl Macro {
             return Err(RackError::BadRack("macro id must be non-empty".to_string()));
         }
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-            return Err(RackError::BadRack(format!("macro value {value} out of 0..=1")));
+            return Err(RackError::BadRack(format!(
+                "macro value {value} out of 0..=1"
+            )));
         }
         Ok(Self {
             id: id.to_string(),
@@ -136,7 +138,9 @@ impl Macro {
 
     pub fn set_value(&mut self, value: f64) -> Result<()> {
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-            return Err(RackError::BadRack(format!("macro value {value} out of 0..=1")));
+            return Err(RackError::BadRack(format!(
+                "macro value {value} out of 0..=1"
+            )));
         }
         self.value = value;
         Ok(())
@@ -314,7 +318,11 @@ fn resolved_params(node: &Node, rack: &Rack) -> Vec<crate::model::Param> {
 }
 
 fn param_of(params: &[crate::model::Param], id: &str, default: f64) -> f64 {
-    params.iter().find(|p| p.id == id).map(|p| p.value).unwrap_or(default)
+    params
+        .iter()
+        .find(|p| p.id == id)
+        .map(|p| p.value)
+        .unwrap_or(default)
 }
 
 /// Render one leaf device: kernel → wet, mixed with dry per the Track C
@@ -335,9 +343,7 @@ fn render_leaf(
         DeviceClass::Gain => {
             let g = param_of(params, GAIN_PARAM, 1.0) as f32;
             if is_oversampled(node) {
-                process_oversampled2(input, &mut wet, |inn, out| {
-                    gain_process(g, inn, out)
-                })?;
+                process_oversampled2(input, &mut wet, |inn, out| gain_process(g, inn, out))?;
             } else {
                 gain_process(g, input, &mut wet)?;
             }
@@ -399,9 +405,7 @@ fn render_leaf(
         DeviceClass::Distortion => {
             let k = param_of(params, DRIVE_PARAM, 1.0) as f32;
             if is_oversampled(node) {
-                process_oversampled2(input, &mut wet, |inn, out| {
-                    distortion_process(k, inn, out)
-                })?;
+                process_oversampled2(input, &mut wet, |inn, out| distortion_process(k, inn, out))?;
             } else {
                 distortion_process(k, input, &mut wet)?;
             }
@@ -432,7 +436,15 @@ fn render_leaf(
             let release = param_of(params, RELEASE_PARAM, 0.05);
             let cutoff = param_of(params, CUTOFF_PARAM, 20000.0);
             sampler_process(
-                sample, transpose, gain, attack, release, cutoff, sample_rate, s, &mut wet,
+                sample,
+                transpose,
+                gain,
+                attack,
+                release,
+                cutoff,
+                sample_rate,
+                s,
+                &mut wet,
             )?;
         }
         DeviceClass::Container => {
@@ -573,7 +585,9 @@ fn render_item(
                 .ok_or_else(|| RackError::UnknownContainer(id.clone()))?
                 .clone();
             if !visiting.insert(id.clone()) {
-                return Err(RackError::BadRack(format!("container cycle through `{id}`")));
+                return Err(RackError::BadRack(format!(
+                    "container cycle through `{id}`"
+                )));
             }
             let out = render_nodes(ctx, state, &children, input, visiting)?;
             visiting.remove(id);
@@ -581,7 +595,10 @@ fn render_item(
         }
         RackNode::Split(split) => {
             if split.branches.is_empty() {
-                return Err(RackError::BadRack(format!("split `{}` has no branches", split.id)));
+                return Err(RackError::BadRack(format!(
+                    "split `{}` has no branches",
+                    split.id
+                )));
             }
             if !split.gains.iter().all(|g| g.is_finite()) {
                 return Err(RackError::BadRack(format!(
@@ -615,7 +632,15 @@ pub fn render_rack(
     input: &[f32],
     sample_rate: f64,
 ) -> Result<Vec<f32>> {
-    render_rack_with_bank(project, rack, &SampleBank::new(), state, track_id, input, sample_rate)
+    render_rack_with_bank(
+        project,
+        rack,
+        &SampleBank::new(),
+        state,
+        track_id,
+        input,
+        sample_rate,
+    )
 }
 
 /// Render one track's device chain with sampler voices fed from `bank`:
@@ -633,7 +658,9 @@ pub fn render_rack_with_bank(
     sample_rate: f64,
 ) -> Result<Vec<f32>> {
     if !sample_rate.is_finite() || sample_rate <= 0.0 {
-        return Err(RackError::BadRack(format!("sample rate must be positive, got {sample_rate}")));
+        return Err(RackError::BadRack(format!(
+            "sample rate must be positive, got {sample_rate}"
+        )));
     }
     let track = project
         .tracks
@@ -646,7 +673,11 @@ pub fn render_rack_with_bank(
         bank,
         sample_rate,
     };
-    let items: Vec<RackNode> = track.device_ids.iter().map(|id| RackNode::Device(id.clone())).collect();
+    let items: Vec<RackNode> = track
+        .device_ids
+        .iter()
+        .map(|id| RackNode::Device(id.clone()))
+        .collect();
     render_nodes(&ctx, state, &items, input, &mut BTreeSet::new())
 }
 
@@ -679,7 +710,9 @@ fn flatten(
         }
         Some(children) => {
             if !visiting.insert(id.to_string()) {
-                return Err(RackError::BadRack(format!("container cycle through `{id}`")));
+                return Err(RackError::BadRack(format!(
+                    "container cycle through `{id}`"
+                )));
             }
             order.push(format!("{id}:["));
             for child in children.clone() {
@@ -693,7 +726,9 @@ fn flatten(
                             .ok_or_else(|| RackError::UnknownContainer(r.clone()))?
                             .clone();
                         if !visiting.insert(r.clone()) {
-                            return Err(RackError::BadRack(format!("container cycle through `{r}`")));
+                            return Err(RackError::BadRack(format!(
+                                "container cycle through `{r}`"
+                            )));
                         }
                         for k in &kids {
                             if let RackNode::Device(d) = k {
@@ -702,7 +737,9 @@ fn flatten(
                         }
                         visiting.remove(&r);
                     }
-                    RackNode::Split(s) => order.push(format!("split:{}({})", s.id, s.branches.len())),
+                    RackNode::Split(s) => {
+                        order.push(format!("split:{}({})", s.id, s.branches.len()))
+                    }
                 }
             }
             order.push("]".to_string());
@@ -714,9 +751,9 @@ fn flatten(
 
 #[cfg(test)]
 mod tests {
+    use super::super::class::{instantiate, param_value, set_param_value};
     use super::*;
     use crate::model::Track;
-    use super::super::class::{instantiate, param_value, set_param_value};
 
     fn track(id: &str, devices: &[&str]) -> Track {
         Track {
@@ -767,9 +804,13 @@ mod tests {
         p.tracks[0].device_ids = vec!["g1".to_string(), "c1".to_string()];
         rack.containers.insert(
             "c1".to_string(),
-            vec![RackNode::Device("g2".to_string()), RackNode::Rack("c2".to_string())],
+            vec![
+                RackNode::Device("g2".to_string()),
+                RackNode::Rack("c2".to_string()),
+            ],
         );
-        rack.containers.insert("c2".to_string(), vec![RackNode::Device("g3".to_string())]);
+        rack.containers
+            .insert("c2".to_string(), vec![RackNode::Device("g3".to_string())]);
         let mut state = RackState::default();
         let out = render_rack(&p, &rack, &mut state, "trk", &[1.0], 44100.0).expect("render");
         assert_eq!(out, vec![24.0]);
@@ -810,8 +851,18 @@ mod tests {
                 "Both gains",
                 0.5,
                 vec![
-                    MacroBinding { device: "g1".to_string(), param: GAIN_PARAM.to_string(), min: 0.0, max: 2.0 },
-                    MacroBinding { device: "g2".to_string(), param: GAIN_PARAM.to_string(), min: 0.0, max: 4.0 },
+                    MacroBinding {
+                        device: "g1".to_string(),
+                        param: GAIN_PARAM.to_string(),
+                        min: 0.0,
+                        max: 2.0,
+                    },
+                    MacroBinding {
+                        device: "g2".to_string(),
+                        param: GAIN_PARAM.to_string(),
+                        min: 0.0,
+                        max: 4.0,
+                    },
                 ],
             )
             .expect("macro"),
@@ -847,7 +898,11 @@ mod tests {
         let dc = vec![1.0f32; 2048];
         let out = render_rack(&p, &Rack::new(), &mut state, "trk", &dc, 44100.0).expect("render");
         assert_eq!(out.len(), 2048);
-        assert!(out[2047] > 0.9, "lowpassed dc settles near 1, got {}", out[2047]);
+        assert!(
+            out[2047] > 0.9,
+            "lowpassed dc settles near 1, got {}",
+            out[2047]
+        );
         assert!(DevicePreset::from_json("{bad").is_err());
         assert!(DevicePreset::capture(&crate::model::Node {
             id: "x".into(),
@@ -919,38 +974,72 @@ mod tests {
         use super::super::sampler::{SampleBank, SampleBuffer};
         let mut p = Project::new("p", "Sampler");
         p.tracks.push(track("trk", &["s1"]));
-        p.devices.push(instantiate(DeviceClass::Sampler, "s1", "Voice"));
+        p.devices
+            .push(instantiate(DeviceClass::Sampler, "s1", "Voice"));
         let mut bank = SampleBank::new();
-        bank.insert("s1", SampleBuffer::new(44100.0, vec![1.0; 8192]).expect("buf"));
+        bank.insert(
+            "s1",
+            SampleBuffer::new(44100.0, vec![1.0; 8192]).expect("buf"),
+        );
         // Untriggered: silence (the gate starts closed).
         let mut state = RackState::default();
-        let out = render_rack_with_bank(&p, &Rack::new(), &bank, &mut state, "trk", &[0.0; 8], 44100.0)
-            .expect("render");
+        let out = render_rack_with_bank(
+            &p,
+            &Rack::new(),
+            &bank,
+            &mut state,
+            "trk",
+            &[0.0; 8],
+            44100.0,
+        )
+        .expect("render");
         assert_eq!(out, vec![0.0; 8]);
         // Triggered: the voice speaks (attack is 5 ms, so frame 0 ramps
         // in but the block average is well above silence).
         trigger_sampler_voice(&mut state, "s1");
-        let out = render_rack_with_bank(&p, &Rack::new(), &bank, &mut state, "trk", &[0.0; 2205], 44100.0)
-            .expect("render");
+        let out = render_rack_with_bank(
+            &p,
+            &Rack::new(),
+            &bank,
+            &mut state,
+            "trk",
+            &[0.0; 2205],
+            44100.0,
+        )
+        .expect("render");
         assert!(out[2204] > 0.9, "voice must sustain, got {}", out[2204]);
         // Released with a 50 ms envelope: the tail drains to silence.
         release_sampler_voice(&mut state, "s1");
-        let out = render_rack_with_bank(&p, &Rack::new(), &bank, &mut state, "trk", &[0.0; 4410], 44100.0)
-            .expect("render");
+        let out = render_rack_with_bank(
+            &p,
+            &Rack::new(),
+            &bank,
+            &mut state,
+            "trk",
+            &[0.0; 4410],
+            44100.0,
+        )
+        .expect("render");
         assert!(out[4409].abs() < 1e-4, "release tail {}", out[4409]);
         // No bank entry: silence, not an error.
         let mut state = RackState::default();
         trigger_sampler_voice(&mut state, "s1");
         let out = render_rack_with_bank(
-            &p, &Rack::new(), &SampleBank::new(), &mut state, "trk", &[0.0; 8], 44100.0,
+            &p,
+            &Rack::new(),
+            &SampleBank::new(),
+            &mut state,
+            "trk",
+            &[0.0; 8],
+            44100.0,
         )
         .expect("render");
         assert_eq!(out, vec![0.0; 8]);
         // The plain renderer (no bank) treats samplers as silent voices.
         let mut state = RackState::default();
         trigger_sampler_voice(&mut state, "s1");
-        let out = render_rack(&p, &Rack::new(), &mut state, "trk", &[0.0; 8], 44100.0)
-            .expect("render");
+        let out =
+            render_rack(&p, &Rack::new(), &mut state, "trk", &[0.0; 8], 44100.0).expect("render");
         assert_eq!(out, vec![0.0; 8]);
     }
 
@@ -967,10 +1056,8 @@ mod tests {
             Err(RackError::BadRack(_))
         ));
         let mut bad = rack.clone();
-        bad.containers.insert(
-            "loop".to_string(),
-            vec![RackNode::Rack("loop".to_string())],
-        );
+        bad.containers
+            .insert("loop".to_string(), vec![RackNode::Rack("loop".to_string())]);
         let mut p2 = p.clone();
         p2.tracks[0].device_ids = vec!["loop".to_string()];
         assert!(matches!(
@@ -992,14 +1079,14 @@ mod tests {
         p.devices.push(sp);
         let mut state = RackState::default();
         // Front-center: the (L+R) projection passes 1.5x (fully-wet default).
-        let out = render_rack(&p, &Rack::new(), &mut state, "trk", &[1.0, 0.5], 44100.0)
-            .expect("render");
+        let out =
+            render_rack(&p, &Rack::new(), &mut state, "trk", &[1.0, 0.5], 44100.0).expect("render");
         assert_eq!(out, vec![1.5, 0.75]);
         // Rear: the same insert renders quiet (0.5x).
         let sp = p.devices.iter_mut().find(|d| d.id == "sp").expect("sp");
         set_param_value(sp, AZIMUTH_PARAM, 180.0).expect("tune");
-        let out = render_rack(&p, &Rack::new(), &mut state, "trk", &[1.0, 0.5], 44100.0)
-            .expect("render");
+        let out =
+            render_rack(&p, &Rack::new(), &mut state, "trk", &[1.0, 0.5], 44100.0).expect("render");
         assert_eq!(out, vec![0.5, 0.25]);
     }
 }

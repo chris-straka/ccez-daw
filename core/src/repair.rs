@@ -208,14 +208,11 @@ pub fn fix_same_pitch_overlaps(clip: &mut MidiClip) -> usize {
     // Notes are sorted by (start, pitch, id); compare consecutive runs of
     // the same (pitch, channel).
     clip.notes.sort_by(|a, b| {
-        a.pitch
-            .cmp(&b.pitch)
-            .then(a.channel.cmp(&b.channel))
-            .then(
-                a.start_beats
-                    .partial_cmp(&b.start_beats)
-                    .unwrap_or(std::cmp::Ordering::Equal),
-            )
+        a.pitch.cmp(&b.pitch).then(a.channel.cmp(&b.channel)).then(
+            a.start_beats
+                .partial_cmp(&b.start_beats)
+                .unwrap_or(std::cmp::Ordering::Equal),
+        )
     });
     for i in 1..clip.notes.len() {
         let (prev_end, key_prev, key_cur, cur_start) = {
@@ -279,7 +276,10 @@ mod tests {
         assert_eq!(trim_silence(&buf, 0.01), Some((16, 47)));
         assert_eq!(trim_silence(&[0.0; 8], 0.01), None);
         let hits = detect_transients(&buf, 4, 2.0);
-        assert!(hits.iter().any(|&h| (12..=20).contains(&h)), "hits={hits:?}");
+        assert!(
+            hits.iter().any(|&h| (12..=20).contains(&h)),
+            "hits={hits:?}"
+        );
     }
 
     #[test]

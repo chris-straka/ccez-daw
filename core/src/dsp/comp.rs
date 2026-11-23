@@ -168,7 +168,10 @@ mod tests {
         c.process(&loud, &mut o);
         let got_db = 20.0 * rms(&o[o.len() / 2..]).log10();
         let want_db = 20.0 * (1.0 / std::f32::consts::SQRT_2).log10() - 13.5;
-        assert!((got_db - want_db).abs() < 1.5, "got {got_db} want {want_db}");
+        assert!(
+            (got_db - want_db).abs() < 1.5,
+            "got {got_db} want {want_db}"
+        );
     }
 
     #[test]
@@ -195,7 +198,10 @@ mod tests {
         c.process(&loud, &mut o);
         let got_db = 20.0 * rms(&o[o.len() / 2..]).log10();
         let dry_db = 20.0 * (1.0 / std::f32::consts::SQRT_2).log10();
-        assert!((got_db - dry_db).abs() < 1.5, "makeup {got_db} vs dry {dry_db}");
+        assert!(
+            (got_db - dry_db).abs() < 1.5,
+            "makeup {got_db} vs dry {dry_db}"
+        );
         let node = Compressor::default_node("dev_comp", "Native Comp");
         let back: Node = serde_json::from_str(&serde_json::to_string(&node).unwrap()).unwrap();
         assert_eq!(node, back);

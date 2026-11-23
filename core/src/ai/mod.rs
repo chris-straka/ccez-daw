@@ -31,19 +31,19 @@ pub mod melody;
 pub mod models;
 pub mod separation;
 
-pub use chords::{ChordLabel, ChordTranscription, submit_chords, transcribe_chords};
-pub use drums::{DrumOnset, DrumVoice, detect_drums, submit_drums};
+pub use chords::{submit_chords, transcribe_chords, ChordLabel, ChordTranscription};
+pub use drums::{detect_drums, submit_drums, DrumOnset, DrumVoice};
 pub use job::{Job, JobControl, JobStatus};
-pub use melody::{PitchFrame, submit_melody, transcribe_melody};
+pub use melody::{submit_melody, transcribe_melody, PitchFrame};
 pub use models::{
-    DEFAULT_SIDECAR_ENDPOINT, PINS, ModelPin, ModelResolution, ModelVerdict, cached_weight_path,
-    model_cache_dir, pin_for, resolve,
+    cached_weight_path, model_cache_dir, pin_for, resolve, ModelPin, ModelResolution, ModelVerdict,
+    DEFAULT_SIDECAR_ENDPOINT, PINS,
 };
 pub use separation::{
-    Cleanup, Separation, SeparationDest, SIDECAR_CLEANUP, SIDECAR_GROOVE, SIDECAR_SEPARATION,
-    STEM_NAMES, apply_cleanup_to_engine, apply_groove_to_engine, apply_separation_to_engine,
-    cleanup_audio, cleanup_asset_key, groove_asset_key, separate_mix, separation_asset_key,
-    separation_drafts, submit_cleanup, submit_groove_transfer, submit_separation, transfer_groove,
+    apply_cleanup_to_engine, apply_groove_to_engine, apply_separation_to_engine, cleanup_asset_key,
+    cleanup_audio, groove_asset_key, separate_mix, separation_asset_key, separation_drafts,
+    submit_cleanup, submit_groove_transfer, submit_separation, transfer_groove, Cleanup,
+    Separation, SeparationDest, SIDECAR_CLEANUP, SIDECAR_GROOVE, SIDECAR_SEPARATION, STEM_NAMES,
 };
 
 use crate::model::{Clip, ClipKind, OpKind};
@@ -131,7 +131,7 @@ pub fn draft_midi_clip(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::{Engine, valid_actor};
+    use crate::engine::{valid_actor, Engine};
 
     #[test]
     fn sidecar_actors_satisfy_engine_actor_rule() {
@@ -148,10 +148,7 @@ mod tests {
 
     #[test]
     fn plan_draft_round_trips_through_engine_with_undo() {
-        let dir = std::env::temp_dir().join(format!(
-            "ccez-ai-plan-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("ccez-ai-plan-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut project = crate::model::Project::new("proj_ai", "ai-test");
         project.tracks.push(crate::model::Track {
@@ -174,7 +171,9 @@ mod tests {
         };
         let actor = ai_actor(TranscriptionKind::Melody.sidecar_id()).unwrap();
         for op in &plan.ops {
-            engine.apply(&actor, op.kind.clone(), &op.target, &op.value_json).expect("apply");
+            engine
+                .apply(&actor, op.kind.clone(), &op.target, &op.value_json)
+                .expect("apply");
         }
         assert_eq!(engine.project().clips.len(), 1);
         engine.undo().expect("undo");

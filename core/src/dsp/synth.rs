@@ -144,7 +144,15 @@ impl Synth {
         Ok(())
     }
 
-    fn param(id: &str, label: &str, value: f64, min: f64, max: f64, default: f64, unit: &str) -> Param {
+    fn param(
+        id: &str,
+        label: &str,
+        value: f64,
+        min: f64,
+        max: f64,
+        default: f64,
+        unit: &str,
+    ) -> Param {
         Param {
             id: id.to_string(),
             label: label.to_string(),
@@ -167,7 +175,15 @@ impl Synth {
                 Self::param(PARAM_GAIN, "Gain", 0.8, 0.0, 2.0, 0.8, "x"),
                 Self::param(PARAM_WAVE, "Wave", WAVE_SINE, 0.0, 3.0, WAVE_SINE, "idx"),
                 Self::param(PARAM_ATTACK_MS, "Attack", 5.0, 0.01, 5000.0, 5.0, "ms"),
-                Self::param(PARAM_RELEASE_MS, "Release", 50.0, 0.01, 10_000.0, 50.0, "ms"),
+                Self::param(
+                    PARAM_RELEASE_MS,
+                    "Release",
+                    50.0,
+                    0.01,
+                    10_000.0,
+                    50.0,
+                    "ms",
+                ),
             ],
         }
     }

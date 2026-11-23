@@ -20,12 +20,12 @@
 //! or project-schema surface, so the typegen drift gate is unaffected.
 
 pub mod device;
-pub mod input;
 pub mod graph;
+pub mod input;
 pub mod link;
-pub mod live;
 #[cfg(feature = "link-net")]
 pub mod link_net;
+pub mod live;
 pub mod render;
 pub mod schedule;
 pub mod transport;
@@ -34,6 +34,7 @@ pub use device::{
     render_mono_block, AudioBackend, AudioCommand, AudioEngine, CpalBackend, NullBackend,
     SharedCounters,
 };
+pub use graph::{AudioGraph, GraphError, LATENCY_PARAM};
 pub use input::{
     list_input_devices, monitor_levels, open_input_or_null, AnyInput, CpalInput, InputDeviceInfo,
     InputSelect, MonitorLevels, NullInput, TakeCapture,
@@ -41,11 +42,10 @@ pub use input::{
 pub use link::{LinkBus, LinkSession, DEFAULT_QUANTUM};
 #[cfg(feature = "link-net")]
 pub use link_net::{UdpLinkNode, HEARTBEAT, LINK_UDP_MAGIC, WIRE_LEN};
-pub use transport::{
-    beats_for_frames, TransportBackend, TransportController, TransportStats, DEFAULT_SAMPLE_RATE as TRANSPORT_SAMPLE_RATE,
-    NULL_BLOCK_FRAMES,
-};
-pub use graph::{AudioGraph, GraphError, LATENCY_PARAM};
 pub use live::{live_graph, loop_beats, MAX_LIVE_LOOP_BEATS, MIN_LIVE_LOOP_BEATS};
 pub use render::{Proc, RenderGraph};
 pub use schedule::{Placement, RemoteRef, Schedule, ScheduleError};
+pub use transport::{
+    beats_for_frames, TransportBackend, TransportController, TransportStats,
+    DEFAULT_SAMPLE_RATE as TRANSPORT_SAMPLE_RATE, NULL_BLOCK_FRAMES,
+};

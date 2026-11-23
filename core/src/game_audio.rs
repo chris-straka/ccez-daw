@@ -281,9 +281,8 @@ mod tests {
         ] {
             assert!(v.contains(&GAME_AUDIO_SCHEMA_VERSION.to_string()));
         }
-        let back: SfxBank =
-            serde_json::from_str(&serde_json::to_string(&bank).expect("serialize"))
-                .expect("deserialize");
+        let back: SfxBank = serde_json::from_str(&serde_json::to_string(&bank).expect("serialize"))
+            .expect("deserialize");
         assert_eq!(bank, back);
     }
 

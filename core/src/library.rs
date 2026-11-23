@@ -176,7 +176,11 @@ pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
         return 0.0;
     }
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    if dot.is_nan() { 0.0 } else { dot }
+    if dot.is_nan() {
+        0.0
+    } else {
+        dot
+    }
 }
 
 /// Rank `items` by concept similarity to `query` (kind-filtered when

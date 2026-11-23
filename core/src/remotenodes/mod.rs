@@ -35,8 +35,8 @@ pub use executor::RemoteExecutor;
 pub use latency::LatencyEstimator;
 pub use partition::Partition;
 pub use sched::{
-    NodeCapability, PartitionPlan, PartitionPolicy, Registry, RemoteError, RemoteJob,
-    RemoteResult, DEFAULT_MAX_REMOTE_LATENCY, DEFAULT_MAX_REMOTE_SHARE,
+    NodeCapability, PartitionPlan, PartitionPolicy, Registry, RemoteError, RemoteJob, RemoteResult,
+    DEFAULT_MAX_REMOTE_LATENCY, DEFAULT_MAX_REMOTE_SHARE,
 };
 pub use sched_failover::{
     bounce_with_failover, BounceReport, FailoverDecision, FailoverMode, FailoverPolicy,

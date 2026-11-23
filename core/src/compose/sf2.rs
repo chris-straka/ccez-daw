@@ -41,7 +41,8 @@ fn layout(path: &Path) -> Result<Layout, String> {
     let (mut smpl, mut pdta) = (None, None);
     let mut at = 12u64;
     while at + 12 <= total {
-        f.seek(SeekFrom::Start(at)).map_err(|e| err(e.to_string()))?;
+        f.seek(SeekFrom::Start(at))
+            .map_err(|e| err(e.to_string()))?;
         let mut h = [0u8; 12];
         f.read_exact(&mut h).map_err(|e| err(e.to_string()))?;
         let len = u32le(&h, 4) as u64;
@@ -51,7 +52,8 @@ fn layout(path: &Path) -> Result<Layout, String> {
                     // Sub-chunks: smpl (and maybe sm24).
                     let mut sub = at + 12;
                     while sub + 8 <= at + 8 + len {
-                        f.seek(SeekFrom::Start(sub)).map_err(|e| err(e.to_string()))?;
+                        f.seek(SeekFrom::Start(sub))
+                            .map_err(|e| err(e.to_string()))?;
                         let mut c = [0u8; 8];
                         f.read_exact(&mut c).map_err(|e| err(e.to_string()))?;
                         let clen = u32le(&c, 4) as u64;
@@ -176,12 +178,21 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
     let l = layout(path)?;
     let c = sub_chunks(&l.pdta);
     let need = |id: &[u8; 4]| {
-        c.get(id)
-            .copied()
-            .ok_or_else(|| format!("{}: missing {}", path.display(), String::from_utf8_lossy(id)))
+        c.get(id).copied().ok_or_else(|| {
+            format!(
+                "{}: missing {}",
+                path.display(),
+                String::from_utf8_lossy(id)
+            )
+        })
     };
     let (phdr, pbag, pgen) = (need(b"phdr")?, need(b"pbag")?, need(b"pgen")?);
-    let (inst, ibag, igen, shdr) = (need(b"inst")?, need(b"ibag")?, need(b"igen")?, need(b"shdr")?);
+    let (inst, ibag, igen, shdr) = (
+        need(b"inst")?,
+        need(b"ibag")?,
+        need(b"igen")?,
+        need(b"shdr")?,
+    );
     let np = phdr.len() / 38;
     let pi = (0..np.saturating_sub(1))
         .find(|&i| u16le(phdr, i * 38 + 20) == program && u16le(phdr, i * 38 + 22) == bank)
@@ -296,12 +307,16 @@ pub fn read_slice(
     loop_end: u32,
 ) -> Result<Audio, String> {
     if end <= start || loop_start < start || loop_end < start {
-        return Err(format!("{}: bad sample slice {start}..{end}", path.display()));
+        return Err(format!(
+            "{}: bad sample slice {start}..{end}",
+            path.display()
+        ));
     }
     let l = layout(path)?;
     let err = |e: std::io::Error| format!("{}: {e}", path.display());
     let mut f = std::fs::File::open(path).map_err(err)?;
-    f.seek(SeekFrom::Start(l.smpl_at + start as u64 * 2)).map_err(err)?;
+    f.seek(SeekFrom::Start(l.smpl_at + start as u64 * 2))
+        .map_err(err)?;
     let mut raw = vec![0u8; (end - start) as usize * 2];
     f.read_exact(&mut raw).map_err(err)?;
     let s: Vec<f32> = raw
@@ -417,7 +432,10 @@ pub(crate) mod tests {
             phdr.extend_from_slice(&bag.to_le_bytes());
             phdr.extend_from_slice(&[0u8; 12]);
         }
-        let pbag = [0u16, 0, 1, 0].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        let pbag = [0u16, 0, 1, 0]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<u8>>();
         let mut pgen = gen(INSTRUMENT, (spec.pad_inst as u16).to_le_bytes());
         pgen.extend(gen(0, [0, 0]));
         let mut inst = Vec::new();
@@ -441,7 +459,10 @@ pub(crate) mod tests {
             igen.extend(gen(KEY_RANGE, [48, 72]));
             igen.extend(gen(54, 1i16.to_le_bytes())); // loop
             igen.extend(gen(38, (-1200i16).to_le_bytes())); // release 0.5 s
-            igen.extend(gen(SAMPLE_ID, ((spec.pad_samples + z) as u16).to_le_bytes()));
+            igen.extend(gen(
+                SAMPLE_ID,
+                ((spec.pad_samples + z) as u16).to_le_bytes(),
+            ));
         }
         igen.extend(gen(0, [0, 0]));
         let mut shdr = Vec::new();
@@ -505,7 +526,15 @@ pub(crate) mod tests {
         assert!(!r.stereo_half, "a mono sample pans as a mono source");
         assert!((r.env.release - 0.5).abs() < 1e-3, "{:?}", r.env);
         assert!(load_preset(&p, 0, 1).is_err());
-        let SampleRef::Sf2 { start, end, rate, loop_start, loop_end, .. } = r.sample.clone() else {
+        let SampleRef::Sf2 {
+            start,
+            end,
+            rate,
+            loop_start,
+            loop_end,
+            ..
+        } = r.sample.clone()
+        else {
             panic!()
         };
         let a = read_slice(&p, start, end, rate, loop_start, loop_end).unwrap();
@@ -523,7 +552,13 @@ pub(crate) mod tests {
     #[test]
     fn pitch_correction_is_added() {
         let p = std::env::temp_dir().join(format!("ccez-sf2-corr-{}/t.sf2", std::process::id()));
-        sf2_with(&p, &Spec { corr: 50, ..Spec::default() });
+        sf2_with(
+            &p,
+            &Spec {
+                corr: 50,
+                ..Spec::default()
+            },
+        );
         let rs = load_preset(&p, 0, 52).unwrap();
         assert_eq!(rs[0].tune, 50.0);
         let _ = std::fs::remove_dir_all(p.parent().unwrap());
@@ -534,11 +569,17 @@ pub(crate) mod tests {
     /// (where the pan law is unity), not +3 dB from hard-panning each half.
     #[test]
     fn stereo_pairs_play_at_the_level_of_a_stereo_wav() {
-        use super::super::sampler::{SampledInstrument, PlayStyle};
+        use super::super::sampler::{PlayStyle, SampledInstrument};
         use super::super::wavread;
         let dir = std::env::temp_dir().join(format!("ccez-sf2-stereo-{}", std::process::id()));
         let p = dir.join("t.sf2");
-        sf2_with(&p, &Spec { stereo: true, ..Spec::default() });
+        sf2_with(
+            &p,
+            &Spec {
+                stereo: true,
+                ..Spec::default()
+            },
+        );
         let rs = load_preset(&p, 0, 52).unwrap();
         assert_eq!(rs.len(), 2, "{rs:?}");
         assert_eq!((rs[0].pan, rs[1].pan), (-1.0, 1.0));
@@ -563,8 +604,15 @@ pub(crate) mod tests {
         };
         for (side, (x, y)) in [("left", (&a.0, &b.0)), ("right", (&a.1, &b.1))] {
             let db = 20.0 * (rms(x) / rms(y)).log10();
-            eprintln!("{side}: sf2 rms {:.4}, wav rms {:.4}, {db:+.2} dB", rms(x), rms(y));
-            assert!(db.abs() < 0.05, "{side}: the SF2 pair is {db:+.2} dB against the WAV");
+            eprintln!(
+                "{side}: sf2 rms {:.4}, wav rms {:.4}, {db:+.2} dB",
+                rms(x),
+                rms(y)
+            );
+            assert!(
+                db.abs() < 0.05,
+                "{side}: the SF2 pair is {db:+.2} dB against the WAV"
+            );
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -594,7 +642,13 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("ccez-sf2-bad-{}", std::process::id()));
         // No terminal EOI record: the zone's bag range can't be read.
         let p = dir.join("noeoi.sf2");
-        sf2_with(&p, &Spec { eoi: false, ..Spec::default() });
+        sf2_with(
+            &p,
+            &Spec {
+                eoi: false,
+                ..Spec::default()
+            },
+        );
         assert_eq!(load_preset(&p, 0, 52).unwrap(), vec![]);
         // A pdta LIST shorter than its own type tag.
         let mut body = b"sfbk".to_vec();

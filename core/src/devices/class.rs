@@ -17,13 +17,13 @@ use super::kernel::{
     ATTACK_PARAM, CUTOFF_PARAM, DELAY_SAMPLES_PARAM, DRIVE_PARAM, FEEDBACK_PARAM, GAIN_PARAM,
     RELEASE_PARAM, TRANSPOSE_PARAM,
 };
-use crate::spatial::{AZIMUTH_PARAM, ELEVATION_PARAM};
 use super::midifx::{
     ARP_GATE_PARAM, ARP_MODE_PARAM, ARP_OCTAVES_PARAM, ARP_RATE_PARAM, ARP_SEED_PARAM,
     CHORD_INVERSION_PARAM, CHORD_TYPE_PARAM, CHORD_VOICING_PARAM, HUM_SEED_PARAM, HUM_TIMING_PARAM,
     HUM_VELOCITY_PARAM,
 };
 use super::DeviceError;
+use crate::spatial::{AZIMUTH_PARAM, ELEVATION_PARAM};
 
 /// Numeric class tag param. Missing or unrecognized = [`DeviceClass::Foreign`].
 pub const DEVICE_CLASS_PARAM: &str = "device_class";
@@ -204,7 +204,11 @@ pub fn instantiate(class: DeviceClass, id: &str, name: &str) -> Node {
 /// Read one param with a fallback default (missing = default, the same
 /// tolerance the chain's wet/dry readers show).
 pub fn param_value(node: &Node, id: &str, default: f64) -> f64 {
-    node.params.iter().find(|p| p.id == id).map(|p| p.value).unwrap_or(default)
+    node.params
+        .iter()
+        .find(|p| p.id == id)
+        .map(|p| p.value)
+        .unwrap_or(default)
 }
 
 /// Set one param, clamped to its `[min, max]`. Unknown ids are

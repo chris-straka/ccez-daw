@@ -130,21 +130,17 @@ pub fn bounce_with_failover(
             .cloned()
             .collect();
         if dark.is_empty() {
-            report.stems.push(crate::bounce::render_track(
-                project,
-                &track.id,
-                config,
-            )?);
+            report
+                .stems
+                .push(crate::bounce::render_track(project, &track.id, config)?);
             continue;
         }
         match policy.decide(false, policy.max_retries) {
             FailoverDecision::UseRemote => unreachable!("dark nodes never decide UseRemote"),
             FailoverDecision::BounceLocal => {
-                report.stems.push(crate::bounce::render_track(
-                    project,
-                    &track.id,
-                    config,
-                )?);
+                report
+                    .stems
+                    .push(crate::bounce::render_track(project, &track.id, config)?);
                 for node in dark {
                     if !report.fell_back.contains(&node) {
                         report.fell_back.push(node);
@@ -295,7 +291,11 @@ mod tests {
         assert_eq!(report.fell_back, vec!["heavy".to_string()]);
         assert!(report.failed.is_empty());
         let local = crate::bounce::render_track(&p, "lead", &cfg()).expect("local");
-        let lead = report.stems.iter().find(|s| s.name == "lead").expect("lead stem");
+        let lead = report
+            .stems
+            .iter()
+            .find(|s| s.name == "lead")
+            .expect("lead stem");
         assert_eq!(lead.samples, local.samples);
     }
 

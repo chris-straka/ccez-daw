@@ -45,9 +45,10 @@ pub fn list_input_devices() -> Vec<InputDeviceInfo> {
     match host.input_devices() {
         Ok(devices) => devices
             .filter_map(|d| {
-                d.name()
-                    .ok()
-                    .map(|name| InputDeviceInfo { id: name.clone(), name })
+                d.name().ok().map(|name| InputDeviceInfo {
+                    id: name.clone(),
+                    name,
+                })
             })
             .collect(),
         Err(_) => Vec::new(),
@@ -66,7 +67,10 @@ pub struct MonitorLevels {
 
 pub fn monitor_levels(samples: &[f32]) -> MonitorLevels {
     if samples.is_empty() {
-        return MonitorLevels { peak: 0.0, rms: 0.0 };
+        return MonitorLevels {
+            peak: 0.0,
+            rms: 0.0,
+        };
     }
     let mut peak = 0.0f32;
     let mut sum_sq = 0.0f64;
@@ -125,7 +129,10 @@ pub struct NullInput {
 
 impl NullInput {
     pub fn new(sample_rate_hz: u32) -> Self {
-        Self { sample_rate_hz: sample_rate_hz.max(1), phase: 0.0 }
+        Self {
+            sample_rate_hz: sample_rate_hz.max(1),
+            phase: 0.0,
+        }
     }
 
     /// Capture `frames` mono samples. Deterministic: two inputs built the
@@ -164,16 +171,21 @@ impl CpalInput {
         let device = host
             .default_input_device()
             .ok_or_else(|| DeviceError::NoDevice("default input device not found".to_string()))?;
-        let supported = device.default_input_config().map_err(|e| {
-            DeviceError::NoDevice(format!("default input config: {e}"))
-        })?;
+        let supported = device
+            .default_input_config()
+            .map_err(|e| DeviceError::NoDevice(format!("default input config: {e}")))?;
         let (tx, rx) = mpsc::channel();
         let stream = build_input_stream(&device, &supported, tx)?;
         {
             use cpal::traits::StreamTrait;
-            stream.play().map_err(|e| DeviceError::Stream(e.to_string()))?;
+            stream
+                .play()
+                .map_err(|e| DeviceError::Stream(e.to_string()))?;
         }
-        Ok(Self { _stream: stream, rx })
+        Ok(Self {
+            _stream: stream,
+            rx,
+        })
     }
 
     /// Drain pending capture blocks without blocking. Returns silence when
@@ -220,7 +232,9 @@ fn build_input_stream(
             .build_input_stream(
                 &stream_config,
                 move |data: &[i16], _| {
-                    push(downmix_convert(data, channels, |s| s as f32 / i16::MAX as f32))
+                    push(downmix_convert(data, channels, |s| {
+                        s as f32 / i16::MAX as f32
+                    }))
                 },
                 err_fn,
                 None,
@@ -238,7 +252,9 @@ fn build_input_stream(
                 None,
             )
             .map_err(|e| DeviceError::Stream(e.to_string())),
-        other => Err(DeviceError::Stream(format!("unsupported sample format: {other:?}"))),
+        other => Err(DeviceError::Stream(format!(
+            "unsupported sample format: {other:?}"
+        ))),
     }
 }
 
@@ -354,7 +370,10 @@ impl TakeCapture {
     /// Live levels over everything captured so far (drives the panel meter).
     pub fn levels(&self) -> MonitorLevels {
         if self.samples.is_empty() {
-            return MonitorLevels { peak: 0.0, rms: 0.0 };
+            return MonitorLevels {
+                peak: 0.0,
+                rms: 0.0,
+            };
         }
         MonitorLevels {
             peak: self.peak,
@@ -368,7 +387,13 @@ impl TakeCapture {
     /// is the undoable project half (same stance as `punch_take_clip`).
     pub fn finish_clip(&self, id: &str, name: &str, punch: &PunchRange) -> Clip {
         let _ = self.sample_rate_hz;
-        punch_take_clip(id, &self.track_id, name, crate::model::ClipKind::Audio, punch)
+        punch_take_clip(
+            id,
+            &self.track_id,
+            name,
+            crate::model::ClipKind::Audio,
+            punch,
+        )
     }
 
     /// Commit the finished take as one ordinary frozen `ClipAdded` op.
@@ -418,8 +443,16 @@ mod tests {
         }
         assert_eq!(take.frames(), 8 * 128);
         let levels = take.levels();
-        assert!(levels.peak > 0.0 && levels.peak <= 0.5 + 1e-6, "peak {}", levels.peak);
-        assert!(levels.rms > 0.0 && levels.rms <= levels.peak, "rms {}", levels.rms);
+        assert!(
+            levels.peak > 0.0 && levels.peak <= 0.5 + 1e-6,
+            "peak {}",
+            levels.peak
+        );
+        assert!(
+            levels.rms > 0.0 && levels.rms <= levels.peak,
+            "rms {}",
+            levels.rms
+        );
 
         let clip = take.finish_clip("take_vox_p1", "Vox p1", &punch);
         assert_eq!(clip.track_id, "trk_vox");
@@ -450,7 +483,12 @@ mod tests {
         ));
         let mut engine = Engine::create(&dir, Project::new("p", "P")).expect("create");
         engine
-            .apply("ui", OpKind::TrackAdded, "trk_vox", &track_json("trk_vox", "Vox"))
+            .apply(
+                "ui",
+                OpKind::TrackAdded,
+                "trk_vox",
+                &track_json("trk_vox", "Vox"),
+            )
             .expect("track");
 
         let punch = crate::record::validate_punch(4.0, 8.0).unwrap();
@@ -463,7 +501,12 @@ mod tests {
             .apply(&op.actor, op.kind.clone(), &op.target, &op.value_json)
             .expect("take applies");
 
-        let clip = engine.project().clips.iter().find(|c| c.id == "take_vox_p1").expect("clip");
+        let clip = engine
+            .project()
+            .clips
+            .iter()
+            .find(|c| c.id == "take_vox_p1")
+            .expect("clip");
         assert_eq!(clip.source, "take:take_vox_p1");
         assert_eq!((clip.start_beats, clip.length_beats), (4.0, 4.0));
         engine.undo().expect("undo");
@@ -492,7 +535,13 @@ mod tests {
         assert!(block.iter().all(|s| s.is_finite()));
         let _ = any.is_null();
 
-        assert_eq!(monitor_levels(&[]), MonitorLevels { peak: 0.0, rms: 0.0 });
+        assert_eq!(
+            monitor_levels(&[]),
+            MonitorLevels {
+                peak: 0.0,
+                rms: 0.0
+            }
+        );
         let flat = monitor_levels(&[0.5; 16]);
         assert!((flat.peak - 0.5).abs() < 1e-6);
         assert!((flat.rms - 0.5).abs() < 1e-6);

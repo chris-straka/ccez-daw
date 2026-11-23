@@ -62,7 +62,9 @@ impl std::str::FromStr for PluginFormat {
             "vst3" => Ok(Self::Vst3),
             "au" | "audiounit" | "audio-unit" => Ok(Self::AudioUnit),
             "mock" => Ok(Self::Mock),
-            other => Err(ScanError::BadEntry(format!("unknown plugin format `{other}`"))),
+            other => Err(ScanError::BadEntry(format!(
+                "unknown plugin format `{other}`"
+            ))),
         }
     }
 }
@@ -92,7 +94,9 @@ impl ScannedPlugin {
         path: Option<String>,
     ) -> Result<Self, ScanError> {
         if id.trim().is_empty() {
-            return Err(ScanError::BadEntry("plugin id must be non-empty".to_string()));
+            return Err(ScanError::BadEntry(
+                "plugin id must be non-empty".to_string(),
+            ));
         }
         if name.trim().is_empty() {
             return Err(ScanError::BadEntry(format!(
@@ -397,9 +401,7 @@ mod tests {
     fn sorted_orders_by_format_then_name_and_merge_keeps_rows() {
         let mut list = ScanList::new();
         list.insert(ScannedPlugin::mock("z", "Zed").expect("z"));
-        list.insert(
-            ScannedPlugin::clap("Comp", Path::new("/lib/c.clap")).expect("c"),
-        );
+        list.insert(ScannedPlugin::clap("Comp", Path::new("/lib/c.clap")).expect("c"));
         list.insert(ScannedPlugin::mock("a", "Alpha").expect("a"));
         let names: Vec<&str> = list.sorted().iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, vec!["Comp", "Alpha", "Zed"]);
@@ -407,9 +409,7 @@ mod tests {
         assert_eq!(list.plugins[0].name, "Zed");
 
         let mut rescan = ScanList::new();
-        rescan.insert(
-            ScannedPlugin::clap("Comp Renamed", Path::new("/lib/c.clap")).expect("dupe"),
-        );
+        rescan.insert(ScannedPlugin::clap("Comp Renamed", Path::new("/lib/c.clap")).expect("dupe"));
         rescan.insert(ScannedPlugin::mock("new", "Newbie").expect("new"));
         rescan.note_issue("one bad folder");
         list.merge(rescan);

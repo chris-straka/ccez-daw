@@ -211,10 +211,7 @@ mod tests {
         assert_eq!(audible, vec!["bed".to_string()]);
         assert_eq!(
             layer_mix(&cue, &snap("explore")),
-            vec![
-                ("bed".to_string(), 0.8),
-                ("drums".to_string(), 0.0),
-            ]
+            vec![("bed".to_string(), 0.8), ("drums".to_string(), 0.0),]
         );
         // Combat: bed holds, drums join at layer volume.
         let audible: Vec<String> = audible_layers(&cue, &snap("combat"))
@@ -224,10 +221,7 @@ mod tests {
         assert_eq!(audible, vec!["bed".to_string(), "drums".to_string()]);
         assert_eq!(
             layer_mix(&cue, &snap("combat")),
-            vec![
-                ("bed".to_string(), 0.8),
-                ("drums".to_string(), 0.9),
-            ]
+            vec![("bed".to_string(), 0.8), ("drums".to_string(), 0.9),]
         );
         // Unknown state: bed only (never silent when a bed exists).
         assert_eq!(layer_mix(&cue, &snap("menu"))[0], ("bed".to_string(), 0.8));

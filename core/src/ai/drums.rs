@@ -80,10 +80,7 @@ pub fn quantize_16th(beat: f64) -> f64 {
 
 /// Build an editable [`MidiClip`] from onsets. Notes are 16th-note hits
 /// (length 0.25) on the drum channel with velocity from accent.
-pub fn drums_from_onsets(
-    onsets: &[DrumOnset],
-    length_beats: f64,
-) -> Result<MidiClip, String> {
+pub fn drums_from_onsets(onsets: &[DrumOnset], length_beats: f64) -> Result<MidiClip, String> {
     if !length_beats.is_finite() || length_beats <= 0.0 {
         return Err(format!("length_beats {length_beats} must be > 0"));
     }
@@ -204,10 +201,7 @@ mod tests {
     }
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "ccez-ai-drums-{name}-{}",
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("ccez-ai-drums-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         d
     }
@@ -231,7 +225,9 @@ mod tests {
         // Undoable: store the MIDI asset, apply as an ai: sidecar op, undo.
         let dir = tmp_dir("job");
         let mut engine = Engine::create(&dir, test_project()).expect("create");
-        edited.save_to_engine(&mut engine, "take:drums-ai").expect("save");
+        edited
+            .save_to_engine(&mut engine, "take:drums-ai")
+            .expect("save");
         let draft = Clip {
             id: "clip_drums_ai".to_string(),
             track_id: "trk_drums".to_string(),
@@ -250,7 +246,11 @@ mod tests {
             )
             .expect("apply");
         assert_eq!(seq, 1);
-        assert!(engine.project().clips.iter().any(|c| c.id == "clip_drums_ai"));
+        assert!(engine
+            .project()
+            .clips
+            .iter()
+            .any(|c| c.id == "clip_drums_ai"));
         engine.undo().expect("undo");
         assert!(engine.project().clips.is_empty());
         let _ = std::fs::remove_dir_all(&dir);

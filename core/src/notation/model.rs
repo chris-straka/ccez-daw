@@ -48,11 +48,17 @@ pub struct KeySig {
 
 impl KeySig {
     pub fn major(fifths: i8) -> Self {
-        Self { fifths, minor: false }
+        Self {
+            fifths,
+            minor: false,
+        }
     }
 
     pub fn minor(fifths: i8) -> Self {
-        Self { fifths, minor: true }
+        Self {
+            fifths,
+            minor: true,
+        }
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -182,7 +188,11 @@ impl SpelledPitch {
         } else {
             FLAT[pc as usize]
         };
-        Self { step, alter, octave }
+        Self {
+            step,
+            alter,
+            octave,
+        }
     }
 }
 
@@ -256,7 +266,11 @@ pub struct NotationNote {
 impl NotationNote {
     /// Written length in beats: value x 1.5 when dotted.
     pub fn beats(&self) -> f64 {
-        if self.dots > 0 { self.value.beats() * 1.5 } else { self.value.beats() }
+        if self.dots > 0 {
+            self.value.beats() * 1.5
+        } else {
+            self.value.beats()
+        }
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -316,7 +330,11 @@ pub struct NotationRest {
 
 impl NotationRest {
     pub fn beats(&self) -> f64 {
-        if self.dots > 0 { self.value.beats() * 1.5 } else { self.value.beats() }
+        if self.dots > 0 {
+            self.value.beats() * 1.5
+        } else {
+            self.value.beats()
+        }
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -506,7 +524,11 @@ mod tests {
     #[test]
     fn note_validation_catches_spelling_mismatch() {
         let ok = NotationNote {
-            pitch: SpelledPitch { step: Step::C, alter: 0, octave: 4 },
+            pitch: SpelledPitch {
+                step: Step::C,
+                alter: 0,
+                octave: 4,
+            },
             midi: 60,
             value: NoteValue::Quarter,
             dots: 0,
@@ -514,7 +536,10 @@ mod tests {
             tie_stop: false,
         };
         assert!(ok.validate().is_ok());
-        let bad = NotationNote { midi: 61, ..ok.clone() };
+        let bad = NotationNote {
+            midi: 61,
+            ..ok.clone()
+        };
         assert!(bad.validate().is_err());
         let bad_dots = NotationNote { dots: 2, ..ok };
         assert!(bad_dots.validate().is_err());

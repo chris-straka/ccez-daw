@@ -25,7 +25,9 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-use ccez_core::compose::render::{default_plan, interleave, render_preview, render_stems, wav_bytes, PlanStep};
+use ccez_core::compose::render::{
+    default_plan, interleave, render_preview, render_stems, wav_bytes, PlanStep,
+};
 use ccez_core::compose::sampler::SampledInstrument;
 use ccez_core::compose::{audioforge, library, synth, Composition};
 use serde_json::{json, Value};
@@ -169,13 +171,21 @@ fn samples(args: &[String]) -> Result<Value, String> {
     let root = library::cache_root();
     match args.first().map(String::as_str).unwrap_or("") {
         "lock" => {
-            let out = flag(args, "--out").ok_or("samples lock: missing --out <sample-lock.json>")?;
+            let out =
+                flag(args, "--out").ok_or("samples lock: missing --out <sample-lock.json>")?;
             let lock = library::build_lock(&root)?;
             let text = serde_json::to_string_pretty(&lock).map_err(|e| e.to_string())? + "\n";
             std::fs::write(&out, text).map_err(|e| format!("{out}: {e}"))?;
             let files: usize = lock.sources.values().map(|m| m.len()).sum();
-            let bytes: u64 = lock.sources.values().flat_map(|m| m.values()).map(|f| f.bytes).sum();
-            Ok(json!({ "out": out, "instruments": lock.instruments.len(), "files": files, "bytes": bytes }))
+            let bytes: u64 = lock
+                .sources
+                .values()
+                .flat_map(|m| m.values())
+                .map(|f| f.bytes)
+                .sum();
+            Ok(
+                json!({ "out": out, "instruments": lock.instruments.len(), "files": files, "bytes": bytes }),
+            )
         }
         "verify" => {
             let lock = library::lock();
@@ -193,7 +203,9 @@ fn samples(args: &[String]) -> Result<Value, String> {
                     }
                 }
             }
-            Ok(json!({ "cache": root.display().to_string(), "ok": ok, "not_downloaded": missing, "bad": bad }))
+            Ok(
+                json!({ "cache": root.display().to_string(), "ok": ok, "not_downloaded": missing, "bad": bad }),
+            )
         }
         "calibrate" => {
             // Level of a mezzo-forte note (two beats at 120 bpm) through each
@@ -214,12 +226,17 @@ fn samples(args: &[String]) -> Result<Value, String> {
                     r.volume_db -= e.gain_db;
                 }
                 let mut inst = SampledInstrument::new(regions, e.style);
-                let keys: Vec<u8> = if e.style.one_shot && matches!(e.family, "percussion" | "hand_drums") {
-                    library::hits(&inst.regions).keys().copied().collect()
-                } else {
-                    let mid = (e.range.0 as u16 + e.range.1 as u16) / 2;
-                    vec![mid as u8, (mid as u8).saturating_sub(5), (mid + 4).min(127) as u8]
-                };
+                let keys: Vec<u8> =
+                    if e.style.one_shot && matches!(e.family, "percussion" | "hand_drums") {
+                        library::hits(&inst.regions).keys().copied().collect()
+                    } else {
+                        let mid = (e.range.0 as u16 + e.range.1 as u16) / 2;
+                        vec![
+                            mid as u8,
+                            (mid as u8).saturating_sub(5),
+                            (mid + 4).min(127) as u8,
+                        ]
+                    };
                 let (mut energy, mut frames, mut peak) = (0.0f64, 0usize, 0.0f32);
                 for k in keys {
                     let (l, r) = inst.render_note(k, 0.7, 1.0, 48_000, 0.5)?;
@@ -236,7 +253,9 @@ fn samples(args: &[String]) -> Result<Value, String> {
             }
             Ok(Value::Object(out))
         }
-        other => Err(format!("samples {other:?}: want lock --out <file> | verify | calibrate [<id>...]")),
+        other => Err(format!(
+            "samples {other:?}: want lock --out <file> | verify | calibrate [<id>...]"
+        )),
     }
 }
 

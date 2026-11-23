@@ -91,14 +91,13 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
                 PowerPreference::LowPower => wgpu::PowerPreference::LowPower,
             };
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
-            let adapter = pollster::block_on(instance.request_adapter(
-                &wgpu::RequestAdapterOptions {
+            let adapter =
+                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: power,
                     compatible_surface: None,
                     force_fallback_adapter: false,
-                },
-            ))
-            .ok_or_else(|| GpuError::Unavailable("no wgpu adapter found".to_string()))?;
+                }))
+                .ok_or_else(|| GpuError::Unavailable("no wgpu adapter found".to_string()))?;
             let info = adapter.get_info();
             let (device, queue) = pollster::block_on(adapter.request_device(
                 &wgpu::DeviceDescriptor {
@@ -113,52 +112,51 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
                 label: Some("ccez-convolve"),
                 source: wgpu::ShaderSource::Wgsl(CONVOLVE_WGSL.into()),
             });
-            let bind_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("ccez-convolve-layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
+            let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("ccez-convolve-layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 3,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
-                    ],
-                });
+                        count: None,
+                    },
+                ],
+            });
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("ccez-convolve-pipeline-layout"),
                 bind_group_layouts: &[&bind_layout],
@@ -189,15 +187,16 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
         fn storage_buffer(&self, label: &str, bytes: &[u8], output: bool) -> wgpu::Buffer {
             use wgpu::util::DeviceExt;
-            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(label),
-                contents: bytes,
-                usage: if output {
-                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC
-                } else {
-                    wgpu::BufferUsages::STORAGE
-                },
-            })
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents: bytes,
+                    usage: if output {
+                        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC
+                    } else {
+                        wgpu::BufferUsages::STORAGE
+                    },
+                })
         }
 
         pub fn run_convolve(
@@ -333,7 +332,6 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             out
         }
     }
-
 }
 
 #[cfg(feature = "gpu")]

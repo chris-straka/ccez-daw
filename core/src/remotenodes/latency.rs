@@ -125,7 +125,7 @@ mod tests {
         assert_eq!(e.recommended_depth(5.0), 1); // no data yet
         e.observe_rtt_ms(4.0);
         e.observe_rtt_ms(12.0); // jitter spike
-        // worst 12ms over 5ms blocks -> ceil(2.4)+1 = 4.
+                                // worst 12ms over 5ms blocks -> ceil(2.4)+1 = 4.
         assert_eq!(e.recommended_depth(5.0), 4);
     }
 

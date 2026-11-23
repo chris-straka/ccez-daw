@@ -120,9 +120,7 @@ pub fn valid_actor(actor: &str) -> bool {
     actor == "ui"
         || actor == "mcp"
         || actor.strip_prefix("ai:").is_some_and(|s| !s.is_empty())
-        || actor
-            .strip_prefix("script:")
-            .is_some_and(|s| !s.is_empty())
+        || actor.strip_prefix("script:").is_some_and(|s| !s.is_empty())
         || actor
             .strip_prefix("gameaudio:")
             .is_some_and(|s| !s.is_empty())
@@ -236,37 +234,30 @@ fn check_game_audio_export(op: &Op) -> Result<()> {
 /// is created). Upsert: an exact-beat point is replaced, otherwise the
 /// point inserts keeping strictly-ascending beat order.
 fn apply_automation_point(project: &mut Project, op: &Op) -> Result<()> {
-    let v: serde_json::Value =
-        serde_json::from_str(&op.value_json).map_err(|_| {
-            EngineError::BadPayload(format!(
-                "AutomationPointSet needs {{\"beat\": <n>, \"value\": <n>}}: {}",
-                op.value_json
-            ))
-        })?;
+    let v: serde_json::Value = serde_json::from_str(&op.value_json).map_err(|_| {
+        EngineError::BadPayload(format!(
+            "AutomationPointSet needs {{\"beat\": <n>, \"value\": <n>}}: {}",
+            op.value_json
+        ))
+    })?;
     let o = v.as_object().ok_or_else(|| {
         EngineError::BadPayload(format!(
             "AutomationPointSet needs {{\"beat\": <n>, \"value\": <n>}}: {}",
             op.value_json
         ))
     })?;
-    let beat = o
-        .get("beat")
-        .and_then(|n| n.as_f64())
-        .ok_or_else(|| {
-            EngineError::BadPayload(format!(
-                "AutomationPointSet needs a finite \"beat\": {}",
-                op.value_json
-            ))
-        })?;
-    let value = o
-        .get("value")
-        .and_then(|n| n.as_f64())
-        .ok_or_else(|| {
-            EngineError::BadPayload(format!(
-                "AutomationPointSet needs a finite \"value\": {}",
-                op.value_json
-            ))
-        })?;
+    let beat = o.get("beat").and_then(|n| n.as_f64()).ok_or_else(|| {
+        EngineError::BadPayload(format!(
+            "AutomationPointSet needs a finite \"beat\": {}",
+            op.value_json
+        ))
+    })?;
+    let value = o.get("value").and_then(|n| n.as_f64()).ok_or_else(|| {
+        EngineError::BadPayload(format!(
+            "AutomationPointSet needs a finite \"value\": {}",
+            op.value_json
+        ))
+    })?;
     if !beat.is_finite() || beat < 0.0 || !value.is_finite() {
         return Err(EngineError::BadPayload(format!(
             "AutomationPointSet beat must be finite and >= 0, value finite: {}",
@@ -306,10 +297,8 @@ fn apply_automation_point(project: &mut Project, op: &Op) -> Result<()> {
                 .iter()
                 .position(|p| p.beat > beat)
                 .unwrap_or(lane.points.len());
-            lane.points.insert(
-                pos,
-                crate::model::AutomationPoint { beat, value },
-            );
+            lane.points
+                .insert(pos, crate::model::AutomationPoint { beat, value });
         }
     }
     Ok(())
@@ -457,7 +446,9 @@ fn read_log(path: &Path) -> Result<Vec<Op>> {
         return Ok(Vec::new());
     }
     let file = File::open(path)?;
-    let lines: Vec<String> = BufReader::new(file).lines().collect::<std::io::Result<_>>()?;
+    let lines: Vec<String> = BufReader::new(file)
+        .lines()
+        .collect::<std::io::Result<_>>()?;
     let mut ops = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let last = i + 1 == lines.len();
@@ -735,7 +726,12 @@ impl Engine {
     /// Redo the most recently undone op; returns the new marker seq.
     /// Appends a `{"redo": true}` marker that cancels the undo marker.
     pub fn redo(&mut self) -> Result<u64> {
-        let seq = self.undone.iter().next_back().copied().ok_or(EngineError::NothingToRedo)?;
+        let seq = self
+            .undone
+            .iter()
+            .next_back()
+            .copied()
+            .ok_or(EngineError::NothingToRedo)?;
         let marker = Op {
             seq: self.next_seq,
             actor: "ui".to_string(),
@@ -824,7 +820,10 @@ impl Engine {
                 Err(_) => continue,
             };
             if bank.insert_wav(&entry.key, &bytes).is_err() {
-                eprintln!("sample_bank: skipping undecodable audio asset {}", entry.key);
+                eprintln!(
+                    "sample_bank: skipping undecodable audio asset {}",
+                    entry.key
+                );
             }
         }
         bank
@@ -862,9 +861,8 @@ impl Engine {
             index.insert(e.key.as_str(), e.size);
         }
         for (key, size) in &index {
-            let bytes = fs::read(assets_dir(dest).join(key)).map_err(|_| {
-                EngineError::CorruptBundle(format!("bundle asset missing: {key}"))
-            })?;
+            let bytes = fs::read(assets_dir(dest).join(key))
+                .map_err(|_| EngineError::CorruptBundle(format!("bundle asset missing: {key}")))?;
             if bytes.len() as u64 != *size {
                 return Err(EngineError::CorruptBundle(format!(
                     "bundle asset size mismatch: {key}"
@@ -924,12 +922,8 @@ mod tests {
     /// Unique scratch dir per test (no external crates).
     fn scratch(name: &str) -> PathBuf {
         let n = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
-            "ccez-engine-{}-{}-{}",
-            name,
-            std::process::id(),
-            n
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("ccez-engine-{}-{}-{}", name, std::process::id(), n));
         let _ = fs::remove_dir_all(&dir);
         dir
     }
@@ -969,7 +963,12 @@ mod tests {
             .apply("ui", OpKind::TempoSet, "tempo", "128.0")
             .expect("tempo");
         let s2 = e
-            .apply("mcp", OpKind::TrackAdded, "trk_x", &track_json("trk_x", "X"))
+            .apply(
+                "mcp",
+                OpKind::TrackAdded,
+                "trk_x",
+                &track_json("trk_x", "X"),
+            )
             .expect("track");
         assert_eq!((s1, s2), (1, 2));
         assert_eq!(e.project().tempo, 128.0);
@@ -1007,8 +1006,13 @@ mod tests {
         let mut e = Engine::create(&dir, Project::new("p", "P")).expect("create");
         e.apply("ui", OpKind::TrackAdded, "t1", &track_json("t1", "T"))
             .expect("track");
-        e.apply("script:seed", OpKind::ClipAdded, "c1", &clip_json("c1", "t1", 0.0))
-            .expect("clip");
+        e.apply(
+            "script:seed",
+            OpKind::ClipAdded,
+            "c1",
+            &clip_json("c1", "t1", 0.0),
+        )
+        .expect("clip");
         e.apply("ai:jam", OpKind::ClipMoved, "c1", "{\"startBeats\": 8}")
             .expect("move");
         e.apply("ui", OpKind::ParamSet, "t1:volume", "0.5")
@@ -1016,8 +1020,22 @@ mod tests {
         e.apply("ui", OpKind::TempoSet, "tempo", "100")
             .expect("tempo");
         let p = e.project();
-        assert_eq!(p.clips.iter().find(|c| c.id == "c1").expect("clip").start_beats, 8.0);
-        assert_eq!(p.tracks.iter().find(|t| t.id == "t1").expect("track").volume, 0.5);
+        assert_eq!(
+            p.clips
+                .iter()
+                .find(|c| c.id == "c1")
+                .expect("clip")
+                .start_beats,
+            8.0
+        );
+        assert_eq!(
+            p.tracks
+                .iter()
+                .find(|t| t.id == "t1")
+                .expect("track")
+                .volume,
+            0.5
+        );
         assert_eq!(p.tempo, 100.0);
         assert_eq!(e.live_ops().len(), 5);
         let _ = fs::remove_dir_all(&dir);
@@ -1029,7 +1047,12 @@ mod tests {
         let mut e = Engine::create(&dir, Project::new("p", "P")).expect("create");
         // Missing lane without node/param refuses.
         assert!(matches!(
-            e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": 0, \"value\": 0.5}"),
+            e.apply(
+                "ui",
+                OpKind::AutomationPointSet,
+                "lane_a",
+                "{\"beat\": 0, \"value\": 0.5}"
+            ),
             Err(EngineError::UnknownTarget(_))
         ));
         // Missing lane with address creates it.
@@ -1041,11 +1064,26 @@ mod tests {
         )
         .expect("create lane");
         // Out-of-order insert keeps ascending beats; exact beat replaces.
-        e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": 0, \"value\": 0.0}")
-            .expect("insert");
-        e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": 4, \"value\": 0.9}")
-            .expect("replace");
-        let lane = e.project().automation.iter().find(|l| l.id == "lane_a").expect("lane");
+        e.apply(
+            "ui",
+            OpKind::AutomationPointSet,
+            "lane_a",
+            "{\"beat\": 0, \"value\": 0.0}",
+        )
+        .expect("insert");
+        e.apply(
+            "ui",
+            OpKind::AutomationPointSet,
+            "lane_a",
+            "{\"beat\": 4, \"value\": 0.9}",
+        )
+        .expect("replace");
+        let lane = e
+            .project()
+            .automation
+            .iter()
+            .find(|l| l.id == "lane_a")
+            .expect("lane");
         assert_eq!(lane.target.node, "t1");
         assert_eq!(lane.target.param, "volume");
         let beats: Vec<f64> = lane.points.iter().map(|p| p.beat).collect();
@@ -1061,7 +1099,12 @@ mod tests {
             Err(EngineError::BadPayload(_))
         ));
         assert!(matches!(
-            e.apply("ui", OpKind::AutomationPointSet, "lane_a", "{\"beat\": -1, \"value\": 0.5}"),
+            e.apply(
+                "ui",
+                OpKind::AutomationPointSet,
+                "lane_a",
+                "{\"beat\": -1, \"value\": 0.5}"
+            ),
             Err(EngineError::BadPayload(_))
         ));
         assert_eq!(e.live_ops().len(), 3);
@@ -1079,7 +1122,8 @@ mod tests {
         let dir = scratch("gaexport");
         {
             let mut e = Engine::create(&dir, Project::sample()).expect("create");
-            e.apply("ui", OpKind::TempoSet, "tempo", "128.0").expect("t");
+            e.apply("ui", OpKind::TempoSet, "tempo", "128.0")
+                .expect("t");
         }
         let mcp_line = r#"{"seq":2,"actor":"gameaudio:export","kind":"GameAudioExported","target":"demo-v1","value_json":"{\"packageName\":\"demo-v1\",\"stemCount\":2}"}"#;
         let after_line = r#"{"seq":3,"actor":"ui","kind":"ParamSet","target":"trk_music:volume","value_json":"0.25"}"#;
@@ -1102,7 +1146,12 @@ mod tests {
         // Log-only: replay changed nothing but the surrounding ops.
         assert_eq!(e.project().tempo, 128.0);
         let vol = |e: &Engine| {
-            e.project().tracks.iter().find(|t| t.id == "trk_music").expect("track").volume
+            e.project()
+                .tracks
+                .iter()
+                .find(|t| t.id == "trk_music")
+                .expect("track")
+                .volume
         };
         assert_eq!(vol(&e), 0.25);
 
@@ -1150,7 +1199,8 @@ mod tests {
     fn undo_redo_round_trip_in_memory() {
         let dir = scratch("undoredo");
         let mut e = Engine::create(&dir, Project::sample()).expect("create");
-        e.apply("ui", OpKind::TempoSet, "tempo", "140.0").expect("t");
+        e.apply("ui", OpKind::TempoSet, "tempo", "140.0")
+            .expect("t");
         assert_eq!(e.project().tempo, 140.0);
         assert_eq!(e.undo().expect("undo"), 1);
         assert_eq!(e.project().tempo, 120.0);
@@ -1169,8 +1219,10 @@ mod tests {
         let dir = scratch("xsession");
         let before = {
             let mut e = Engine::create(&dir, Project::sample()).expect("create");
-            e.apply("ui", OpKind::TempoSet, "tempo", "140.0").expect("t");
-            e.apply("ui", OpKind::ParamSet, "trk_music:volume", "0.1").expect("p");
+            e.apply("ui", OpKind::TempoSet, "tempo", "140.0")
+                .expect("t");
+            e.apply("ui", OpKind::ParamSet, "trk_music:volume", "0.1")
+                .expect("p");
             e.undo().expect("undo param");
             e.project().clone()
         };
@@ -1182,7 +1234,12 @@ mod tests {
         assert_eq!(e.undone_seqs().len(), 1);
         e.redo().expect("cross-session redo");
         assert_eq!(
-            e.project().tracks.iter().find(|t| t.id == "trk_music").expect("track").volume,
+            e.project()
+                .tracks
+                .iter()
+                .find(|t| t.id == "trk_music")
+                .expect("track")
+                .volume,
             0.1
         );
         let _ = fs::remove_dir_all(&dir);
@@ -1193,13 +1250,20 @@ mod tests {
         let dir = scratch("kill9");
         let expected = {
             let mut e = Engine::create(&dir, Project::sample()).expect("create");
-            e.apply("ui", OpKind::TempoSet, "tempo", "132.0").expect("t");
+            e.apply("ui", OpKind::TempoSet, "tempo", "132.0")
+                .expect("t");
             e.apply("ui", OpKind::TrackAdded, "trk_k", &track_json("trk_k", "K"))
                 .expect("track");
-            e.apply("ui", OpKind::ClipAdded, "clip_k", &clip_json("clip_k", "trk_k", 2.0))
-                .expect("clip");
+            e.apply(
+                "ui",
+                OpKind::ClipAdded,
+                "clip_k",
+                &clip_json("clip_k", "trk_k", 2.0),
+            )
+            .expect("clip");
             e.snapshot().expect("snap");
-            e.apply("ui", OpKind::ClipMoved, "clip_k", "6.0").expect("move");
+            e.apply("ui", OpKind::ClipMoved, "clip_k", "6.0")
+                .expect("move");
             e.project().clone()
             // No close(), no shutdown handshake: `drop` here IS the kill -9.
         };
@@ -1215,11 +1279,16 @@ mod tests {
     fn torn_tail_line_is_ignored_on_recovery() {
         let dir = scratch("torn");
         let mut e = Engine::create(&dir, Project::sample()).expect("create");
-        e.apply("ui", OpKind::TempoSet, "tempo", "111.0").expect("t");
+        e.apply("ui", OpKind::TempoSet, "tempo", "111.0")
+            .expect("t");
         drop(e);
         // Half a line as left by a crash mid-append.
-        let mut f = OpenOptions::new().append(true).open(ops_path(&dir)).expect("open log");
-        f.write_all(b"{\"seq\": 999, \"actor\": \"ui\", \"kind\": \"Tempo").expect("torn write");
+        let mut f = OpenOptions::new()
+            .append(true)
+            .open(ops_path(&dir))
+            .expect("open log");
+        f.write_all(b"{\"seq\": 999, \"actor\": \"ui\", \"kind\": \"Tempo")
+            .expect("torn write");
         drop(f);
         let e = Engine::open(&dir).expect("recover past torn tail");
         assert_eq!(e.project().tempo, 111.0);
@@ -1256,11 +1325,16 @@ mod tests {
         let mut e = Engine::create(&dir, Project::sample()).expect("create");
         let drums = vec![0u8, 1, 2, 3, 4, 5];
         let state = vec![9u8; 32];
-        e.store_asset("drums.wav", ASSET_KIND_AUDIO, &drums).expect("audio");
-        e.store_asset("take1.mid", ASSET_KIND_MIDI, &[1, 2, 3]).expect("midi");
-        e.store_asset("keys.preset", ASSET_KIND_PRESET, &[7]).expect("preset");
-        e.store_asset("verb.frozen", ASSET_KIND_PLUGIN, &state).expect("plugin");
-        e.apply("ui", OpKind::TempoSet, "tempo", "125.0").expect("t");
+        e.store_asset("drums.wav", ASSET_KIND_AUDIO, &drums)
+            .expect("audio");
+        e.store_asset("take1.mid", ASSET_KIND_MIDI, &[1, 2, 3])
+            .expect("midi");
+        e.store_asset("keys.preset", ASSET_KIND_PRESET, &[7])
+            .expect("preset");
+        e.store_asset("verb.frozen", ASSET_KIND_PLUGIN, &state)
+            .expect("plugin");
+        e.apply("ui", OpKind::TempoSet, "tempo", "125.0")
+            .expect("t");
         assert_eq!(e.asset_keys().len(), 4);
         // Frozen means verbatim: what was stored is what comes back.
         assert_eq!(e.load_asset("verb.frozen").expect("load"), state);
@@ -1283,7 +1357,8 @@ mod tests {
     fn corrupt_bundle_is_rejected() {
         let dir = scratch("badsrc");
         let mut e = Engine::create(&dir, Project::sample()).expect("create");
-        e.store_asset("a.wav", ASSET_KIND_AUDIO, &[1, 2, 3]).expect("store");
+        e.store_asset("a.wav", ASSET_KIND_AUDIO, &[1, 2, 3])
+            .expect("store");
         let dest = scratch("baddest");
         e.export_bundle(&dest).expect("export");
         fs::remove_file(dest.join("assets").join("a.wav")).expect("drop asset");
@@ -1297,10 +1372,26 @@ mod tests {
 
     #[test]
     fn actor_rules_match_the_frozen_contract() {
-        for good in ["ui", "mcp", "ai:sidecar", "ai:x:y", "script:seed", "gameaudio:export"] {
+        for good in [
+            "ui",
+            "mcp",
+            "ai:sidecar",
+            "ai:x:y",
+            "script:seed",
+            "gameaudio:export",
+        ] {
             assert!(valid_actor(good), "{good}");
         }
-        for bad in ["", "human", "ai:", "script:", "UI", "ai", "gameaudio:", "gameaudio"] {
+        for bad in [
+            "",
+            "human",
+            "ai:",
+            "script:",
+            "UI",
+            "ai",
+            "gameaudio:",
+            "gameaudio",
+        ] {
             assert!(!valid_actor(bad), "{bad}");
         }
     }

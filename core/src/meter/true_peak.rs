@@ -81,7 +81,11 @@ impl TruePeakMeter {
         } else {
             let mut next = self.hist;
             for (i, slot) in next.iter_mut().enumerate() {
-                *slot = if i + n >= 3 { samples[i + n - 3] } else { h[i + n] };
+                *slot = if i + n >= 3 {
+                    samples[i + n - 3]
+                } else {
+                    h[i + n]
+                };
             }
             self.hist = next;
         }
@@ -164,7 +168,11 @@ mod tests {
             "true peak {} vs amplitude 0.89",
             t.peak()
         );
-        assert!((t.peak_dbtp() + 1.01).abs() < 0.25, "dBTP {}", t.peak_dbtp());
+        assert!(
+            (t.peak_dbtp() + 1.01).abs() < 0.25,
+            "dBTP {}",
+            t.peak_dbtp()
+        );
     }
 
     #[test]

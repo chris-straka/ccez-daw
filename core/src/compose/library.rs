@@ -74,7 +74,8 @@ pub const FLUIDR3_DEB_URLS: &[&str] = &[
     "https://deb.debian.org/debian/pool/main/f/fluid-soundfont/fluid-soundfont-gm_3.1-5.3_all.deb",
     "https://snapshot.debian.org/archive/debian/20211010T000000Z/pool/main/f/fluid-soundfont/fluid-soundfont-gm_3.1-5.3_all.deb",
 ];
-pub const FLUIDR3_DEB_SHA256: &str = "6f531493ac4e4d9772fd96b2488ea1790af81c196135fbdd25997da0781fc60e";
+pub const FLUIDR3_DEB_SHA256: &str =
+    "6f531493ac4e4d9772fd96b2488ea1790af81c196135fbdd25997da0781fc60e";
 pub const FLUIDR3_MEMBER: &str = "./usr/share/sounds/sf2/FluidR3_GM.sf2";
 pub const FLUIDR3_FILE: &str = "FluidR3_GM.sf2";
 
@@ -143,41 +144,351 @@ const fn e(
 
 pub const CATALOG: &[Entry] = &[
     // Strings (VSCO 2 CE): sections with vibrato, and pizzicato.
-    e("violins", "strings", "violin section, sustained with vibrato: warm, singing (melodies, high pads, swells)", "vsco2ce", "ViolinEnsSusVib.sfz", (55, 86), -0.45, 5.0, SUS),
-    e("violas", "strings", "viola section, sustained: darker, reedy middle (inner harmony, counter-lines)", "vsco2ce", "ViolaEnsSusVib.sfz", (48, 86), -0.1, -4.0, SUS),
-    e("cellos", "strings", "cello section, sustained: rich, warm low-mid (bass lines, tender tunes, pads)", "vsco2ce", "CelloEnsSusVib.sfz", (36, 76), 0.3, -2.5, SUS),
-    e("basses", "strings", "solo contrabass, sustained without vibrato: deep, soft floor (roots, pedal tones)", "vsco2ce", "ContrabassSusNV.sfz", (28, 60), 0.45, 6.0, SUS),
-    e("solo_violin", "strings", "solo violin with vibrato: intimate, expressive (lead melody, lonely moments)", "vsco2ce", "SViolinVib.sfz", (55, 96), -0.2, 1.0, SUS),
-    e("violins_trem", "strings", "violin section tremolo: shimmering, nervous (tension beds, suspense)", "vsco2ce", "ViolinEnsTrem.sfz", (55, 86), -0.45, 2.5, SUS),
-    e("violins_pizz", "strings", "violin section pizzicato: light, bouncy plucks (ostinatos, playful, sneaking)", "vsco2ce", "ViolinEnsPizz.sfz", (55, 86), -0.45, 1.5, PLUCK),
-    e("violas_pizz", "strings", "viola section pizzicato: rounder mid plucks (off-beat chords, ostinatos)", "vsco2ce", "ViolaEnsPizz.sfz", (48, 86), -0.1, 0.5, PLUCK),
-    e("cellos_pizz", "strings", "cello section pizzicato: woody, resonant (walking bass, bouncing low lines)", "vsco2ce", "CelloEnsPizz.sfz", (36, 76), 0.3, 3.5, PLUCK),
-    e("basses_pizz", "strings", "contrabass pizzicato: round, deep pluck (bass lines, jazz-ish walks)", "vsco2ce", "ContrabassPizz.sfz", (28, 60), 0.45, 6.5, PLUCK),
+    e(
+        "violins",
+        "strings",
+        "violin section, sustained with vibrato: warm, singing (melodies, high pads, swells)",
+        "vsco2ce",
+        "ViolinEnsSusVib.sfz",
+        (55, 86),
+        -0.45,
+        5.0,
+        SUS,
+    ),
+    e(
+        "violas",
+        "strings",
+        "viola section, sustained: darker, reedy middle (inner harmony, counter-lines)",
+        "vsco2ce",
+        "ViolaEnsSusVib.sfz",
+        (48, 86),
+        -0.1,
+        -4.0,
+        SUS,
+    ),
+    e(
+        "cellos",
+        "strings",
+        "cello section, sustained: rich, warm low-mid (bass lines, tender tunes, pads)",
+        "vsco2ce",
+        "CelloEnsSusVib.sfz",
+        (36, 76),
+        0.3,
+        -2.5,
+        SUS,
+    ),
+    e(
+        "basses",
+        "strings",
+        "solo contrabass, sustained without vibrato: deep, soft floor (roots, pedal tones)",
+        "vsco2ce",
+        "ContrabassSusNV.sfz",
+        (28, 60),
+        0.45,
+        6.0,
+        SUS,
+    ),
+    e(
+        "solo_violin",
+        "strings",
+        "solo violin with vibrato: intimate, expressive (lead melody, lonely moments)",
+        "vsco2ce",
+        "SViolinVib.sfz",
+        (55, 96),
+        -0.2,
+        1.0,
+        SUS,
+    ),
+    e(
+        "violins_trem",
+        "strings",
+        "violin section tremolo: shimmering, nervous (tension beds, suspense)",
+        "vsco2ce",
+        "ViolinEnsTrem.sfz",
+        (55, 86),
+        -0.45,
+        2.5,
+        SUS,
+    ),
+    e(
+        "violins_pizz",
+        "strings",
+        "violin section pizzicato: light, bouncy plucks (ostinatos, playful, sneaking)",
+        "vsco2ce",
+        "ViolinEnsPizz.sfz",
+        (55, 86),
+        -0.45,
+        1.5,
+        PLUCK,
+    ),
+    e(
+        "violas_pizz",
+        "strings",
+        "viola section pizzicato: rounder mid plucks (off-beat chords, ostinatos)",
+        "vsco2ce",
+        "ViolaEnsPizz.sfz",
+        (48, 86),
+        -0.1,
+        0.5,
+        PLUCK,
+    ),
+    e(
+        "cellos_pizz",
+        "strings",
+        "cello section pizzicato: woody, resonant (walking bass, bouncing low lines)",
+        "vsco2ce",
+        "CelloEnsPizz.sfz",
+        (36, 76),
+        0.3,
+        3.5,
+        PLUCK,
+    ),
+    e(
+        "basses_pizz",
+        "strings",
+        "contrabass pizzicato: round, deep pluck (bass lines, jazz-ish walks)",
+        "vsco2ce",
+        "ContrabassPizz.sfz",
+        (28, 60),
+        0.45,
+        6.5,
+        PLUCK,
+    ),
     // Woodwinds (VSCO 2 CE).
-    e("flute", "woodwinds", "flute with vibrato: airy, bright, gentle (lead melody, birdlike lines)", "vsco2ce", "FluteSusVib.sfz", (60, 96), -0.15, 3.5, SUS),
-    e("flute_stac", "woodwinds", "flute staccato: short, breathy dots (playful figures, sparkle)", "vsco2ce", "FluteStac.sfz", (65, 96), -0.15, 12.0, PLUCK),
-    e("piccolo", "woodwinds", "piccolo: piercing, bright, very high (festive top lines, doubling the tune)", "vsco2ce", "PiccoloSus.sfz", (74, 91), -0.2, -2.0, SUS),
-    e("oboe", "woodwinds", "oboe with vibrato: plaintive, pastoral, nasal (melody, folk, longing)", "vsco2ce", "OboeSusVib.sfz", (58, 89), 0.1, 5.0, SUS),
-    e("oboe_stac", "woodwinds", "oboe staccato: pointed, comic (quirky figures)", "vsco2ce", "OboeStac.sfz", (58, 89), 0.1, 4.0, PLUCK),
-    e("clarinet", "woodwinds", "clarinet, long notes: round, mellow, woody (melody, warm inner lines)", "vsco2ce", "ClarinetSus.sfz", (50, 89), 0.2, 2.5, SUS),
-    e("clarinet_stac", "woodwinds", "clarinet staccato: soft, bubbly (light rhythms, arpeggios)", "vsco2ce", "ClarinetStac.sfz", (50, 89), 0.2, 6.0, PLUCK),
-    e("bassoon", "woodwinds", "bassoon: reedy, gentle low voice, a bit comic (bass lines, grumpy tunes)", "vsco2ce", "BassoonSus.sfz", (34, 72), 0.25, 3.0, SUS),
+    e(
+        "flute",
+        "woodwinds",
+        "flute with vibrato: airy, bright, gentle (lead melody, birdlike lines)",
+        "vsco2ce",
+        "FluteSusVib.sfz",
+        (60, 96),
+        -0.15,
+        3.5,
+        SUS,
+    ),
+    e(
+        "flute_stac",
+        "woodwinds",
+        "flute staccato: short, breathy dots (playful figures, sparkle)",
+        "vsco2ce",
+        "FluteStac.sfz",
+        (65, 96),
+        -0.15,
+        12.0,
+        PLUCK,
+    ),
+    e(
+        "piccolo",
+        "woodwinds",
+        "piccolo: piercing, bright, very high (festive top lines, doubling the tune)",
+        "vsco2ce",
+        "PiccoloSus.sfz",
+        (74, 91),
+        -0.2,
+        -2.0,
+        SUS,
+    ),
+    e(
+        "oboe",
+        "woodwinds",
+        "oboe with vibrato: plaintive, pastoral, nasal (melody, folk, longing)",
+        "vsco2ce",
+        "OboeSusVib.sfz",
+        (58, 89),
+        0.1,
+        5.0,
+        SUS,
+    ),
+    e(
+        "oboe_stac",
+        "woodwinds",
+        "oboe staccato: pointed, comic (quirky figures)",
+        "vsco2ce",
+        "OboeStac.sfz",
+        (58, 89),
+        0.1,
+        4.0,
+        PLUCK,
+    ),
+    e(
+        "clarinet",
+        "woodwinds",
+        "clarinet, long notes: round, mellow, woody (melody, warm inner lines)",
+        "vsco2ce",
+        "ClarinetSus.sfz",
+        (50, 89),
+        0.2,
+        2.5,
+        SUS,
+    ),
+    e(
+        "clarinet_stac",
+        "woodwinds",
+        "clarinet staccato: soft, bubbly (light rhythms, arpeggios)",
+        "vsco2ce",
+        "ClarinetStac.sfz",
+        (50, 89),
+        0.2,
+        6.0,
+        PLUCK,
+    ),
+    e(
+        "bassoon",
+        "woodwinds",
+        "bassoon: reedy, gentle low voice, a bit comic (bass lines, grumpy tunes)",
+        "vsco2ce",
+        "BassoonSus.sfz",
+        (34, 72),
+        0.25,
+        3.0,
+        SUS,
+    ),
     // Brass (VSCO 2 CE).
-    e("horn", "brass", "French horn: noble, warm, heroic at forte (themes, warm pads, adventure)", "vsco2ce", "FHornSus.sfz", (41, 77), -0.3, 2.0, SUS),
-    e("horn_stac", "brass", "French horn staccato: short, punchy (rhythmic hits, marches)", "vsco2ce", "FHornStac.sfz", (41, 77), -0.3, -0.5, PLUCK),
-    e("trumpet", "brass", "trumpet: bright, bold, fanfare (heroic calls, triumph)", "vsco2ce", "TrumpetSus.sfz", (55, 82), 0.15, -6.5, SUS),
-    e("trombone", "brass", "tenor trombone: broad, solemn (chorales, weight, villains)", "vsco2ce", "TromboneSus.sfz", (40, 65), 0.3, 8.5, SUS),
-    e("tuba", "brass", "tuba: big, soft low brass (bass under brass, oom-pah)", "vsco2ce", "TubaSus.sfz", (29, 58), 0.35, 3.0, SUS),
+    e(
+        "horn",
+        "brass",
+        "French horn: noble, warm, heroic at forte (themes, warm pads, adventure)",
+        "vsco2ce",
+        "FHornSus.sfz",
+        (41, 77),
+        -0.3,
+        2.0,
+        SUS,
+    ),
+    e(
+        "horn_stac",
+        "brass",
+        "French horn staccato: short, punchy (rhythmic hits, marches)",
+        "vsco2ce",
+        "FHornStac.sfz",
+        (41, 77),
+        -0.3,
+        -0.5,
+        PLUCK,
+    ),
+    e(
+        "trumpet",
+        "brass",
+        "trumpet: bright, bold, fanfare (heroic calls, triumph)",
+        "vsco2ce",
+        "TrumpetSus.sfz",
+        (55, 82),
+        0.15,
+        -6.5,
+        SUS,
+    ),
+    e(
+        "trombone",
+        "brass",
+        "tenor trombone: broad, solemn (chorales, weight, villains)",
+        "vsco2ce",
+        "TromboneSus.sfz",
+        (40, 65),
+        0.3,
+        8.5,
+        SUS,
+    ),
+    e(
+        "tuba",
+        "brass",
+        "tuba: big, soft low brass (bass under brass, oom-pah)",
+        "vsco2ce",
+        "TubaSus.sfz",
+        (29, 58),
+        0.35,
+        3.0,
+        SUS,
+    ),
     // Keys and plucked.
-    e("piano", "keys", "Kawai grand piano, several velocity layers: clear, full (melody, chords, arpeggios)", "vcsl", "Chordophones/Zithers/Grand Piano, Kawai.sfz", (21, 108), 0.0, 4.5, PLUCK),
-    e("harp", "plucked", "concert harp: glassy, rippling (arpeggios, glissandi, magic, lullabies)", "vsco2ce", "Harp.sfz", (28, 101), 0.35, 6.5, PLUCK),
-    e("kalimba", "plucked", "Kenyan kalimba: soft metal tines, toylike but warm (cozy loops, puzzles)", "vcsl", "Idiophones/Plucked Idiophones/Kalimba, Kenya.sfz", (60, 84), 0.15, 10.0, RING),
+    e(
+        "piano",
+        "keys",
+        "Kawai grand piano, several velocity layers: clear, full (melody, chords, arpeggios)",
+        "vcsl",
+        "Chordophones/Zithers/Grand Piano, Kawai.sfz",
+        (21, 108),
+        0.0,
+        4.5,
+        PLUCK,
+    ),
+    e(
+        "harp",
+        "plucked",
+        "concert harp: glassy, rippling (arpeggios, glissandi, magic, lullabies)",
+        "vsco2ce",
+        "Harp.sfz",
+        (28, 101),
+        0.35,
+        6.5,
+        PLUCK,
+    ),
+    e(
+        "kalimba",
+        "plucked",
+        "Kenyan kalimba: soft metal tines, toylike but warm (cozy loops, puzzles)",
+        "vcsl",
+        "Idiophones/Plucked Idiophones/Kalimba, Kenya.sfz",
+        (60, 84),
+        0.15,
+        10.0,
+        RING,
+    ),
     // Mallets.
-    e("glockenspiel", "mallets", "glockenspiel: tiny, bright bells (sparkle, doubling the tune high)", "vcsl", "Idiophones/Struck Idiophones/Glockenspiel.sfz", (79, 97), 0.2, 4.0, RING),
-    e("marimba", "mallets", "marimba: warm wooden bars (ostinatos, gentle rhythm, tropical)", "vcsl", "Idiophones/Struck Idiophones/Marimba.sfz", (45, 96), -0.2, -2.0, RING),
-    e("xylophone", "mallets", "xylophone: dry, bright wood (quick comic runs, bounce)", "vsco2ce", "Xylophone.sfz", (65, 96), 0.25, 0.5, RING),
-    e("vibraphone", "mallets", "vibraphone, soft mallets: mellow metal, dreamy (night, mystery, jazz chords)", "vcsl", "Idiophones/Struck Idiophones/Vibraphone - Soft Mallets.sfz", (53, 89), -0.15, -3.5, RING),
-    e("tubular_bells", "mallets", "tubular bells: church-like chimes (big moments, clocks, ceremonies)", "vsco2ce", "TubularBells.sfz", (60, 77), 0.1, -4.5, RING),
+    e(
+        "glockenspiel",
+        "mallets",
+        "glockenspiel: tiny, bright bells (sparkle, doubling the tune high)",
+        "vcsl",
+        "Idiophones/Struck Idiophones/Glockenspiel.sfz",
+        (79, 97),
+        0.2,
+        4.0,
+        RING,
+    ),
+    e(
+        "marimba",
+        "mallets",
+        "marimba: warm wooden bars (ostinatos, gentle rhythm, tropical)",
+        "vcsl",
+        "Idiophones/Struck Idiophones/Marimba.sfz",
+        (45, 96),
+        -0.2,
+        -2.0,
+        RING,
+    ),
+    e(
+        "xylophone",
+        "mallets",
+        "xylophone: dry, bright wood (quick comic runs, bounce)",
+        "vsco2ce",
+        "Xylophone.sfz",
+        (65, 96),
+        0.25,
+        0.5,
+        RING,
+    ),
+    e(
+        "vibraphone",
+        "mallets",
+        "vibraphone, soft mallets: mellow metal, dreamy (night, mystery, jazz chords)",
+        "vcsl",
+        "Idiophones/Struck Idiophones/Vibraphone - Soft Mallets.sfz",
+        (53, 89),
+        -0.15,
+        -3.5,
+        RING,
+    ),
+    e(
+        "tubular_bells",
+        "mallets",
+        "tubular bells: church-like chimes (big moments, clocks, ceremonies)",
+        "vsco2ce",
+        "TubularBells.sfz",
+        (60, 77),
+        0.1,
+        -4.5,
+        RING,
+    ),
     // Wordless choir (FluidR3_GM, MIT).
     Entry {
         id: "choir_aahs",
@@ -204,19 +515,139 @@ pub const CATALOG: &[Entry] = &[
         style: SUS,
     },
     // Orchestral percussion.
-    e("timpani", "percussion", "timpani: tuned orchestral drum (heartbeat, rolls of tension, accents)", "vsco2ce", "Timpani.sfz", (38, 57), 0.0, 7.5, RING),
-    e("bass_drum", "percussion", "concert bass drum: deep boom (big hits, distant thunder)", "vcsl", "Membranophones/Struck Membranophones/Bass Drum 2.sfz", (0, 127), 0.0, -9.0, RING),
-    e("snare", "percussion", "concert snare: crisp (marches, rolls, adventure)", "vcsl", "Membranophones/Struck Membranophones/Snare Drum, Modern 1.sfz", (0, 127), 0.1, 0.5, RING),
-    e("cymbal", "percussion", "suspended cymbal: washes and crashes (swells into a section, climaxes)", "vcsl", "Idiophones/Struck Idiophones/Suspended Cymbal 1.sfz", (0, 127), 0.2, -1.0, RING),
-    e("triangle", "percussion", "triangle: clear ting (sparkle on downbeats, festive)", "vcsl", "Idiophones/Struck Idiophones/Triangles.sfz", (0, 127), 0.3, 4.0, RING),
-    e("tambourine", "percussion", "tambourine: jingly shakes and hits (dance, festival, travel)", "vcsl", "Idiophones/Struck Idiophones/Tambourine 1.sfz", (0, 127), -0.3, 3.5, RING),
-    e("shaker", "percussion", "small shaker: soft rhythmic hiss (gentle pulse under a groove)", "vcsl", "Idiophones/Struck Idiophones/Shaker, Small.sfz", (0, 127), 0.35, 6.5, RING),
+    e(
+        "timpani",
+        "percussion",
+        "timpani: tuned orchestral drum (heartbeat, rolls of tension, accents)",
+        "vsco2ce",
+        "Timpani.sfz",
+        (38, 57),
+        0.0,
+        7.5,
+        RING,
+    ),
+    e(
+        "bass_drum",
+        "percussion",
+        "concert bass drum: deep boom (big hits, distant thunder)",
+        "vcsl",
+        "Membranophones/Struck Membranophones/Bass Drum 2.sfz",
+        (0, 127),
+        0.0,
+        -9.0,
+        RING,
+    ),
+    e(
+        "snare",
+        "percussion",
+        "concert snare: crisp (marches, rolls, adventure)",
+        "vcsl",
+        "Membranophones/Struck Membranophones/Snare Drum, Modern 1.sfz",
+        (0, 127),
+        0.1,
+        0.5,
+        RING,
+    ),
+    e(
+        "cymbal",
+        "percussion",
+        "suspended cymbal: washes and crashes (swells into a section, climaxes)",
+        "vcsl",
+        "Idiophones/Struck Idiophones/Suspended Cymbal 1.sfz",
+        (0, 127),
+        0.2,
+        -1.0,
+        RING,
+    ),
+    e(
+        "triangle",
+        "percussion",
+        "triangle: clear ting (sparkle on downbeats, festive)",
+        "vcsl",
+        "Idiophones/Struck Idiophones/Triangles.sfz",
+        (0, 127),
+        0.3,
+        4.0,
+        RING,
+    ),
+    e(
+        "tambourine",
+        "percussion",
+        "tambourine: jingly shakes and hits (dance, festival, travel)",
+        "vcsl",
+        "Idiophones/Struck Idiophones/Tambourine 1.sfz",
+        (0, 127),
+        -0.3,
+        3.5,
+        RING,
+    ),
+    e(
+        "shaker",
+        "percussion",
+        "small shaker: soft rhythmic hiss (gentle pulse under a groove)",
+        "vcsl",
+        "Idiophones/Struck Idiophones/Shaker, Small.sfz",
+        (0, 127),
+        0.35,
+        6.5,
+        RING,
+    ),
     // Hand drums (VCSL).
-    e("bongos", "hand_drums", "bongos: high, bright hand hits (light grooves, island, playful)", "vcsl", "Membranophones/Struck Membranophones/Bongos.sfz", (0, 127), 0.25, -2.5, RING),
-    e("congas", "hand_drums", "congas (quinto, conga, tumba): warm open tones and slaps (grooves)", "vcsl", "Membranophones/Struck Membranophones/Conga.sfz", (0, 127), -0.25, -0.5, RING),
-    e("frame_drum", "hand_drums", "frame drum: soft, deep hand drum (folk pulse, journeys, ritual)", "vcsl", "Membranophones/Struck Membranophones/Frame Drum.sfz", (0, 127), 0.0, -4.0, RING),
-    e("cajon", "hand_drums", "cajon: woody box bass and snappy slap (acoustic grooves)", "vcsl", "Idiophones/Struck Idiophones/Cajon.sfz", (0, 127), 0.0, 9.0, RING),
-    e("darbuka", "hand_drums", "darbuka: crisp goblet drum doum/tek (desert, market, fast patterns)", "vcsl", "Membranophones/Struck Membranophones/Darbuka.sfz", (0, 127), 0.15, 3.5, RING),
+    e(
+        "bongos",
+        "hand_drums",
+        "bongos: high, bright hand hits (light grooves, island, playful)",
+        "vcsl",
+        "Membranophones/Struck Membranophones/Bongos.sfz",
+        (0, 127),
+        0.25,
+        -2.5,
+        RING,
+    ),
+    e(
+        "congas",
+        "hand_drums",
+        "congas (quinto, conga, tumba): warm open tones and slaps (grooves)",
+        "vcsl",
+        "Membranophones/Struck Membranophones/Conga.sfz",
+        (0, 127),
+        -0.25,
+        -0.5,
+        RING,
+    ),
+    e(
+        "frame_drum",
+        "hand_drums",
+        "frame drum: soft, deep hand drum (folk pulse, journeys, ritual)",
+        "vcsl",
+        "Membranophones/Struck Membranophones/Frame Drum.sfz",
+        (0, 127),
+        0.0,
+        -4.0,
+        RING,
+    ),
+    e(
+        "cajon",
+        "hand_drums",
+        "cajon: woody box bass and snappy slap (acoustic grooves)",
+        "vcsl",
+        "Idiophones/Struck Idiophones/Cajon.sfz",
+        (0, 127),
+        0.0,
+        9.0,
+        RING,
+    ),
+    e(
+        "darbuka",
+        "hand_drums",
+        "darbuka: crisp goblet drum doum/tek (desert, market, fast patterns)",
+        "vcsl",
+        "Membranophones/Struck Membranophones/Darbuka.sfz",
+        (0, 127),
+        0.15,
+        3.5,
+        RING,
+    ),
 ];
 
 pub fn entry(id: &str) -> Option<&'static Entry> {
@@ -292,7 +723,10 @@ pub fn missing_bytes(root: &Path, lock: &Lock, e: &Entry) -> u64 {
         .iter()
         .filter_map(|f| files.get(f).map(|lf| (f, lf)))
         .filter(|(f, lf)| {
-            std::fs::metadata(local_path(root, e.source, f)).map(|m| m.len()).ok() != Some(lf.bytes)
+            std::fs::metadata(local_path(root, e.source, f))
+                .map(|m| m.len())
+                .ok()
+                != Some(lf.bytes)
         })
         .map(|(_, lf)| lf.bytes)
         .sum()
@@ -310,7 +744,10 @@ fn curl_many(jobs: &[(String, PathBuf)]) -> Result<(), String> {
         cfg.push_str(&format!(
             "url = \"{}\"\noutput = \"{}\"\n",
             url.replace('"', "%22"),
-            out.display().to_string().replace('\\', "\\\\").replace('"', "\\\"")
+            out.display()
+                .to_string()
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
         ));
     }
     let cfg_path = std::env::temp_dir().join(format!(
@@ -401,7 +838,10 @@ pub fn ar_member<'a>(ar: &'a [u8], name: &str) -> Option<&'a [u8]> {
     let mut i = 8;
     while i + 60 <= ar.len() {
         let h = &ar[i..i + 60];
-        let n = std::str::from_utf8(&h[0..16]).ok()?.trim().trim_end_matches('/');
+        let n = std::str::from_utf8(&h[0..16])
+            .ok()?
+            .trim()
+            .trim_end_matches('/');
         let size: usize = std::str::from_utf8(&h[48..58]).ok()?.trim().parse().ok()?;
         let body = ar.get(i + 60..i + 60 + size)?;
         if n == name {
@@ -524,17 +964,22 @@ pub fn build_lock(root: &Path) -> Result<Lock, String> {
                     sha256: sha256_file(&path).map_err(|e| e.to_string())?,
                 },
             );
-            lock.instruments.insert(e.id.into(), vec![FLUIDR3_FILE.into()]);
+            lock.instruments
+                .insert(e.id.into(), vec![FLUIDR3_FILE.into()]);
             continue;
         }
         let src = source(e.source).ok_or("unknown source")?;
         let sfz = local_path(root, e.source, e.file);
         if !sfz.exists() {
             let part = sfz.with_extension("part");
-            curl_many(&[(format!("{}{}", src.base_url, url_path(e.file)), part.clone())])?;
+            curl_many(&[(
+                format!("{}{}", src.base_url, url_path(e.file)),
+                part.clone(),
+            )])?;
             std::fs::rename(&part, &sfz).map_err(|err| format!("{}: {err}", sfz.display()))?;
         }
-        let text = String::from_utf8_lossy(&std::fs::read(&sfz).map_err(|e| e.to_string())?).to_string();
+        let text =
+            String::from_utf8_lossy(&std::fs::read(&sfz).map_err(|e| e.to_string())?).to_string();
         let dir = Path::new(e.file).parent().unwrap_or(Path::new(""));
         let mut files = vec![e.file.to_string()];
         for r in super::sfz::referenced_samples(&text)? {
@@ -547,11 +992,18 @@ pub fn build_lock(root: &Path) -> Result<Lock, String> {
             .filter(|f| !local_path(root, e.source, f).exists())
             .map(|f| {
                 let p = local_path(root, e.source, f);
-                (format!("{}{}", src.base_url, url_path(f)), p.with_extension("part"))
+                (
+                    format!("{}{}", src.base_url, url_path(f)),
+                    p.with_extension("part"),
+                )
             })
             .collect();
         if !jobs.is_empty() {
-            eprintln!("ccez-compose: lock: fetching {} ({} files)", e.id, jobs.len());
+            eprintln!(
+                "ccez-compose: lock: fetching {} ({} files)",
+                e.id,
+                jobs.len()
+            );
         }
         curl_many(&jobs)?;
         for (_, part) in &jobs {
@@ -643,8 +1095,10 @@ pub fn hits(regions: &[Region]) -> BTreeMap<u8, String> {
                 !(l.starts_with("rr")
                     || (l.starts_with('v') && l[1..].chars().all(|c| c.is_ascii_digit()))
                     || (l.starts_with("vl") && l[2..].chars().all(|c| c.is_ascii_digit()))
-                    || ["pp", "p", "mp", "mf", "f", "ff", "fff", "sum", "mid", "close", "main"]
-                        .contains(&l.as_str()))
+                    || [
+                        "pp", "p", "mp", "mf", "f", "ff", "fff", "sum", "mid", "close", "main",
+                    ]
+                    .contains(&l.as_str()))
             })
             .collect();
         for k in r.lokey..=r.hikey {
@@ -665,7 +1119,9 @@ pub fn layer_counts(regions: &[Region]) -> (usize, usize) {
             let set: Vec<usize> = regions
                 .iter()
                 .enumerate()
-                .filter(|(_, r)| key >= r.lokey && key <= r.hikey && vel >= r.lovel && vel <= r.hivel)
+                .filter(|(_, r)| {
+                    key >= r.lokey && key <= r.hikey && vel >= r.lovel && vel <= r.hivel
+                })
                 .map(|(i, _)| i)
                 .collect();
             if !set.is_empty() && last.as_ref() != Some(&set) {
@@ -675,7 +1131,11 @@ pub fn layer_counts(regions: &[Region]) -> (usize, usize) {
         }
         layers = layers.max(bands);
     }
-    let rr = regions.iter().map(|r| r.seq_length as usize).max().unwrap_or(1);
+    let rr = regions
+        .iter()
+        .map(|r| r.seq_length as usize)
+        .max()
+        .unwrap_or(1);
     (layers, rr)
 }
 
@@ -698,18 +1158,42 @@ mod tests {
         ] {
             assert!(CATALOG.iter().any(|e| e.family == fam), "{fam}");
         }
-        for id in ["violins", "violins_pizz", "flute", "clarinet", "oboe", "piano", "harp", "glockenspiel", "choir_aahs", "timpani", "bongos"] {
+        for id in [
+            "violins",
+            "violins_pizz",
+            "flute",
+            "clarinet",
+            "oboe",
+            "piano",
+            "harp",
+            "glockenspiel",
+            "choir_aahs",
+            "timpani",
+            "bongos",
+        ] {
             assert!(entry(id).is_some(), "{id}");
         }
         let l = lock();
         let mut ids = std::collections::HashSet::new();
         for e in CATALOG {
             assert!(ids.insert(e.id), "{} twice", e.id);
-            assert!(super::super::synth::patch(e.id).is_none(), "{} shadows a synth patch", e.id);
+            assert!(
+                super::super::synth::patch(e.id).is_none(),
+                "{} shadows a synth patch",
+                e.id
+            );
             let s = source(e.source).unwrap();
-            assert!(s.licence == "CC0-1.0" || s.licence == "MIT", "{}", s.licence);
+            assert!(
+                s.licence == "CC0-1.0" || s.licence == "MIT",
+                "{}",
+                s.licence
+            );
             let files = entry_files(&l, e);
-            assert!(files.len() > 1 || e.source == "fluidr3", "{}: {files:?}", e.id);
+            assert!(
+                files.len() > 1 || e.source == "fluidr3",
+                "{}: {files:?}",
+                e.id
+            );
             for f in files {
                 let lf = &l.sources[e.source][&f];
                 assert_eq!(lf.sha256.len(), 64, "{f}");
@@ -725,8 +1209,22 @@ mod tests {
             "Chordophones/Zithers/Grand%20Piano%2C%20Kawai.sfz"
         );
         let mut ar = b"!<arch>\n".to_vec();
-        for (name, body) in [("debian-binary", &b"2.0\n"[..]), ("data.tar.xz", &b"xyz"[..])] {
-            ar.extend(format!("{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`\n", name, 0, 0, 0, 100644, body.len()).bytes());
+        for (name, body) in [
+            ("debian-binary", &b"2.0\n"[..]),
+            ("data.tar.xz", &b"xyz"[..]),
+        ] {
+            ar.extend(
+                format!(
+                    "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`\n",
+                    name,
+                    0,
+                    0,
+                    0,
+                    100644,
+                    body.len()
+                )
+                .bytes(),
+            );
             ar.extend_from_slice(body);
             if body.len() % 2 == 1 {
                 ar.push(b'\n');

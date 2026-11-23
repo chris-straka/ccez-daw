@@ -29,10 +29,10 @@
 //! rounding), so no audio is ever lost to the split.
 
 use super::job::{Job, JobControl};
-use super::{OpDraft, draft_clip_added};
-use crate::bounce::{FROZEN_STEM_KIND, Stem, decode_wav, encode_wav};
+use super::{draft_clip_added, OpDraft};
+use crate::bounce::{decode_wav, encode_wav, Stem, FROZEN_STEM_KIND};
 use crate::engine::Engine;
-use crate::midi::{MidiClip, groove};
+use crate::midi::{groove, MidiClip};
 use crate::model::{Clip, ClipKind};
 
 /// Stable sidecar ids. These become op actors via [`super::ai_actor`].
@@ -222,7 +222,10 @@ pub fn separation_asset_key(clip_id_prefix: &str, stem: &str) -> String {
 /// Store each stem as a WAV asset and draft one `ClipAdded` per stem.
 /// The caller applies the drafts with `ai:separation` through
 /// `Engine::apply`; each returned seq undoes independently.
-pub fn separation_drafts(sep: &Separation, dest: &SeparationDest) -> Vec<(String, Vec<u8>, OpDraft)> {
+pub fn separation_drafts(
+    sep: &Separation,
+    dest: &SeparationDest,
+) -> Vec<(String, Vec<u8>, OpDraft)> {
     sep.stems(dest.name_prefix)
         .into_iter()
         .zip(STEM_NAMES)
@@ -300,7 +303,9 @@ pub fn cleanup_audio(
     check_rate(sample_rate)?;
     check_samples(samples, "cleanup_audio")?;
     if !threshold.is_finite() || threshold < 0.0 {
-        return Err(format!("cleanup threshold {threshold} must be finite and >= 0"));
+        return Err(format!(
+            "cleanup threshold {threshold} must be finite and >= 0"
+        ));
     }
     let n = samples.len();
     // DC removal: subtract the mean (a real offset, not modelled noise).
@@ -323,7 +328,11 @@ pub fn cleanup_audio(
         let x = *s as f64 - mean;
         let open = x.abs() >= threshold as f64;
         let held = x.abs() >= threshold as f64 * 0.5;
-        let target = if open || (held && gain > 0.5) { 1.0 } else { 0.0 };
+        let target = if open || (held && gain > 0.5) {
+            1.0
+        } else {
+            0.0
+        };
         let coeff = if target > gain { attack } else { release };
         gain += (1.0 - coeff) * (target - gain);
         let g = gain.clamp(0.0, 1.0);
@@ -364,11 +373,7 @@ pub fn cleanup_audio(
 }
 
 /// Run [`cleanup_audio`] as a background [`Job`].
-pub fn submit_cleanup(
-    samples: Vec<f32>,
-    sample_rate: u32,
-    threshold: f32,
-) -> Job<Option<Cleanup>> {
+pub fn submit_cleanup(samples: Vec<f32>, sample_rate: u32, threshold: f32) -> Job<Option<Cleanup>> {
     Job::submit(move |ctl: &JobControl| {
         cleanup_audio(&samples, sample_rate, threshold, Some(ctl)).ok()
     })
@@ -422,7 +427,8 @@ pub fn apply_cleanup_to_engine(
     start_beats: f64,
     length_beats: f64,
 ) -> Result<u64, String> {
-    let (key, bytes, draft) = cleanup_draft(clean, track_id, clip_id, name, start_beats, length_beats);
+    let (key, bytes, draft) =
+        cleanup_draft(clean, track_id, clip_id, name, start_beats, length_beats);
     engine
         .store_asset(&key, FROZEN_STEM_KIND, &bytes)
         .map_err(|e| format!("cleanup store_asset: {e}"))?;
@@ -606,7 +612,9 @@ mod tests {
         }
         let mut target = MidiClip::new(2.0);
         for (i, start) in [0.0, 0.5, 1.0, 1.5].iter().enumerate() {
-            target.add_note(MidiNote::new(i as u32, 64, 90, *start, 0.25)).unwrap();
+            target
+                .add_note(MidiNote::new(i as u32, 64, 90, *start, 0.25))
+                .unwrap();
         }
         let out = transfer_groove(&source, &target, 2, 1.0).expect("transfer");
         assert!(out.notes.iter().any(|n| n.timing_offset_beats.abs() > 0.01));

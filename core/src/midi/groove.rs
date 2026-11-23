@@ -162,7 +162,8 @@ pub fn apply_full(
         let target = note.velocity as f64 * template.vel_scale[step];
         let blended = note.velocity as f64 + (target - note.velocity as f64) * params.velocity;
         note.velocity = blended.round().clamp(1.0, 127.0) as u8;
-        note.validate().map_err(|e| format!("groove transfer produced invalid note: {e}"))?;
+        note.validate()
+            .map_err(|e| format!("groove transfer produced invalid note: {e}"))?;
     }
     Ok(())
 }
@@ -247,18 +248,16 @@ mod tests {
         let t = GrooveTemplate::flat(4);
         assert!(apply(&mut clip, &t, 2.0).is_err());
         assert!(apply(&mut clip, &t, f64::NAN).is_err());
-        assert!(
-            apply_full(
-                &mut clip,
-                &t,
-                &ApplyParams {
-                    quantize: 0.0,
-                    timing: 0.0,
-                    velocity: 2.0
-                },
-            )
-            .is_err()
-        );
+        assert!(apply_full(
+            &mut clip,
+            &t,
+            &ApplyParams {
+                quantize: 0.0,
+                timing: 0.0,
+                velocity: 2.0
+            },
+        )
+        .is_err());
     }
 
     /// Performance clip: step 1 (of 4) played late (+0.06) and loud (120),

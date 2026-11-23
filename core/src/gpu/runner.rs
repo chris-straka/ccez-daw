@@ -229,7 +229,11 @@ mod tests {
 
     #[test]
     fn error_display_is_human_readable() {
-        assert!(GpuError::Unavailable("x".into()).to_string().contains("unavailable"));
-        assert!(GpuError::Execution("y".into()).to_string().contains("failed"));
+        assert!(GpuError::Unavailable("x".into())
+            .to_string()
+            .contains("unavailable"));
+        assert!(GpuError::Execution("y".into())
+            .to_string()
+            .contains("failed"));
     }
 }

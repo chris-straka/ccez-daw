@@ -365,7 +365,9 @@ impl AraDocument {
         samples: Vec<f32>,
     ) -> Result<AraAudioSourceId> {
         if id.is_empty() {
-            return Err(AraError::BadArgument("source id must not be empty".to_string()));
+            return Err(AraError::BadArgument(
+                "source id must not be empty".to_string(),
+            ));
         }
         if sample_rate == 0 {
             return Err(AraError::BadArgument(format!(
@@ -410,7 +412,9 @@ impl AraDocument {
             return Err(AraError::UnknownSource(source_id.to_string()));
         }
         let region = AraRegion::new(source_id, start_sec, end_sec).ok_or_else(|| {
-            AraError::BadRegion(format!("range [{start_sec}, {end_sec}) is empty or invalid"))
+            AraError::BadRegion(format!(
+                "range [{start_sec}, {end_sec}) is empty or invalid"
+            ))
         })?;
         Ok(self.push_region(clip_id, region, source_offset_sec))
     }
@@ -421,14 +425,20 @@ impl AraDocument {
     /// to be shared yet — mapping runs first, audio follows via
     /// [`AraDocument::add_source`]; rendering refuses unshared sources.
     pub fn add_region_for_clip(&mut self, clip: &Clip, source_id: &str) -> Result<Option<String>> {
-        if !clip.start_beats.is_finite() || !clip.length_beats.is_finite() || clip.length_beats <= 0.0
+        if !clip.start_beats.is_finite()
+            || !clip.length_beats.is_finite()
+            || clip.length_beats <= 0.0
         {
             return Ok(None);
         }
         let start_sec = self.context.beats_to_sec(clip.start_beats);
-        let end_sec = self.context.beats_to_sec(clip.start_beats + clip.length_beats);
+        let end_sec = self
+            .context
+            .beats_to_sec(clip.start_beats + clip.length_beats);
         let region = AraRegion::new(source_id, start_sec, end_sec).ok_or_else(|| {
-            AraError::BadRegion(format!("range [{start_sec}, {end_sec}) is empty or invalid"))
+            AraError::BadRegion(format!(
+                "range [{start_sec}, {end_sec}) is empty or invalid"
+            ))
         })?;
         Ok(Some(self.push_region(&clip.id.clone(), region, 0.0)))
     }
@@ -463,7 +473,10 @@ impl AraDocument {
     }
 
     pub fn regions_for_clip(&self, clip_id: &str) -> Vec<&AraRegionEntry> {
-        self.regions.iter().filter(|e| e.clip_id == clip_id).collect()
+        self.regions
+            .iter()
+            .filter(|e| e.clip_id == clip_id)
+            .collect()
     }
 
     /// Entries whose span intersects `[start_sec, end_sec)`.
@@ -547,7 +560,9 @@ impl MockAraEffect {
         note_count: usize,
     ) -> Result<Self> {
         if sample_rate == 0 {
-            return Err(AraError::BadArgument("analyze needs a nonzero sample rate".to_string()));
+            return Err(AraError::BadArgument(
+                "analyze needs a nonzero sample rate".to_string(),
+            ));
         }
         if !region_len_sec.is_finite() || region_len_sec <= 0.0 {
             return Err(AraError::BadRegion(format!(
@@ -555,7 +570,9 @@ impl MockAraEffect {
             )));
         }
         if note_count == 0 {
-            return Err(AraError::BadArgument("analyze needs note_count > 0".to_string()));
+            return Err(AraError::BadArgument(
+                "analyze needs note_count > 0".to_string(),
+            ));
         }
         let sr = sample_rate as f64;
         let note_len = region_len_sec / note_count as f64;
@@ -668,7 +685,9 @@ fn pitch_of(samples: &[f32], sample_rate: u32) -> u8 {
     if !freq.is_finite() || freq <= 0.0 {
         return 69;
     }
-    (69.0 + 12.0 * (freq / 440.0).log2()).round().clamp(0.0, 127.0) as u8
+    (69.0 + 12.0 * (freq / 440.0).log2())
+        .round()
+        .clamp(0.0, 127.0) as u8
 }
 
 /// Length-preserving linear-interpolation resample: `out[i] =
@@ -688,7 +707,11 @@ fn transpose_resample(input: &[f32], factor: f64) -> Vec<f32> {
         }
         let frac = (pos - lo as f64) as f32;
         let a = input[lo];
-        let b = if lo + 1 < input.len() { input[lo + 1] } else { 0.0 };
+        let b = if lo + 1 < input.len() {
+            input[lo + 1]
+        } else {
+            0.0
+        };
         *dst = a + (b - a) * frac;
     }
     out
@@ -746,11 +769,7 @@ impl AraHost {
     /// region-length buffer. Errors when the clip has no region
     /// ([`AraError::BadRegion`]) or the region's source is unshared
     /// ([`AraError::UnknownSource`]).
-    pub fn render_region(
-        &self,
-        clip_id: &str,
-        effect: &MockAraEffect,
-    ) -> Result<Vec<f32>> {
+    pub fn render_region(&self, clip_id: &str, effect: &MockAraEffect) -> Result<Vec<f32>> {
         let entry = self
             .document
             .regions_for_clip(clip_id)
@@ -763,10 +782,7 @@ impl AraHost {
             .get_source(&entry.region.source.0)
             .ok_or_else(|| AraError::UnknownSource(entry.region.source.0.clone()))?;
         let len = entry.region.len_sec();
-        let audio = source.read_range(
-            entry.source_offset_sec,
-            entry.source_offset_sec + len,
-        );
+        let audio = source.read_range(entry.source_offset_sec, entry.source_offset_sec + len);
         Ok(effect.render(&audio, source.sample_rate, entry.region.start_sec))
     }
 
@@ -836,7 +852,10 @@ mod tests {
             .expect("A minor");
         assert_eq!(keyed.key_tonic, Some(9));
         assert!(keyed.key_minor);
-        assert!(MusicalContext::new(100.0).expect("tempo").with_key(12, false).is_none());
+        assert!(MusicalContext::new(100.0)
+            .expect("tempo")
+            .with_key(12, false)
+            .is_none());
     }
 
     #[test]
@@ -925,8 +944,13 @@ mod tests {
     #[test]
     fn real_binary_loading_names_its_missing_pieces() {
         let host = AraHost::new();
-        let err = host.load_binary_plugin("/lib/Melodyne.vst3").expect_err("refuses");
-        assert!(matches!(err, AraError::AraUnimplemented("load_binary_plugin")));
+        let err = host
+            .load_binary_plugin("/lib/Melodyne.vst3")
+            .expect_err("refuses");
+        assert!(matches!(
+            err,
+            AraError::AraUnimplemented("load_binary_plugin")
+        ));
         let msg = err.to_string();
         assert!(msg.contains("factory entry hosting"), "{msg}");
         assert!(msg.contains("document controller lifecycle"), "{msg}");

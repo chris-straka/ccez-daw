@@ -361,7 +361,9 @@ impl Composition {
                     known_patch_ids().join(", ")
                 )),
                 Some(PatchKind::Local) => {
-                    let path = i.patch[4..].rsplit_once('#').map_or(&i.patch[4..], |(p, _)| p);
+                    let path = i.patch[4..]
+                        .rsplit_once('#')
+                        .map_or(&i.patch[4..], |(p, _)| p);
                     if !std::path::Path::new(path).is_file() {
                         e.push(format!("instrument {:?}: no file at {path:?}", i.id));
                     }

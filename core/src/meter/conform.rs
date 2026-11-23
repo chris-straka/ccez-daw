@@ -247,11 +247,7 @@ pub fn conform_to_preset(stem: &Stem, preset_id: &str) -> Result<ConformedStem> 
     let preset = preset_by_id(preset_id).ok_or_else(|| {
         LoudnessError::BadTarget(format!(
             "unknown conformance preset '{preset_id}' (want one of: {})",
-            PRESETS
-                .iter()
-                .map(|p| p.id)
-                .collect::<Vec<_>>()
-                .join(", ")
+            PRESETS.iter().map(|p| p.id).collect::<Vec<_>>().join(", ")
         ))
     })?;
     let (stem, loudness) = normalize_to_target(stem, preset.target);
@@ -329,7 +325,8 @@ mod tests {
             preset.target.target_lufs
         );
         assert!(
-            c.output_true_peak_dbfs <= preset.target.true_peak_ceiling_dbfs + CONFORM_CEILING_SLACK_DB,
+            c.output_true_peak_dbfs
+                <= preset.target.true_peak_ceiling_dbfs + CONFORM_CEILING_SLACK_DB,
             "{}: peak {} dBFS vs ceiling {}",
             preset.id,
             c.output_true_peak_dbfs,
@@ -339,7 +336,10 @@ mod tests {
         assert!(c.ceiling_met, "{}: ceiling_met", preset.id);
         assert!(c.passed, "{}: passed", preset.id);
         // Loop points and rate survive the conform untouched.
-        assert_eq!((out.stem.loop_start, out.stem.loop_end), (stem.loop_start, stem.loop_end));
+        assert_eq!(
+            (out.stem.loop_start, out.stem.loop_end),
+            (stem.loop_start, stem.loop_end)
+        );
         assert_eq!(out.stem.sample_rate, stem.sample_rate);
     }
 

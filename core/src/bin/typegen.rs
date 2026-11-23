@@ -7,11 +7,7 @@ use std::path::PathBuf;
 
 fn out_dir() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .join("..")
-        .join("ui")
-        .join("src")
-        .join("generated")
+    manifest.join("..").join("ui").join("src").join("generated")
 }
 
 fn write_or_check(name: &str, fresh: &str, check: bool) -> bool {

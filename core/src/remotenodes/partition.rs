@@ -132,46 +132,46 @@ pub(crate) fn track(id: &str) -> Track {
 
 #[cfg(test)]
 pub(crate) fn device(id: &str, latency: f64) -> Node {
-        Node {
-            id: id.to_string(),
-            kind: NodeKind::Device,
-            name: id.to_string(),
-            params: vec![Param {
-                id: LATENCY_PARAM.to_string(),
-                label: "Latency".to_string(),
-                value: latency,
-                min: 0.0,
-                max: 8192.0,
-                default: 0.0,
-                unit: "samples".to_string(),
-            }],
-        }
+    Node {
+        id: id.to_string(),
+        kind: NodeKind::Device,
+        name: id.to_string(),
+        params: vec![Param {
+            id: LATENCY_PARAM.to_string(),
+            label: "Latency".to_string(),
+            value: latency,
+            min: 0.0,
+            max: 8192.0,
+            default: 0.0,
+            unit: "samples".to_string(),
+        }],
     }
+}
 
 #[cfg(test)]
 pub(crate) fn edge(id: &str, from: &str, to: &str, kind: EdgeKind) -> Edge {
-        Edge {
-            id: id.to_string(),
-            from_node: from.to_string(),
-            from_port: "out".to_string(),
-            to_node: to.to_string(),
-            to_port: "in".to_string(),
-            kind,
-        }
+    Edge {
+        id: id.to_string(),
+        from_node: from.to_string(),
+        from_port: "out".to_string(),
+        to_node: to.to_string(),
+        to_port: "in".to_string(),
+        kind,
     }
+}
 
-    /// Canonical rig: `a -> dly(64) -> mix`, `b -> mix`.
-    #[cfg(test)]
-    pub(crate) fn rig_project() -> Project {
-        let mut p = Project::new("p", "RemoteRig");
-        p.tracks.push(track("a"));
-        p.tracks.push(track("b"));
-        p.devices.push(device("dly", 64.0));
-        p.routing.push(edge("e1", "a", "dly", EdgeKind::Audio));
-        p.routing.push(edge("e2", "dly", "mix", EdgeKind::Audio));
-        p.routing.push(edge("e3", "b", "mix", EdgeKind::Audio));
-        p
-    }
+/// Canonical rig: `a -> dly(64) -> mix`, `b -> mix`.
+#[cfg(test)]
+pub(crate) fn rig_project() -> Project {
+    let mut p = Project::new("p", "RemoteRig");
+    p.tracks.push(track("a"));
+    p.tracks.push(track("b"));
+    p.devices.push(device("dly", 64.0));
+    p.routing.push(edge("e1", "a", "dly", EdgeKind::Audio));
+    p.routing.push(edge("e2", "dly", "mix", EdgeKind::Audio));
+    p.routing.push(edge("e3", "b", "mix", EdgeKind::Audio));
+    p
+}
 
 #[cfg(test)]
 mod tests {
@@ -192,10 +192,7 @@ mod tests {
         let g = AudioGraph::from_project(&rig_project());
         let part = Partition::split(&g, &["dly"]).unwrap();
         let cut = part.cut_edges(&g);
-        assert_eq!(
-            cut.to_remote,
-            vec![("a".to_string(), "dly".to_string())]
-        );
+        assert_eq!(cut.to_remote, vec![("a".to_string(), "dly".to_string())]);
         assert_eq!(
             cut.from_remote,
             vec![("dly".to_string(), "mix".to_string())]

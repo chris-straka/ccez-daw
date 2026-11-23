@@ -47,7 +47,10 @@ impl std::fmt::Display for CompError {
             Self::GapOrOverlap { at_beats } => {
                 write!(f, "comp sections gap or overlap at beat {at_beats}")
             }
-            Self::Uncovered { start_beats, end_beats } => write!(
+            Self::Uncovered {
+                start_beats,
+                end_beats,
+            } => write!(
                 f,
                 "take does not cover comp section [{start_beats}, {end_beats})"
             ),
@@ -350,8 +353,8 @@ mod tests {
             CompSection::new("take_2", 0.0, 2.0),
             CompSection::new("take_1", 2.0, 4.0),
         ];
-        let comp = build_comp("clip_comp", "trk_vox", "Vox comp", &sections, &takes)
-            .expect("valid comp");
+        let comp =
+            build_comp("clip_comp", "trk_vox", "Vox comp", &sections, &takes).expect("valid comp");
         assert_eq!(comp.start_beats, 0.0);
         assert_eq!(comp.length_beats, 4.0);
         assert_eq!(comp.kind, ClipKind::Audio);
@@ -369,7 +372,9 @@ mod tests {
         };
         apply_op_to_project(&mut project, &op).expect("apply comp clip");
         assert!(project.clips.iter().any(|c| c.id == "clip_comp"));
-        assert!(project.tracks[0].clip_ids.contains(&"clip_comp".to_string()));
+        assert!(project.tracks[0]
+            .clip_ids
+            .contains(&"clip_comp".to_string()));
     }
 
     #[test]
@@ -381,7 +386,10 @@ mod tests {
                 "c",
                 "trk_vox",
                 "x",
-                &[CompSection::new("take_1", 0.0, 1.0), CompSection::new("take_2", 2.0, 4.0)],
+                &[
+                    CompSection::new("take_1", 0.0, 1.0),
+                    CompSection::new("take_2", 2.0, 4.0)
+                ],
                 &takes
             ),
             Err(CompError::GapOrOverlap { .. })
@@ -392,7 +400,10 @@ mod tests {
                 "c",
                 "trk_vox",
                 "x",
-                &[CompSection::new("take_1", 0.0, 3.0), CompSection::new("take_2", 2.0, 4.0)],
+                &[
+                    CompSection::new("take_1", 0.0, 3.0),
+                    CompSection::new("take_2", 2.0, 4.0)
+                ],
                 &takes
             ),
             Err(CompError::GapOrOverlap { .. })
@@ -484,7 +495,9 @@ mod tests {
         });
         // Switching takes just selects: auditioning never mutates.
         assert_eq!(
-            audition_take(&takes, "trk_vox", "take_2").expect("audition").id,
+            audition_take(&takes, "trk_vox", "take_2")
+                .expect("audition")
+                .id,
             "take_2"
         );
         assert!(matches!(
@@ -511,8 +524,7 @@ mod tests {
                 .as_nanos()
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut engine =
-            Engine::create(&dir, vox_project(vec![])).expect("create engine");
+        let mut engine = Engine::create(&dir, vox_project(vec![])).expect("create engine");
         for t in [take("take_1", 0.0, 4.0), take("take_2", 0.0, 4.0)] {
             engine
                 .apply(
@@ -529,8 +541,7 @@ mod tests {
             CompSection::new("take_1", 2.0, 4.0),
         ];
         let comp =
-            build_comp("clip_comp", "trk_vox", "Vox comp", &sections, &takes)
-                .expect("valid comp");
+            build_comp("clip_comp", "trk_vox", "Vox comp", &sections, &takes).expect("valid comp");
 
         // Commit is one frozen ClipAdded op through op_apply (seq assigned
         // by the engine, undoable like every other op).

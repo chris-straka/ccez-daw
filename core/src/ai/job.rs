@@ -7,8 +7,8 @@
 //! finishes but its result is discarded.
 
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
 };
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -127,9 +127,7 @@ impl<T: Send + 'static> Job<T> {
         loop {
             {
                 let guard = self.inner.lock().expect("job lock");
-                if guard.status == JobStatus::Done
-                    || guard.status == JobStatus::Cancelled
-                {
+                if guard.status == JobStatus::Done || guard.status == JobStatus::Cancelled {
                     break;
                 }
             }
@@ -140,7 +138,6 @@ impl<T: Send + 'static> Job<T> {
         }
         self.inner.lock().expect("job lock").result.clone()
     }
-
 }
 
 impl<T> Job<T> {

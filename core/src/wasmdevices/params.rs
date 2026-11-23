@@ -63,10 +63,16 @@ mod tests {
 
     #[test]
     fn addresses_split_like_the_engine() {
-        assert_eq!(parse_address("dev_dly:feedback").unwrap(), ("dev_dly", "feedback"));
+        assert_eq!(
+            parse_address("dev_dly:feedback").unwrap(),
+            ("dev_dly", "feedback")
+        );
         // Extra colons stay in the param half — `split_once`, like engine.
         assert_eq!(parse_address("d:mix:extra").unwrap(), ("d", "mix:extra"));
-        assert!(matches!(parse_address("no-colon"), Err(Error::BadAddress(_))));
+        assert!(matches!(
+            parse_address("no-colon"),
+            Err(Error::BadAddress(_))
+        ));
         assert!(matches!(parse_address(":mix"), Err(Error::BadAddress(_))));
         assert!(matches!(parse_address("d:"), Err(Error::BadAddress(_))));
     }

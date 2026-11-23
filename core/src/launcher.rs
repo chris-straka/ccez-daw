@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::model::{Clip, Op, OpKind};
-use crate::timeline::{TimelineDoc, clip_end, launcher_slots, section_end};
+use crate::timeline::{clip_end, launcher_slots, section_end, TimelineDoc};
 
 /// Launch quantization grid: the launch starts at the next grid boundary
 /// at or after the press beat. `Bar` is 4 beats in 4/4; callers in another
@@ -137,7 +137,11 @@ pub fn quantize_beat(requested: f64, grid: f64) -> Result<f64> {
         )));
     }
     let n = (requested / grid).ceil() - requested / grid;
-    let snapped = if n < 1e-9 { requested } else { (requested / grid).ceil() * grid };
+    let snapped = if n < 1e-9 {
+        requested
+    } else {
+        (requested / grid).ceil() * grid
+    };
     // Avoid 7.9999996-style float dust on exact multiples.
     let rounded = (snapped / grid).round() * grid;
     if (rounded - snapped).abs() < 1e-9 {
@@ -150,7 +154,11 @@ pub fn quantize_beat(requested: f64, grid: f64) -> Result<f64> {
 /// Scene quantization: the pressed section's own start when the press is
 /// before it, else one full section length after the press position's
 /// section-phase. Keeps a jam in section-sized phrases.
-pub fn quantize_launch_for_scene(requested: f64, section_start: f64, section_len: f64) -> Result<f64> {
+pub fn quantize_launch_for_scene(
+    requested: f64,
+    section_start: f64,
+    section_len: f64,
+) -> Result<f64> {
     check_beat(requested, "requested")?;
     if !section_start.is_finite() || section_start < 0.0 {
         return Err(LaunchError::BadBeat(format!(
@@ -340,7 +348,9 @@ pub fn jam_record_ops(
                             .unwrap_or(false)
                 })
             {
-                return Err(LaunchError::BadJam(format!("clip id `{new_id}` already exists")));
+                return Err(LaunchError::BadJam(format!(
+                    "clip id `{new_id}` already exists"
+                )));
             }
             let recorded = Clip {
                 id: new_id,
@@ -414,19 +424,17 @@ mod tests {
         assert_eq!(early.launch_beat, 16.0);
         // Dangling pads fail loudly.
         assert!(plan_scene_launch(&project, &doc, "sec_nope", 0.0, LaunchQuant::Beat).is_err());
-        assert!(
-            plan_slot_launch(
-                &project,
-                &doc,
-                &SlotRef {
-                    section_id: "sec_chorus".to_string(),
-                    track_id: "trk_nope".to_string(),
-                },
-                0.0,
-                LaunchQuant::Beat,
-            )
-            .is_err()
-        );
+        assert!(plan_slot_launch(
+            &project,
+            &doc,
+            &SlotRef {
+                section_id: "sec_chorus".to_string(),
+                track_id: "trk_nope".to_string(),
+            },
+            0.0,
+            LaunchQuant::Beat,
+        )
+        .is_err());
     }
 
     #[test]

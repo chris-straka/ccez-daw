@@ -109,10 +109,7 @@ pub fn apply_props_to_midi(
         for note in &mut out.notes {
             let b = note.pitch_bend + bend;
             if b.abs() > 48.0 {
-                return Err(format!(
-                    "note {} bend {b} would leave ±48 st",
-                    note.note_id
-                ));
+                return Err(format!("note {} bend {b} would leave ±48 st", note.note_id));
             }
             note.pitch_bend = b;
         }
@@ -187,7 +184,11 @@ pub fn warp_beat(map: &WarpMap, beat: f64) -> f64 {
         let (a, b) = (pair[0], pair[1]);
         if beat >= a.at_beats && beat <= b.at_beats {
             let span = b.at_beats - a.at_beats;
-            let t = if span == 0.0 { 0.0 } else { (beat - a.at_beats) / span };
+            let t = if span == 0.0 {
+                0.0
+            } else {
+                (beat - a.at_beats) / span
+            };
             return beat + a.shift_beats + t * (b.shift_beats - a.shift_beats);
         }
     }
@@ -231,10 +232,14 @@ pub fn resampled_len(frames: usize, ratio: f64) -> Result<usize, String> {
 /// Both tempos must be finite and > 0.
 pub fn loop_fit_ratio(source_tempo: f64, target_tempo: f64) -> Result<f64, String> {
     if !(source_tempo > 0.0 && source_tempo.is_finite()) {
-        return Err(format!("source tempo {source_tempo} must be finite and > 0"));
+        return Err(format!(
+            "source tempo {source_tempo} must be finite and > 0"
+        ));
     }
     if !(target_tempo > 0.0 && target_tempo.is_finite()) {
-        return Err(format!("target tempo {target_tempo} must be finite and > 0"));
+        return Err(format!(
+            "target tempo {target_tempo} must be finite and > 0"
+        ));
     }
     Ok(target_tempo / source_tempo)
 }
@@ -280,16 +285,22 @@ impl WarpMap {
             })?;
         let mut markers = Vec::with_capacity(list.len());
         for entry in list {
-            let at = entry.get("at_beats").and_then(|v| v.as_f64()).ok_or_else(|| {
-                "invalid warp map: every marker needs a numeric \"at_beats\"".to_string()
-            })?;
+            let at = entry
+                .get("at_beats")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| {
+                    "invalid warp map: every marker needs a numeric \"at_beats\"".to_string()
+                })?;
             let shift = entry
                 .get("shift_beats")
                 .and_then(|v| v.as_f64())
                 .ok_or_else(|| {
                     "invalid warp map: every marker needs a numeric \"shift_beats\"".to_string()
                 })?;
-            markers.push(WarpMarker { at_beats: at, shift_beats: shift });
+            markers.push(WarpMarker {
+                at_beats: at,
+                shift_beats: shift,
+            });
         }
         WarpMap::new(markers)
     }
@@ -383,8 +394,14 @@ mod tests {
         let id = WarpMap::new(vec![]).unwrap();
         assert_eq!(WarpMap::from_json(&id.to_json()).unwrap(), id);
         let map = WarpMap::new(vec![
-            WarpMarker { at_beats: 2.0, shift_beats: -0.25 },
-            WarpMarker { at_beats: 0.0, shift_beats: 0.1 },
+            WarpMarker {
+                at_beats: 2.0,
+                shift_beats: -0.25,
+            },
+            WarpMarker {
+                at_beats: 0.0,
+                shift_beats: 0.1,
+            },
         ])
         .unwrap();
         // Constructor sorts: JSON carries the sorted order.

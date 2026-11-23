@@ -56,11 +56,14 @@ pub mod wasm;
 
 pub use class::{DeviceClass, DEVICE_CLASS_PARAM};
 pub use kernel::DeviceError;
-pub use rack::{Macro, MacroBinding, Rack, RackError, RackNode, RackState, Split};
 pub use midifx::{apply_midi_chain, arp_pattern, arp_render};
-pub use presets::{apply_preset, find_preset, native_presets, preset_library_items, preset_op_payloads, to_device_preset, NativePreset, NATIVE_PRESETS};
+pub use presets::{
+    apply_preset, find_preset, native_presets, preset_library_items, preset_op_payloads,
+    to_device_preset, NativePreset, NATIVE_PRESETS,
+};
+pub use rack::{Macro, MacroBinding, Rack, RackError, RackNode, RackState, Split};
 pub use sampler::{DrumPad, DrumRack, SampleBank, SampleBuffer, DRUM_PAD_COUNT};
-pub use wasm::{WasmError, WasmNote, load_wasm_module};
+pub use wasm::{load_wasm_module, WasmError, WasmNote};
 #[cfg(feature = "wasm-runtime")]
 pub use wasm::{
     WasmClip, WasmGain, WasmKDelay, WASM_CLIP_CODE, WASM_CLIP_DEFAULT, WASM_CLIP_MAX,

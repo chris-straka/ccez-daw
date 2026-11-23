@@ -125,7 +125,8 @@ mod tests {
             loop_end: 4410,
         };
         let mut bank = SampleBank::empty();
-        bank.insert_wav("hit.wav", &crate::bounce::encode_wav(&src)).expect("decode");
+        bank.insert_wav("hit.wav", &crate::bounce::encode_wav(&src))
+            .expect("decode");
         let mut p = Project::new("p", "Sampled");
         p.tracks.push(crate::model::Track {
             id: "trk".to_string(),

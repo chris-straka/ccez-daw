@@ -216,11 +216,7 @@ impl AudioGraph {
     /// construction). The renderer realizes these as delay lines; the slow
     /// path itself needs no delay. Unknown edges error.
     pub fn edge_delay(&self, from: &str, to: &str) -> Result<u64, GraphError> {
-        if !self
-            .signal_edges
-            .iter()
-            .any(|(f, t)| f == from && t == to)
-        {
+        if !self.signal_edges.iter().any(|(f, t)| f == from && t == to) {
             if !self.nodes.contains_key(from) {
                 return Err(GraphError::UnknownNode(from.to_string()));
             }
@@ -324,8 +320,10 @@ mod tests {
     #[test]
     fn one_graph_carries_all_four_kinds() {
         let mut p = latency_project();
-        p.routing.push(edge("m1", "lfo", "dly", EdgeKind::Modulation));
-        p.routing.push(edge("s1", "src_a", "mix", EdgeKind::Sidechain));
+        p.routing
+            .push(edge("m1", "lfo", "dly", EdgeKind::Modulation));
+        p.routing
+            .push(edge("s1", "src_a", "mix", EdgeKind::Sidechain));
         p.routing.push(edge("n1", "clip", "src_a", EdgeKind::Midi));
         let g = AudioGraph::from_project(&p);
         assert_eq!(g.signal_edges.len(), 4); // 3 audio + 1 midi
@@ -348,8 +346,10 @@ mod tests {
     #[test]
     fn modulation_only_loop_is_not_a_cycle() {
         let mut p = latency_project();
-        p.routing.push(edge("m1", "dly", "src_a", EdgeKind::Modulation));
-        p.routing.push(edge("m2", "src_a", "dly", EdgeKind::Modulation));
+        p.routing
+            .push(edge("m1", "dly", "src_a", EdgeKind::Modulation));
+        p.routing
+            .push(edge("m2", "src_a", "dly", EdgeKind::Modulation));
         let g = AudioGraph::from_project(&p);
         g.topo_order().expect("control loops are legal");
     }
@@ -357,7 +357,8 @@ mod tests {
     #[test]
     fn audio_loop_is_a_cycle() {
         let mut p = latency_project();
-        p.routing.push(edge("loop", "mix", "src_a", EdgeKind::Audio));
+        p.routing
+            .push(edge("loop", "mix", "src_a", EdgeKind::Audio));
         let g = AudioGraph::from_project(&p);
         let err = g.topo_order().expect_err("signal loop must fail");
         assert!(matches!(err, GraphError::Cycle(_)));

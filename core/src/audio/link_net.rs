@@ -51,12 +51,12 @@
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
 };
 use std::time::Duration;
 
-use super::link::{LinkBus, LinkSession, unix_nanos_now};
+use super::link::{unix_nanos_now, LinkBus, LinkSession};
 
 /// Wire magic `"LNK1"` (big-endian u32). Packets with any other magic or
 /// short length are dropped silently — a corrupt datagram must never poison
@@ -249,8 +249,7 @@ fn run(inner: Arc<NodeInner>) {
                 // Extrapolate the sender's clock by one-way flight time so
                 // the anchor lands where the sender is *now*, not when it
                 // sent.
-                let flight_secs =
-                    unix_nanos_now().saturating_sub(pkt.sent_nanos) as f64 / 1e9;
+                let flight_secs = unix_nanos_now().saturating_sub(pkt.sent_nanos) as f64 / 1e9;
                 let flight_secs = flight_secs.clamp(0.0, 5.0);
                 let beats_now = pkt.beats + flight_secs * pkt.tempo_bpm / 60.0;
                 // Atomic check-and-adopt under one lock: a stale packet
@@ -266,8 +265,7 @@ fn run(inner: Arc<NodeInner>) {
                 );
             }
             Err(e)
-                if e.kind() == io::ErrorKind::WouldBlock
-                    || e.kind() == io::ErrorKind::TimedOut =>
+                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
             {
                 continue;
             }

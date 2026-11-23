@@ -341,7 +341,10 @@ fn worker_bin_near(
     // cargo profile dir.
     let mut child = dir;
     while let Some(parent) = child.parent() {
-        if child.file_name().is_some_and(|n| n == "deps" || n == "build") {
+        if child
+            .file_name()
+            .is_some_and(|n| n == "deps" || n == "build")
+        {
             candidates.push(named(parent));
         }
         child = parent;
@@ -380,14 +383,11 @@ impl PluginHost {
         if self.entries.contains_key(&descriptor.id) {
             return Err(HostError::DuplicatePlugin(descriptor.id.clone()));
         }
-        let mut plugin =
-            SandboxedPlugin::spawn(&self.worker_bin, &descriptor, self.sample_rate)?;
+        let mut plugin = SandboxedPlugin::spawn(&self.worker_bin, &descriptor, self.sample_rate)?;
         // Baseline snapshot: even a never-touched plugin restores exactly.
         let state = plugin.snapshot()?;
-        self.entries.insert(
-            descriptor.id.clone(),
-            Entry { descriptor, plugin },
-        );
+        self.entries
+            .insert(descriptor.id.clone(), Entry { descriptor, plugin });
         let _ = state;
         Ok(())
     }
@@ -518,7 +518,8 @@ mod tests {
     #[test]
     fn load_process_unload_mock() {
         let mut host = host();
-        host.load(PluginDescriptor::mock("gain1", "Gain")).expect("load");
+        host.load(PluginDescriptor::mock("gain1", "Gain"))
+            .expect("load");
         assert_eq!(host.ids(), vec!["gain1".to_string()]);
         host.set_param("gain1", "gain", 0.5).expect("set_param");
         let out = host.process("gain1", &[1.0, 0.5, -1.0]).expect("process");
@@ -531,7 +532,8 @@ mod tests {
     #[test]
     fn duplicate_and_unknown_ids_are_clean_errors() {
         let mut host = host();
-        host.load(PluginDescriptor::mock("g", "Gain")).expect("load");
+        host.load(PluginDescriptor::mock("g", "Gain"))
+            .expect("load");
         assert!(matches!(
             host.load(PluginDescriptor::mock("g", "Gain")),
             Err(HostError::DuplicatePlugin(_))
@@ -603,10 +605,7 @@ mod tests {
         host.kill("doomed").expect("kill");
         assert!(!host.alive("doomed").expect("alive check"));
         let err = host.process("doomed", &[1.0]).expect_err("must fail");
-        assert!(matches!(
-            err,
-            HostError::Sandbox(SandboxError::Crashed(_))
-        ));
+        assert!(matches!(err, HostError::Sandbox(SandboxError::Crashed(_))));
 
         let restored = host.recover("doomed").expect("recover");
         assert_eq!(restored, before);
@@ -710,10 +709,7 @@ mod tests {
         host.kill("doomed-vst3").expect("kill");
         assert!(!host.alive("doomed-vst3").expect("alive check"));
         let err = host.process("doomed-vst3", &[1.0]).expect_err("must fail");
-        assert!(matches!(
-            err,
-            HostError::Sandbox(SandboxError::Crashed(_))
-        ));
+        assert!(matches!(err, HostError::Sandbox(SandboxError::Crashed(_))));
 
         let restored = host.recover("doomed-vst3").expect("recover");
         assert_eq!(restored, before);
@@ -825,7 +821,11 @@ mod tests {
     fn wasm_without_feature_is_a_clean_error() {
         let mut host = host();
         let err = host
-            .load(PluginDescriptor::wasm("wgain", "WASM Gain", "/lib/gain.wasm"))
+            .load(PluginDescriptor::wasm(
+                "wgain",
+                "WASM Gain",
+                "/lib/gain.wasm",
+            ))
             .expect_err("wasm without the feature must fail");
         assert!(
             matches!(err, HostError::Sandbox(SandboxError::Protocol(_))),
@@ -854,7 +854,10 @@ mod tests {
     fn descriptor_json_stays_compatible() {
         let desc = PluginDescriptor::mock("m", "Mock");
         let json = serde_json::to_string(&desc).expect("serialize");
-        assert!(!json.contains("au_desc"), "no new key for old kinds: {json}");
+        assert!(
+            !json.contains("au_desc"),
+            "no new key for old kinds: {json}"
+        );
         assert!(
             !json.contains("plugin_uid"),
             "no selection key unless set: {json}"
@@ -863,9 +866,13 @@ mod tests {
         let back: PluginDescriptor = serde_json::from_str(legacy).expect("legacy reads");
         assert_eq!(back, desc);
         // A selection, once set, round-trips exactly.
-        let sel = PluginDescriptor::clap_with_plugin("s", "Sel", "/lib/a.clap", "com.ccez.gain-two");
+        let sel =
+            PluginDescriptor::clap_with_plugin("s", "Sel", "/lib/a.clap", "com.ccez.gain-two");
         let json = serde_json::to_string(&sel).expect("serialize");
-        assert!(json.contains("plugin_uid"), "selection must persist: {json}");
+        assert!(
+            json.contains("plugin_uid"),
+            "selection must persist: {json}"
+        );
         assert_eq!(
             serde_json::from_str::<PluginDescriptor>(&json).expect("back"),
             sel
@@ -983,8 +990,10 @@ mod tests {
         // prove the host (and a sibling plugin) survive, then recover
         // with the exact pre-crash state.
         let mut host = host();
-        host.load(PluginDescriptor::mock("doomed", "Doom")).expect("load");
-        host.load(PluginDescriptor::mock("sibling", "Sib")).expect("load");
+        host.load(PluginDescriptor::mock("doomed", "Doom"))
+            .expect("load");
+        host.load(PluginDescriptor::mock("sibling", "Sib"))
+            .expect("load");
         host.set_param("doomed", "gain", 0.25).expect("gain");
         host.set_param("sibling", "gain", 2.0).expect("gain");
         let before = host.snapshot("doomed").expect("snapshot");
@@ -995,10 +1004,7 @@ mod tests {
 
         // Crashed plugin errors; the session and sibling are untouched.
         let err = host.process("doomed", &[1.0]).expect_err("must fail");
-        assert!(matches!(
-            err,
-            HostError::Sandbox(SandboxError::Crashed(_))
-        ));
+        assert!(matches!(err, HostError::Sandbox(SandboxError::Crashed(_))));
         assert_eq!(
             host.process("sibling", &[1.0]).expect("sibling renders"),
             vec![2.0]
@@ -1044,7 +1050,10 @@ mod wasm_worker_tests {
         ))
         .expect("load gain guest");
         // Unity default, like the mock backend.
-        assert_eq!(host.process("wgain", &[1.0, -2.0]).expect("process"), vec![1.0, -2.0]);
+        assert_eq!(
+            host.process("wgain", &[1.0, -2.0]).expect("process"),
+            vec![1.0, -2.0]
+        );
         // Params cross the worker protocol as `SetParam`.
         host.set_param("wgain", "gain", 0.5).expect("set_param");
         assert_eq!(
@@ -1079,8 +1088,13 @@ mod wasm_worker_tests {
         // The crash: ungraceful kill, no handshake.
         host.kill("doomed").expect("kill");
         assert!(!host.alive("doomed").expect("alive check"));
-        let err = host.process("doomed", &[1.0]).expect_err("dead worker must fail");
-        assert!(matches!(err, HostError::Sandbox(SandboxError::Crashed(_))), "got {err:?}");
+        let err = host
+            .process("doomed", &[1.0])
+            .expect_err("dead worker must fail");
+        assert!(
+            matches!(err, HostError::Sandbox(SandboxError::Crashed(_))),
+            "got {err:?}"
+        );
 
         // Recovery respawns the worker and replays `Init` + `LoadWasm` +
         // `SetState`: the resurrected insert holds the exact pre-crash
@@ -1097,7 +1111,11 @@ mod wasm_worker_tests {
         let worker_bin = ensure_wasm_worker_built();
         let mut host = PluginHost::new(44_100.0, worker_bin);
         let err = host
-            .load(PluginDescriptor::wasm("ghost", "Ghost", "/nonexistent/ghost.wasm"))
+            .load(PluginDescriptor::wasm(
+                "ghost",
+                "Ghost",
+                "/nonexistent/ghost.wasm",
+            ))
             .expect_err("missing module must fail");
         assert!(matches!(err, HostError::Sandbox(_)), "got {err:?}");
         // The failure leaves no half-loaded entry behind (the worker's

@@ -108,7 +108,9 @@ impl BounceConfig {
 
     fn sample_count(&self, tempo: f64) -> Result<usize> {
         if !tempo.is_finite() || tempo <= 0.0 {
-            return Err(BounceError::BadRange(format!("tempo must be positive, got {tempo}")));
+            return Err(BounceError::BadRange(format!(
+                "tempo must be positive, got {tempo}"
+            )));
         }
         Ok((self.length_beats * 60.0 / tempo * self.sample_rate as f64).round() as usize)
     }
@@ -167,7 +169,9 @@ pub struct Sample {
 
 impl SampleBank {
     pub fn empty() -> Self {
-        Self { samples: HashMap::new() }
+        Self {
+            samples: HashMap::new(),
+        }
     }
 
     /// Decode WAV `bytes` under `key`, replacing any previous entry.
@@ -177,7 +181,10 @@ impl SampleBank {
         let stem = decode_wav(bytes)?;
         self.samples.insert(
             key.to_string(),
-            Sample { rate: stem.sample_rate, mono: stem.samples },
+            Sample {
+                rate: stem.sample_rate,
+                mono: stem.samples,
+            },
         );
         Ok(())
     }
@@ -369,8 +376,7 @@ fn clip_window(
                 if let Ok(audio) = resample_linear(&sample.mono, ratio) {
                     let start = ((clip.start_beats - config.start_beat) * sr / beats_per_sec)
                         .round() as i64;
-                    let end = ((clip_end - config.start_beat) * sr / beats_per_sec).round()
-                        as i64;
+                    let end = ((clip_end - config.start_beat) * sr / beats_per_sec).round() as i64;
                     for (i, s) in audio.iter().enumerate() {
                         let dst = start + i as i64;
                         if dst >= end {
@@ -471,7 +477,8 @@ fn clip_span_frames(
         }
     }
     let i0 = first?;
-    let t0 = (config.start_beat + (i0 as f64 / sr) * beats_per_sec - clip.start_beats) / beats_per_sec;
+    let t0 =
+        (config.start_beat + (i0 as f64 / sr) * beats_per_sec - clip.start_beats) / beats_per_sec;
     Some((i0, last + 1, t0))
 }
 
@@ -494,7 +501,11 @@ fn apply_ara_to_clip(
     let Some((i0, i1, t0)) = clip_span_frames(clip, tempo, config, buf.len()) else {
         return;
     };
-    let rendered = effect.render(&buf[i0..i1], config.sample_rate, entry.region.start_sec + t0);
+    let rendered = effect.render(
+        &buf[i0..i1],
+        config.sample_rate,
+        entry.region.start_sec + t0,
+    );
     buf[i0..i1].copy_from_slice(&rendered);
 }
 
@@ -612,7 +623,17 @@ pub fn encode_wav(stem: &Stem) -> Vec<u8> {
     }
     // smpl chunk body: 9 u32 header + 1 loop (6 u32).
     let mut smpl = Vec::new();
-    for v in [0u32, 0, 1_000_000_000 / stem.sample_rate.max(1), 60, 0, 0, 0, 1, 0] {
+    for v in [
+        0u32,
+        0,
+        1_000_000_000 / stem.sample_rate.max(1),
+        60,
+        0,
+        0,
+        0,
+        1,
+        0,
+    ] {
         smpl.extend_from_slice(&v.to_le_bytes());
     }
     for v in [0u32, 0, stem.loop_start, stem.loop_end, 0, 0] {
@@ -655,7 +676,9 @@ pub fn decode_wav(bytes: &[u8]) -> Result<Stem> {
     while pos + 8 <= bytes.len() {
         let id = &bytes[pos..pos + 4];
         let len = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
-        let body = bytes.get(pos + 8..pos + 8 + len).ok_or_else(|| err("truncated chunk"))?;
+        let body = bytes
+            .get(pos + 8..pos + 8 + len)
+            .ok_or_else(|| err("truncated chunk"))?;
         match id {
             b"fmt " => {
                 if len < 16
@@ -713,7 +736,8 @@ mod tests {
 
     fn scratch(name: &str) -> std::path::PathBuf {
         let n = BOUNCE_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("ccez-bounce-{name}-{}-{n}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ccez-bounce-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
     }
@@ -772,7 +796,8 @@ mod tests {
             loop_end: 800,
         };
         let mut bank = SampleBank::empty();
-        bank.insert_wav("hit.wav", &encode_wav(&src)).expect("decode");
+        bank.insert_wav("hit.wav", &encode_wav(&src))
+            .expect("decode");
         let mut p = Project::new("p", "P");
         p.tempo = 120.0;
         p.tracks.push(Track {
@@ -795,7 +820,11 @@ mod tests {
             source: "asset:hit.wav".to_string(),
         });
         let s = render_mix_with_bank(&p, &cfg(), &bank).expect("render");
-        assert!(s.peak() > 0.35, "decoded sample must sound, peak={}", s.peak());
+        assert!(
+            s.peak() > 0.35,
+            "decoded sample must sound, peak={}",
+            s.peak()
+        );
         assert!(s.peak() < 0.45, "gain applied once, peak={}", s.peak());
     }
 
@@ -826,7 +855,10 @@ mod tests {
             source: "asset:nope.wav".to_string(),
         });
         let s = render_mix_with_bank(&p, &cfg(), &SampleBank::empty()).expect("render");
-        assert!(s.samples.iter().all(|&x| x == 0.0), "missing asset = silence");
+        assert!(
+            s.samples.iter().all(|&x| x == 0.0),
+            "missing asset = silence"
+        );
     }
 
     #[test]
@@ -904,7 +936,10 @@ mod tests {
         assert_eq!((back.loop_start, back.loop_end), (0, 16000));
         assert_eq!(back.samples.len(), s.samples.len());
         for (a, b) in s.samples.iter().zip(back.samples.iter()) {
-            assert!((a - b).abs() < 1.0 / 32767.0 + 1e-6, "16-bit quantization only");
+            assert!(
+                (a - b).abs() < 1.0 / 32767.0 + 1e-6,
+                "16-bit quantization only"
+            );
         }
     }
 
@@ -964,7 +999,10 @@ mod tests {
         effects.insert("clip".to_string(), MockAraEffect::new(0.5, 0));
         let soft = render_track_with_ara(&p, "trk", &config, &ara, &effects).expect("ara render");
         assert_eq!(soft.samples.len(), plain.samples.len());
-        assert!((soft.peak() - plain.peak() * 0.5).abs() < 0.02, "peak halves");
+        assert!(
+            (soft.peak() - plain.peak() * 0.5).abs() < 0.02,
+            "peak halves"
+        );
         assert_ne!(soft.samples, plain.samples);
         // Unknown track still errors on the ARA path.
         assert!(matches!(
@@ -992,9 +1030,14 @@ mod tests {
             entry.source_offset_sec,
             entry.source_offset_sec + entry.region.len_sec(),
         );
-        let mut fx =
-            MockAraEffect::analyze(&audio, config.sample_rate, entry.region.start_sec, entry.region.len_sec(), 4)
-                .expect("analyze");
+        let mut fx = MockAraEffect::analyze(
+            &audio,
+            config.sample_rate,
+            entry.region.start_sec,
+            entry.region.len_sec(),
+            4,
+        )
+        .expect("analyze");
         assert_eq!(fx.notes.len(), 4);
         assert!(fx.notes.iter().all(|n| n.pitch_midi == 69));
         // Edit: mute the first two notes (the first half of the region).
@@ -1011,7 +1054,9 @@ mod tests {
         assert!(mix.samples[..8000].iter().all(|s| *s == 0.0));
         let mut muted = p.clone();
         muted.tracks[0].muted = true;
-        assert!(render_mix_with_ara(&muted, &config, &ara, &effects).expect("mix").is_silent());
+        assert!(render_mix_with_ara(&muted, &config, &ara, &effects)
+            .expect("mix")
+            .is_silent());
     }
 
     #[test]

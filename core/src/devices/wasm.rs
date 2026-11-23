@@ -93,8 +93,7 @@ pub fn load_wasm_module(path: &str) -> Result<WasmNote, WasmError> {
 pub fn load_wasm_module(path: &str) -> Result<WasmGain, WasmError> {
     let bytes = std::fs::read(path)
         .map_err(|e| WasmError::BadModule(format!("cannot read `{path}`: {e}")))?;
-    WasmGain::from_bytes(&bytes)
-        .map_err(|e| WasmError::BadModule(format!("`{path}`: {e}")))
+    WasmGain::from_bytes(&bytes).map_err(|e| WasmError::BadModule(format!("`{path}`: {e}")))
 }
 
 /// One loaded gain guest: a wasmtime instance behind the kernel contract.
@@ -117,7 +116,9 @@ pub struct WasmGain {
 #[cfg(feature = "wasm-runtime")]
 impl std::fmt::Debug for WasmGain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WasmGain").field("gain", &self.gain).finish()
+        f.debug_struct("WasmGain")
+            .field("gain", &self.gain)
+            .finish()
     }
 }
 
@@ -143,8 +144,8 @@ impl WasmGain {
     /// [`load_wasm_module`] reads off disk; tests pass staged bytes
     /// directly so the gate is hermetic).
     pub fn from_bytes(module_bytes: &[u8]) -> Result<Self, WasmError> {
-        let engine =
-            wasmtime::Engine::new(&wasmtime::Config::new()).map_err(|e| WasmError::Backend(e.to_string()))?;
+        let engine = wasmtime::Engine::new(&wasmtime::Config::new())
+            .map_err(|e| WasmError::Backend(e.to_string()))?;
         let module = wasmtime::Module::new(&engine, module_bytes)
             .map_err(|e| WasmError::BadModule(format!("bad module: {e}")))?;
         let mut store = wasmtime::Store::new(&engine, ());
@@ -165,8 +166,7 @@ impl WasmGain {
         let sample_fn = instance
             .get_typed_func::<f32, f32>(&mut store, "gain_sample")
             .map_err(|e| WasmError::BadModule(format!("missing gain_sample: {e}")))?;
-        init
-            .call(&mut store, 1.0)
+        init.call(&mut store, 1.0)
             .map_err(|e| WasmError::Backend(format!("gain_init: {e}")))?;
         Ok(Self {
             store,
@@ -309,8 +309,8 @@ impl WasmKDelay {
     /// Instantiate the kernel-delay guest from already-loaded bytes
     /// (tests pass staged bytes directly so the gate is hermetic).
     pub fn from_bytes(module_bytes: &[u8]) -> Result<Self, WasmError> {
-        let engine =
-            wasmtime::Engine::new(&wasmtime::Config::new()).map_err(|e| WasmError::Backend(e.to_string()))?;
+        let engine = wasmtime::Engine::new(&wasmtime::Config::new())
+            .map_err(|e| WasmError::Backend(e.to_string()))?;
         let module = wasmtime::Module::new(&engine, module_bytes)
             .map_err(|e| WasmError::BadModule(format!("bad module: {e}")))?;
         let mut store = wasmtime::Store::new(&engine, ());
@@ -331,8 +331,7 @@ impl WasmKDelay {
         let sample_fn = instance
             .get_typed_func::<f32, f32>(&mut store, "kdelay_sample")
             .map_err(|e| WasmError::BadModule(format!("missing kdelay_sample: {e}")))?;
-        init
-            .call(&mut store, (0.0, 0.0))
+        init.call(&mut store, (0.0, 0.0))
             .map_err(|e| WasmError::Backend(format!("kdelay_init: {e}")))?;
         Ok(Self {
             store,
@@ -362,7 +361,10 @@ impl WasmKDelay {
     /// [`WasmError::UnknownParam`] and the stored params are untouched.
     pub fn set_param(&mut self, id: &str, value: f64) -> Result<(), WasmError> {
         let (code, v) = if id == crate::devices::kernel::DELAY_SAMPLES_PARAM {
-            (WASM_KDELAY_CODE_DELAY, value.clamp(0.0, WASM_KDELAY_MAX_DELAY) as f32)
+            (
+                WASM_KDELAY_CODE_DELAY,
+                value.clamp(0.0, WASM_KDELAY_MAX_DELAY) as f32,
+            )
         } else if id == crate::devices::kernel::FEEDBACK_PARAM {
             (
                 WASM_KDELAY_CODE_FEEDBACK,
@@ -476,7 +478,9 @@ pub struct WasmClip {
 #[cfg(feature = "wasm-runtime")]
 impl std::fmt::Debug for WasmClip {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WasmClip").field("drive", &self.drive).finish()
+        f.debug_struct("WasmClip")
+            .field("drive", &self.drive)
+            .finish()
     }
 }
 
@@ -494,8 +498,8 @@ impl WasmClip {
     /// [`WasmClip::load`] reads off disk; tests pass staged bytes
     /// directly so the gate is hermetic).
     pub fn from_bytes(module_bytes: &[u8]) -> Result<Self, WasmError> {
-        let engine =
-            wasmtime::Engine::new(&wasmtime::Config::new()).map_err(|e| WasmError::Backend(e.to_string()))?;
+        let engine = wasmtime::Engine::new(&wasmtime::Config::new())
+            .map_err(|e| WasmError::Backend(e.to_string()))?;
         let module = wasmtime::Module::new(&engine, module_bytes)
             .map_err(|e| WasmError::BadModule(format!("bad module: {e}")))?;
         let mut store = wasmtime::Store::new(&engine, ());
@@ -516,8 +520,7 @@ impl WasmClip {
         let sample_fn = instance
             .get_typed_func::<f32, f32>(&mut store, "clip_sample")
             .map_err(|e| WasmError::BadModule(format!("missing clip_sample: {e}")))?;
-        init
-            .call(&mut store, WASM_CLIP_DEFAULT as f32)
+        init.call(&mut store, WASM_CLIP_DEFAULT as f32)
             .map_err(|e| WasmError::Backend(format!("clip_init: {e}")))?;
         Ok(Self {
             store,
@@ -674,12 +677,16 @@ mod tests {
             // Ragged blocks refuse (the kernel rule).
             let input = vec![0.5; 64];
             let mut output = vec![0.0; 63];
-            let err = dev.process(&input, &mut output).expect_err("ragged must refuse");
+            let err = dev
+                .process(&input, &mut output)
+                .expect_err("ragged must refuse");
             assert!(matches!(err, WasmError::BadBlock(_)));
             // Empty blocks are a legal no-op.
             dev.process(&[], &mut []).unwrap();
             // Typos surface; the stored gain is untouched.
-            let err = dev.set_param("cutoff", 440.0).expect_err("typo must refuse");
+            let err = dev
+                .set_param("cutoff", 440.0)
+                .expect_err("typo must refuse");
             assert!(matches!(err, WasmError::UnknownParam(_)));
             assert_eq!(dev.gain(), 1.0);
             // Bulk loads skip unknown ids instead.
@@ -731,12 +738,16 @@ mod tests {
             // Ragged blocks refuse (the kernel rule).
             let input = vec![0.5; 64];
             let mut output = vec![0.0; 63];
-            let err = dev.process(&input, &mut output).expect_err("ragged must refuse");
+            let err = dev
+                .process(&input, &mut output)
+                .expect_err("ragged must refuse");
             assert!(matches!(err, WasmError::BadBlock(_)));
             // Empty blocks are a legal no-op.
             dev.process(&[], &mut []).unwrap();
             // Typos surface; the stored params are untouched.
-            let err = dev.set_param("cutoff", 440.0).expect_err("typo must refuse");
+            let err = dev
+                .set_param("cutoff", 440.0)
+                .expect_err("typo must refuse");
             assert!(matches!(err, WasmError::UnknownParam(_)));
             assert_eq!((dev.delay_samples(), dev.feedback()), (0, 0.0));
             // Missing files refuse at the loader, too.
@@ -831,12 +842,16 @@ mod tests {
             // Ragged blocks refuse (the kernel rule).
             let input = vec![0.5; 64];
             let mut output = vec![0.0; 63];
-            let err = dev.process(&input, &mut output).expect_err("ragged must refuse");
+            let err = dev
+                .process(&input, &mut output)
+                .expect_err("ragged must refuse");
             assert!(matches!(err, WasmError::BadBlock(_)));
             // Empty blocks are a legal no-op.
             dev.process(&[], &mut []).unwrap();
             // Typos surface; the stored drive is untouched.
-            let err = dev.set_param("cutoff", 440.0).expect_err("typo must refuse");
+            let err = dev
+                .set_param("cutoff", 440.0)
+                .expect_err("typo must refuse");
             assert!(matches!(err, WasmError::UnknownParam(_)));
             assert_eq!(dev.drive(), 1.0);
             // Missing files refuse at the loader, too.
@@ -869,9 +884,7 @@ mod tests {
                 assert_eq!(dev.drive(), drive as f32);
                 // Hot sine: exercises the rails, not just the linear bit.
                 let input: Vec<f32> = (0..1024)
-                    .map(|t| {
-                        2.0 * (t as f32 * 220.0 * core::f32::consts::TAU / 48_000.0).sin()
-                    })
+                    .map(|t| 2.0 * (t as f32 * 220.0 * core::f32::consts::TAU / 48_000.0).sin())
                     .collect();
                 let (mut want, mut got) = (vec![0.0; 1024], vec![0.0; 1024]);
                 kernel::distortion_process(drive as f32, &input, &mut want).unwrap();

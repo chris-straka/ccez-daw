@@ -257,10 +257,7 @@ pub(crate) fn write_gain_guest_file() -> std::path::PathBuf {
     // worker's read of a half-written file.
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "ccez-gain-guest-{}-{n}.wat",
-        std::process::id()
-    ));
+    let path = std::env::temp_dir().join(format!("ccez-gain-guest-{}-{n}.wat", std::process::id()));
     std::fs::write(&path, GAIN_GUEST_WAT).expect("stage gain guest");
     path
 }

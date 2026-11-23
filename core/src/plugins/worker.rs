@@ -38,7 +38,9 @@ pub const WORKER_BIN_NAME: &str = "plugin-worker";
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum WorkerRequest {
     /// Start DSP at this sample rate. First request of every worker.
-    Init { sample_rate: f64 },
+    Init {
+        sample_rate: f64,
+    },
     /// Replace the mock backend with a real `.clap` bundle loaded through
     /// [`ClapBackend`] (activated at the `Init` rate). `plugin_id` selects
     /// one of [`ClapBackend::available_plugins`] (multi-plugin bundles);
@@ -81,16 +83,26 @@ pub enum WorkerRequest {
     /// `Init` first; a failure leaves the previous backend running so
     /// the host can report the error and tear the worker down cleanly.
     /// Needs feature `wasm-runtime` — without it the load fails cleanly.
-    LoadWasm { path: String },
-    SetParam { id: String, value: f64 },
+    LoadWasm {
+        path: String,
+    },
+    SetParam {
+        id: String,
+        value: f64,
+    },
     GetState,
-    SetState { state: PluginState },
+    SetState {
+        state: PluginState,
+    },
     /// Heartbeat: the worker answers immediately with no side effects.
     /// The host's watchdog sends these to tell "alive but mute" (a hung
     /// worker that never answers) apart from "alive and well".
     Ping,
     /// Render one mono block. `input.len()` is the block length.
-    Process { frames: usize, input: Vec<f32> },
+    Process {
+        frames: usize,
+        input: Vec<f32>,
+    },
     /// Report the plugin's processing latency in samples at the current
     /// rate (feeds [`LatencyMap`](super::latency::LatencyMap); 0 = none).
     GetLatency,
@@ -351,7 +363,8 @@ pub fn worker_main() -> i32 {
                 manufacturer,
             } => match sample_rate {
                 Some(rate) => {
-                    let desc = AuComponentDesc::new(component_type, component_subtype, manufacturer);
+                    let desc =
+                        AuComponentDesc::new(component_type, component_subtype, manufacturer);
                     match AuBackend::load(&desc, rate) {
                         Ok(au) => {
                             backend = Some(Backend::Au(Box::new(au)));
@@ -457,7 +470,13 @@ pub(crate) fn ensure_worker_built() {
         "Cargo.toml"
     };
     let status = std::process::Command::new("cargo")
-        .args(["build", "--manifest-path", manifest, "--bin", WORKER_BIN_NAME])
+        .args([
+            "build",
+            "--manifest-path",
+            manifest,
+            "--bin",
+            WORKER_BIN_NAME,
+        ])
         .status()
         .expect("cargo build launches");
     // Resolve again: before the build the lookup can only fall back.
@@ -508,10 +527,8 @@ pub(crate) fn ensure_wasm_worker_built() -> std::path::PathBuf {
                 "wasm plugin worker must build at {}",
                 bin.display()
             );
-            let staged = std::env::temp_dir().join(format!(
-                "ccez-plugin-worker-wasm-{}",
-                std::process::id()
-            ));
+            let staged = std::env::temp_dir()
+                .join(format!("ccez-plugin-worker-wasm-{}", std::process::id()));
             std::fs::copy(&bin, &staged).expect("stage wasm worker");
             staged
         })
@@ -527,7 +544,9 @@ mod tests {
         // Newline framing relies on requests serializing to ONE line: no
         // pretty printing, no embedded newlines, ever.
         for req in [
-            WorkerRequest::Init { sample_rate: 44100.0 },
+            WorkerRequest::Init {
+                sample_rate: 44100.0,
+            },
             WorkerRequest::LoadClap {
                 path: "/lib/gain.clap".to_string(),
                 plugin_id: None,

@@ -104,8 +104,7 @@ impl GuestDelay {
     /// Current delay in samples (test probe). Same formula as native:
     /// float truncation toward zero, then clamped into the line.
     pub fn delay_samples(&self) -> usize {
-        ((self.time_ms / 1000.0 * self.sample_rate) as usize)
-            .clamp(1, self.line.len() - 1)
+        ((self.time_ms / 1000.0 * self.sample_rate) as usize).clamp(1, self.line.len() - 1)
     }
 
     /// One sample through the loop: the body of the native block loop,
@@ -142,9 +141,7 @@ impl GuestDelay {
     /// surface, the [`crate::devices::class::set_param_value`] rule).
     pub fn apply_param(&mut self, id: &str, value: f64) -> Result<(), UnknownParam> {
         match id {
-            PARAM_TIME_MS => {
-                self.time_ms = value.clamp(1.0, MAX_DELAY_S as f64 * 1000.0) as f32
-            }
+            PARAM_TIME_MS => self.time_ms = value.clamp(1.0, MAX_DELAY_S as f64 * 1000.0) as f32,
             PARAM_FEEDBACK => self.feedback = value.clamp(0.0, 0.95) as f32,
             PARAM_MIX => self.mix = value.clamp(0.0, 1.0) as f32,
             _ => return Err(UnknownParam),

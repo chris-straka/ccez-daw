@@ -500,15 +500,17 @@ struct IPluginFactoryVtbl {
     get_factory_info:
         unsafe extern "system" fn(this: *mut IPluginFactory, info: *mut PFactoryInfoRaw) -> i32,
     count_classes: unsafe extern "system" fn(this: *mut IPluginFactory) -> i32,
-    get_class_info:
-        unsafe extern "system" fn(this: *mut IPluginFactory, index: i32, info: *mut PClassInfoRaw) -> i32,
-    create_instance:
-        unsafe extern "system" fn(
-            this: *mut IPluginFactory,
-            cid: *const u8,
-            iid: *const u8,
-            obj: *mut *mut c_void,
-        ) -> i32,
+    get_class_info: unsafe extern "system" fn(
+        this: *mut IPluginFactory,
+        index: i32,
+        info: *mut PClassInfoRaw,
+    ) -> i32,
+    create_instance: unsafe extern "system" fn(
+        this: *mut IPluginFactory,
+        cid: *const u8,
+        iid: *const u8,
+        obj: *mut *mut c_void,
+    ) -> i32,
 }
 
 type GetFactoryFn = unsafe extern "system" fn() -> *mut IPluginFactory;
@@ -562,13 +564,9 @@ impl Vst3Host {
         let lib = unsafe { libloading::Library::new(path) }
             .map_err(|e| Vst3Error::Load(format!("{}: {e}", path.display())))?;
         let get_factory: libloading::Symbol<GetFactoryFn> = unsafe {
-            lib.get(b"GetPluginFactory")
-                .map_err(|_| {
-                    Vst3Error::NoFactory(format!(
-                        "{} exports no GetPluginFactory",
-                        path.display()
-                    ))
-                })?
+            lib.get(b"GetPluginFactory").map_err(|_| {
+                Vst3Error::NoFactory(format!("{} exports no GetPluginFactory", path.display()))
+            })?
         };
         let factory = unsafe { get_factory() };
         if factory.is_null() {
@@ -747,11 +745,7 @@ impl Vst3Backend {
         Self::load_inner(path, sample_rate, Some(class_id))
     }
 
-    fn load_inner(
-        path: &str,
-        sample_rate: f64,
-        class_id: Option<&str>,
-    ) -> BackendResult<Self> {
+    fn load_inner(path: &str, sample_rate: f64, class_id: Option<&str>) -> BackendResult<Self> {
         // SAFETY: loading a bundle executes its code — that is the point,
         // and the worker process boundary is what contains it.
         let mut host = vst3_host::Vst3Host::builder()
@@ -864,8 +858,7 @@ impl Vst3Backend {
                     .map_err(|e| Vst3BackendError::Process(format!("{plugin_name}: {e}")))?;
             }
         }
-        let mut buffers =
-            vst3_host::audio::AudioBuffers::new(1, 1, chunk.len(), sample_rate);
+        let mut buffers = vst3_host::audio::AudioBuffers::new(1, 1, chunk.len(), sample_rate);
         buffers.inputs[0].copy_from_slice(chunk);
         plugin
             .process_audio(&mut buffers)
@@ -961,10 +954,7 @@ fn discover_vst3_params(
         if info.min >= info.max || info.min.is_nan() || info.max.is_nan() {
             return Err(format!("param `{}` has no range", info.name));
         }
-        values.insert(
-            info.name.clone(),
-            info.value.clamp(info.min, info.max),
-        );
+        values.insert(info.name.clone(), info.value.clamp(info.min, info.max));
         slots.push(Vst3ParamSlot {
             id: info.id,
             name: info.name,
@@ -1135,7 +1125,10 @@ pub(crate) mod fixture {
             .filter(|c| c.category == super::AUDIO_EFFECT_CLASS)
             .map(|c| c.name.as_str())
             .collect();
-        assert_eq!(effects, vec!["Ccez Gain", "Ccez Gain Two", "Ccez Stereo Gain"]);
+        assert_eq!(
+            effects,
+            vec!["Ccez Gain", "Ccez Gain Two", "Ccez Stereo Gain"]
+        );
         for class in &listed {
             assert_eq!(class.uid.len(), 32, "uid is 32 hex chars: {}", class.uid);
             assert!(class.uid.chars().all(|ch| ch.is_ascii_hexdigit()));
@@ -1219,10 +1212,7 @@ mod tests {
     /// Unique scratch dir per test (no `tempfile` dep in core).
     fn scratch(name: &str) -> PathBuf {
         let n = TEST_DIRS.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
-            "ccez-vst3-{name}-{}-{n}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("ccez-vst3-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("scratch dir");
         dir
@@ -1347,10 +1337,7 @@ mod tests {
                 "/lib64/libc.so.6",
             ]
         };
-        let path = candidates
-            .iter()
-            .map(PathBuf::from)
-            .find(|p| p.is_file());
+        let path = candidates.iter().map(PathBuf::from).find(|p| p.is_file());
         let Some(path) = path else { return };
         match Vst3Host::load_module(&path) {
             Err(Vst3Error::NoFactory(_)) => {}
@@ -1377,21 +1364,17 @@ mod tests {
         let ch = vec![0.0f32; 8];
         let mut out = vec![0.0f32; 8];
         assert!(plugin.process(&[], &mut [out.as_mut_slice()]).is_err());
-        assert!(
-            plugin
-                .process(&[ch.as_slice()], &mut [out.as_mut_slice()])
-                .is_ok()
-        );
+        assert!(plugin
+            .process(&[ch.as_slice()], &mut [out.as_mut_slice()])
+            .is_ok());
         let short = vec![0.0f32; 4];
         let mut out_b = vec![0.0f32; 8];
-        assert!(
-            plugin
-                .process(
-                    &[ch.as_slice(), short.as_slice()],
-                    &mut [out.as_mut_slice(), out_b.as_mut_slice()]
-                )
-                .is_err()
-        );
+        assert!(plugin
+            .process(
+                &[ch.as_slice(), short.as_slice()],
+                &mut [out.as_mut_slice(), out_b.as_mut_slice()]
+            )
+            .is_err());
     }
 
     #[test]

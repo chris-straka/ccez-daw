@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::MidiNote;
-use crate::engine::{ASSET_KIND_MIDI, Engine};
+use crate::engine::{Engine, ASSET_KIND_MIDI};
 
 /// One MIDI clip: notes in clip-local beats plus the clip length.
 /// `notes` is always kept sorted by `(start_beats, pitch, note_id)` so

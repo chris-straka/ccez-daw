@@ -156,10 +156,7 @@ mod tests {
     use std::time::Duration;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "ccez-ai-melody-{name}-{}",
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("ccez-ai-melody-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         d
     }
@@ -204,7 +201,9 @@ mod tests {
         });
         let dir = tmp_dir("job");
         let mut engine = Engine::create(&dir, project).expect("create");
-        edited.save_to_engine(&mut engine, "take:melody-ai").expect("save");
+        edited
+            .save_to_engine(&mut engine, "take:melody-ai")
+            .expect("save");
         let draft = Clip {
             id: "clip_mel_ai".to_string(),
             track_id: "trk_mel".to_string(),
