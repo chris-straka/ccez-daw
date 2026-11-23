@@ -1,12 +1,15 @@
-//! BS.1770-style loudness: momentary (400 ms), short-term (3 s),
-//! integrated (gated mean of 400 ms blocks, 75 % overlap).
+//! BS.1770-4 loudness: momentary (400 ms), short-term (3 s),
+//! integrated (gated mean of 400 ms blocks, 75 % overlap), backed by
+//! `af_core::loudness` so K-weighting and gating match the studio's
+//! single ITU-R BS.1770-4 implementation.
 //!
 //! Teaching note: LUFS answers "how loud does this *feel*?", not "how
 //! big are the samples?". Three ideas carry the whole standard:
 //!
 //! 1. **K-weighting**: two biquads (a +4 dB highshelf above ~1.7 kHz,
-//!    then a 60 Hz highpass) model the head/ear. Filtering first means a
-//!    dull rumble and a bright hiss with identical RMS read differently.
+//!    then the 38.135 Hz RLB highpass) model the head/ear. Filtering
+//!    first means a dull rumble and a bright hiss with identical RMS
+//!    read differently.
 //! 2. **Squaring + rectangular windows**: loudness is mean-square energy
 //!    over a window — 400 ms (momentary, a syllable) and 3 s
 //!    (short-term, a phrase). Rectangular (not exponential) so two
@@ -22,13 +25,15 @@
 //! therefore never allocates; [`LufsMeter::set_sample_rate`] reallocates
 //! and is a UI-thread-only call, like swapping the render graph.
 
+use af_core::loudness::{self, KWeighting};
+
 /// Offset from the BS.1770 calibration (a full-scale 1 kHz sine lands at
 /// −3.01 LUFS *before* K-weighting shifts it slightly).
-pub const CALIBRATION_OFFSET_DB: f32 = -0.691;
+pub const CALIBRATION_OFFSET_DB: f32 = loudness::CALIBRATION_OFFSET_DB as f32;
 /// Absolute gate: blocks quieter than this never count.
-pub const ABSOLUTE_GATE_LUFS: f32 = -70.0;
+pub const ABSOLUTE_GATE_LUFS: f32 = loudness::ABSOLUTE_GATE_LUFS as f32;
 /// Relative gate: blocks this far below the ungated mean never count.
-pub const RELATIVE_GATE_LU: f32 = -10.0;
+pub const RELATIVE_GATE_LU: f32 = loudness::RELATIVE_GATE_LU as f32;
 /// Momentary window in seconds.
 pub const MOMENTARY_SECS: f32 = 0.4;
 /// Short-term window in seconds.
@@ -44,101 +49,10 @@ pub const MAX_BLOCKS: usize = 108_000;
 /// Loudness of mean-square `ms`: `−0.691 + 10·log10(ms)`.
 /// Zero energy has no finite loudness → `NEG_INFINITY` (silence).
 pub fn lufs_of(ms: f32) -> f32 {
-    if ms <= 0.0 {
-        return f32::NEG_INFINITY;
-    }
-    CALIBRATION_OFFSET_DB + 10.0 * ms.log10()
+    loudness::energy_to_lufs(ms as f64) as f32
 }
 
-/// One Direct-Form-I biquad. Scalar state — no allocation.
-#[derive(Debug, Clone, Default)]
-struct Biquad {
-    b0: f32,
-    b1: f32,
-    b2: f32,
-    a1: f32,
-    a2: f32,
-    x1: f32,
-    x2: f32,
-    y1: f32,
-    y2: f32,
-}
-
-impl Biquad {
-    fn set(&mut self, b0: f32, b1: f32, b2: f32, a0: f32, a1: f32, a2: f32) {
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
-    }
-
-    /// RBJ highshelf with slope S (the K pre-filter shelf).
-    fn highshelf(&mut self, f0: f32, gain_db: f32, s: f32, sr: f32) {
-        let a = 10.0f32.powf(gain_db / 40.0);
-        let w0 = core::f32::consts::TAU * f0 / sr;
-        let (sin, cos) = w0.sin_cos();
-        let alpha = sin / 2.0 * ((a + 1.0 / a) * (1.0 / s - 1.0) + 2.0).sqrt();
-        let sq = 2.0 * a.sqrt() * alpha;
-        self.set(
-            a * ((a + 1.0) + (a - 1.0) * cos + sq),
-            -2.0 * a * ((a - 1.0) + (a + 1.0) * cos),
-            a * ((a + 1.0) + (a - 1.0) * cos - sq),
-            (a + 1.0) - (a - 1.0) * cos + sq,
-            2.0 * ((a - 1.0) - (a + 1.0) * cos),
-            (a + 1.0) - (a - 1.0) * cos - sq,
-        );
-    }
-
-    /// RBJ highpass (the K RLB filter).
-    fn highpass(&mut self, f0: f32, q: f32, sr: f32) {
-        let w0 = core::f32::consts::TAU * f0 / sr;
-        let (sin, cos) = w0.sin_cos();
-        let alpha = sin / (2.0 * q.max(0.05));
-        self.set(
-            (1.0 + cos) / 2.0,
-            -(1.0 + cos),
-            (1.0 + cos) / 2.0,
-            1.0 + alpha,
-            -2.0 * cos,
-            1.0 - alpha,
-        );
-    }
-
-    fn run(&mut self, x: f32) -> f32 {
-        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
-            - self.a1 * self.y1
-            - self.a2 * self.y2;
-        self.x2 = self.x1;
-        self.x1 = x;
-        self.y2 = self.y1;
-        self.y1 = y;
-        y
-    }
-}
-
-/// K-weighting: shelf then highpass, retuned per sample rate.
-#[derive(Debug, Clone)]
-struct KWeight {
-    shelf: Biquad,
-    hp: Biquad,
-}
-
-impl KWeight {
-    fn design(sample_rate: f32) -> Self {
-        let mut shelf = Biquad::default();
-        shelf.highshelf(1681.97444901, 3.98642805, 0.9, sample_rate);
-        let mut hp = Biquad::default();
-        hp.highpass(60.0, 0.5, sample_rate);
-        Self { shelf, hp }
-    }
-
-    fn run(&mut self, x: f32) -> f32 {
-        self.hp.run(self.shelf.run(x))
-    }
-}
-
-/// BS.1770-style loudness meter (mono).
+/// BS.1770-4 loudness meter (mono).
 ///
 /// Feed it blocks with [`LufsMeter::process`] on the audio thread, read
 /// [`LufsMeter::momentary_lufs`] / [`short_term_lufs`](LufsMeter::short_term_lufs) /
@@ -148,7 +62,7 @@ impl KWeight {
 #[derive(Debug, Clone)]
 pub struct LufsMeter {
     sample_rate: f32,
-    k: KWeight,
+    k: KWeighting,
     /// Ring of per-sample K-weighted energies (capacity = 3 s).
     ring: Vec<f32>,
     head: usize,
@@ -167,7 +81,7 @@ pub struct LufsMeter {
     hops: [f64; 4],
     hops_head: usize,
     hops_filled: usize,
-    blocks: Vec<f32>,
+    blocks: Vec<f64>,
 }
 
 impl LufsMeter {
@@ -176,7 +90,7 @@ impl LufsMeter {
         let short_term_len = (SHORT_TERM_SECS * sr).round() as usize;
         let mut m = Self {
             sample_rate: sr,
-            k: KWeight::design(sr),
+            k: KWeighting::new(sr as f64),
             ring: vec![0.0; short_term_len.max(1)],
             head: 0,
             count: 0,
@@ -218,8 +132,8 @@ impl LufsMeter {
         let cap = self.ring.len();
         debug_assert!(self.momentary_len <= cap);
         for &s in samples {
-            let y = self.k.run(s);
-            let e = (y as f64) * (y as f64);
+            let y = self.k.process_f32(s);
+            let e = y * y;
             // Each window evicts once IT is full. (An early version gated
             // both on the 3 s ring, so momentary carried 7.5x too many
             // samples — a test with steady tone pins both windows equal.)
@@ -257,13 +171,13 @@ impl LufsMeter {
         }
         let block_ms = acc / self.hops_filled as f64;
         if self.blocks.len() < MAX_BLOCKS {
-            self.blocks.push(block_ms as f32);
+            self.blocks.push(block_ms);
         }
     }
 
     fn window_lufs(&self, sum: f64, window: usize) -> f32 {
         let n = self.count.min(window as u64).max(1) as f64;
-        lufs_of((sum / n) as f32)
+        loudness::energy_to_lufs(sum / n) as f32
     }
 
     /// Loudness over the last 400 ms (−inf on silence).
@@ -279,18 +193,7 @@ impl LufsMeter {
     /// Gated integrated loudness, or `None` when every block sits below
     /// the −70 LUFS absolute gate (silence / nothing observed yet).
     pub fn integrated_lufs(&self) -> Option<f32> {
-        let abs_gate_ms = 10.0f32.powf((ABSOLUTE_GATE_LUFS - CALIBRATION_OFFSET_DB) / 10.0);
-        let above: Vec<f32> = self.blocks.iter().copied().filter(|&z| z > abs_gate_ms).collect();
-        if above.is_empty() {
-            return None;
-        }
-        let mean = above.iter().sum::<f32>() / above.len() as f32;
-        let rel_gate_ms = mean * 10.0f32.powf(RELATIVE_GATE_LU / 10.0);
-        let gated: Vec<f32> = above.into_iter().filter(|&z| z > rel_gate_ms).collect();
-        if gated.is_empty() {
-            return None;
-        }
-        Some(lufs_of(gated.iter().sum::<f32>() / gated.len() as f32))
+        loudness::integrated_from_block_powers(&self.blocks).map(|v| v as f32)
     }
 
     /// Gated 400 ms blocks observed so far (for tests / UI histograms).
@@ -364,13 +267,19 @@ mod tests {
             m.short_term_lufs(),
             m.integrated_lufs().expect("tone above gate"),
         );
-        assert!((mom - integ).abs() < 0.6, "momentary {mom} vs integrated {integ}");
-        assert!((st - integ).abs() < 0.6, "short-term {st} vs integrated {integ}");
+        assert!(
+            (mom - integ).abs() < 0.6,
+            "momentary {mom} vs integrated {integ}"
+        );
+        assert!(
+            (st - integ).abs() < 0.6,
+            "short-term {st} vs integrated {integ}"
+        );
     }
 
     #[test]
     fn dc_does_not_count() {
-        // The 60 Hz highpass eats DC — but only in steady state: a hard
+        // The 38.135 Hz RLB highpass eats DC — but only in steady state: a hard
         // 0→1 step rings the filter, so ramp in over 2 s (no step, no
         // ring) and hold +1.0 for 8 s. Unfiltered that DC would read
         // −0.69 LUFS; through the RLB stage it must (nearly) gate out.
@@ -396,5 +305,31 @@ mod tests {
         assert_eq!(m.integrated_lufs(), None);
         assert_eq!(m.momentary_lufs(), f32::NEG_INFINITY);
         assert_eq!(m.block_count(), 0);
+    }
+
+    #[test]
+    fn fifty_hz_sine_follows_bs1770_rlb_curve_not_60hz_hpf() {
+        // Under ITU-R BS.1770-4 (38.135 Hz RLB high-pass, Q = 0.5003),
+        // a 50 Hz mono sine at amplitude 0.1 (-23.01 dBFS RMS) reads ~ -27.64 LUFS.
+        // A 60 Hz RBJ HPF over-attenuates 50 Hz by ~3.8 dB and lands near -31.45 LUFS.
+        for sr in [48_000.0, 44_100.0] {
+            let mut m = LufsMeter::new(sr);
+            feed(&mut m, &sine(50.0, 0.1, sr, 4.0));
+            let integ = m.integrated_lufs().expect("50 Hz tone above gate");
+            let mom = m.momentary_lufs();
+            let st = m.short_term_lufs();
+            assert!(
+                (integ + 27.64).abs() < 0.5,
+                "sr={sr}: integrated read {integ:.2} LUFS, BS.1770 expects ~-27.64"
+            );
+            assert!(
+                (mom + 27.64).abs() < 0.5,
+                "sr={sr}: momentary read {mom:.2} LUFS, BS.1770 expects ~-27.64"
+            );
+            assert!(
+                (st + 27.64).abs() < 0.5,
+                "sr={sr}: short-term read {st:.2} LUFS, BS.1770 expects ~-27.64"
+            );
+        }
     }
 }

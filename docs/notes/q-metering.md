@@ -45,10 +45,12 @@ if let Some(snap) = reader.snapshot() {
 ideas (ITU-R BS.1770 style):
 
 1. **K-weighting**: two biquads — a +4 dB highshelf above ~1.7 kHz,
-   then a 60 Hz highpass — model the head/ear. A dull rumble and a
-   bright hiss with identical RMS read differently. Retuned per sample
-   rate in [`KWeight::design`](../../../core/src/meter/lufs.rs); a DC
-   test proves the highpass really eats DC.
+   then the 38.135 Hz RLB highpass — model the head/ear. A dull rumble
+   and a bright hiss with identical RMS read differently. Derived per
+   sample rate via `af_core::loudness::KWeighting` in
+   [`LufsMeter`](../../../core/src/meter/lufs.rs); a DC test proves the
+   highpass really eats DC, and a 50 Hz sine test verifies the BS.1770
+   RLB curve.
 2. **Rectangular windows**: mean-square energy over the last 400 ms
    ([`momentary_lufs`](../../../core/src/meter/lufs.rs), a syllable)
    and 3 s ([`short_term_lufs`](../../../core/src/meter/lufs.rs), a

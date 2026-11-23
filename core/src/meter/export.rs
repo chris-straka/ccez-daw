@@ -138,86 +138,7 @@ pub struct NormalizedBounce {
     pub wav_bytes: Vec<u8>,
 }
 
-/// Second-order IIR section (Direct Form I) for the K-weighting stages.
-#[derive(Debug, Clone, Copy)]
-struct Biquad {
-    b0: f64,
-    b1: f64,
-    b2: f64,
-    a1: f64,
-    a2: f64,
-    x1: f64,
-    x2: f64,
-    y1: f64,
-    y2: f64,
-}
-
-impl Biquad {
-    /// RBJ high-shelf: f0 in Hz, `gain_db` shelf gain, `slope` S (0.9 per BS.1770).
-    fn high_shelf(sample_rate: f64, f0: f64, gain_db: f64, slope: f64) -> Self {
-        let a = 10.0f64.powf(gain_db / 40.0);
-        let w0 = 2.0 * std::f64::consts::PI * f0 / sample_rate;
-        let alpha = w0.sin() / 2.0 * ((a + 1.0 / a) * (1.0 / slope - 1.0) + 2.0).sqrt();
-        let c = w0.cos();
-        let sq = a.sqrt();
-        let a0 = (a + 1.0) + (a - 1.0) * c + 2.0 * alpha * sq;
-        Self {
-            b0: a * ((a + 1.0) + (a - 1.0) * c + 2.0 * alpha * sq) / a0,
-            b1: -2.0 * a * ((a - 1.0) + (a + 1.0) * c) / a0,
-            b2: a * ((a + 1.0) + (a - 1.0) * c - 2.0 * alpha * sq) / a0,
-            a1: -2.0 * ((a - 1.0) + (a + 1.0) * c) / a0,
-            a2: ((a + 1.0) + (a - 1.0) * c - 2.0 * alpha * sq) / a0,
-            x1: 0.0,
-            x2: 0.0,
-            y1: 0.0,
-            y2: 0.0,
-        }
-    }
-
-    /// RBJ high-pass: f0 in Hz, Q (0.5006 per BS.1770 stage 2).
-    fn high_pass(sample_rate: f64, f0: f64, q: f64) -> Self {
-        let w0 = 2.0 * std::f64::consts::PI * f0 / sample_rate;
-        let alpha = w0.sin() / (2.0 * q);
-        let c = w0.cos();
-        let a0 = 1.0 + alpha;
-        Self {
-            b0: (1.0 + c) / 2.0 / a0,
-            b1: -(1.0 + c) / a0,
-            b2: (1.0 + c) / 2.0 / a0,
-            a1: -2.0 * c / a0,
-            a2: (1.0 - alpha) / a0,
-            x1: 0.0,
-            x2: 0.0,
-            y1: 0.0,
-            y2: 0.0,
-        }
-    }
-
-    fn step(&mut self, x: f64) -> f64 {
-        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
-            - self.a1 * self.y1
-            - self.a2 * self.y2;
-        self.x2 = self.x1;
-        self.x1 = x;
-        self.y2 = self.y1;
-        self.y1 = y;
-        y
-    }
-}
-
-/// K-weight one mono buffer (BS.1770 pre-filter + RLB high-pass).
-fn k_weight(samples: &[f32], sample_rate: u32) -> Vec<f64> {
-    let sr = sample_rate.max(1) as f64;
-    let mut shelf = Biquad::high_shelf(sr, 1681.0, 3.985, 0.9);
-    let mut hp = Biquad::high_pass(sr, 38.135, 0.5006);
-    samples
-        .iter()
-        .map(|s| hp.step(shelf.step(*s as f64)))
-        .collect()
-}
-
-/// Integrated loudness in LUFS (BS.1770-style: K-weighted, 400 ms blocks
-/// with 75 % overlap, −70 absolute gate, −10 LU relative gate).
+/// Integrated loudness in LUFS (ITU-R BS.1770-4 via `af_core::loudness`).
 ///
 /// Too-short input (< 1 block) measures its whole body as one block.
 /// Silence (nothing passes the gate) reports [`SILENCE_LUFS`].
@@ -225,49 +146,25 @@ pub fn measure_integrated_lufs(samples: &[f32], sample_rate: u32) -> f64 {
     if samples.is_empty() || sample_rate == 0 {
         return SILENCE_LUFS;
     }
-    let weighted = k_weight(samples, sample_rate);
-    let sr = sample_rate as f64;
-    let block = ((0.4 * sr).round() as usize).max(1).min(weighted.len());
-    let hop = ((0.1 * sr).round() as usize).max(1);
-    let mut block_lufs: Vec<(f64, f64)> = Vec::new();
-    let mut start = 0;
-    loop {
-        let end = (start + block).min(weighted.len());
-        let len = end - start;
-        if len == 0 {
-            break;
-        }
-        let mean = weighted[start..end].iter().map(|s| s * s).sum::<f64>() / len as f64;
-        let lufs = -0.691 + 10.0 * mean.max(f64::MIN_POSITIVE).log10();
-        block_lufs.push((mean, lufs));
-        if end == weighted.len() {
-            break;
-        }
-        start += hop;
-    }
-    // Absolute gate first, then the relative gate off the ungated mean.
-    let abs_pass: Vec<(f64, f64)> = block_lufs
-        .into_iter()
-        .filter(|(_, l)| *l >= ABSOLUTE_GATE_LUFS)
-        .collect();
-    if abs_pass.is_empty() {
-        return SILENCE_LUFS;
-    }
-    let ungated_mean = abs_pass.iter().map(|(m, _)| *m).sum::<f64>() / abs_pass.len() as f64;
-    let ungated_lufs = -0.691 + 10.0 * ungated_mean.max(f64::MIN_POSITIVE).log10();
-    let rel_floor = ungated_lufs + RELATIVE_GATE_LU;
-    let rel_pass: Vec<f64> = abs_pass
-        .iter()
-        .filter(|(_, l)| *l >= rel_floor)
-        .map(|(m, _)| *m)
-        .collect();
-    let gated = if rel_pass.is_empty() {
-        abs_pass.iter().map(|(m, _)| *m).collect::<Vec<_>>()
+    let min_block = ((0.4 * f64::from(sample_rate)).round() as usize).max(1);
+    let lufs = if samples.len() >= min_block {
+        af_core::loudness::measure(samples, 1, sample_rate).integrated_lufs
     } else {
-        rel_pass
+        let mut kw = af_core::loudness::KWeighting::new(f64::from(sample_rate));
+        let sum_sq: f64 = samples
+            .iter()
+            .map(|&s| {
+                let y = kw.process_f32(s);
+                y * y
+            })
+            .sum();
+        af_core::loudness::energy_to_lufs(sum_sq / samples.len() as f64)
     };
-    let mean = gated.iter().sum::<f64>() / gated.len() as f64;
-    -0.691 + 10.0 * mean.max(f64::MIN_POSITIVE).log10()
+    if lufs.is_finite() && lufs >= SILENCE_LUFS {
+        lufs
+    } else {
+        SILENCE_LUFS
+    }
 }
 
 /// True-peak estimate (linear): max |sample| over the raw samples and a
@@ -301,11 +198,7 @@ pub fn true_peak_dbfs(samples: &[f32]) -> f64 {
 /// Silence (at or below the absolute gate, or a zero peak) is the safe
 /// no-op: gain 1.0, never limited — matching silence would divide by zero
 /// and prove nothing (same rule as [`crate::mixer::match_gain_for`]).
-pub fn gain_for_target(
-    measured_lufs: f64,
-    true_peak: f32,
-    target: LoudnessTarget,
-) -> (f32, bool) {
+pub fn gain_for_target(measured_lufs: f64, true_peak: f32, target: LoudnessTarget) -> (f32, bool) {
     if !measured_lufs.is_finite() || measured_lufs <= ABSOLUTE_GATE_LUFS || true_peak <= 0.0 {
         return (1.0, false);
     }
@@ -359,7 +252,9 @@ pub fn normalize_mix_to_target(
     target: LoudnessTarget,
 ) -> Result<NormalizedBounce> {
     let mut mix_only = project.clone();
-    mix_only.tracks.retain(|t| !is_reference_track(&t.id, &t.name));
+    mix_only
+        .tracks
+        .retain(|t| !is_reference_track(&t.id, &t.name));
     let keep: std::collections::BTreeSet<String> =
         mix_only.tracks.iter().map(|t| t.id.clone()).collect();
     mix_only.clips.retain(|c| keep.contains(&c.track_id));
@@ -428,7 +323,10 @@ mod tests {
             "ceiling holds: {} dBFS",
             report.output_true_peak_dbfs
         );
-        assert_eq!((out.loop_start, out.loop_end), (stem.loop_start, stem.loop_end));
+        assert_eq!(
+            (out.loop_start, out.loop_end),
+            (stem.loop_start, stem.loop_end)
+        );
         assert_eq!(out.sample_rate, stem.sample_rate);
     }
 
