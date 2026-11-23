@@ -124,7 +124,7 @@ pub fn validate_punch(start_beats: f64, end_beats: f64) -> Result<PunchRange> {
             "punch cannot start before beat 0".to_string(),
         ));
     }
-    if !(start_beats < end_beats) {
+    if start_beats >= end_beats {
         return Err(RecordError::BadPunchRange(format!(
             "need start < end, got [{start_beats}, {end_beats})"
         )));
@@ -168,7 +168,7 @@ pub fn count_in_beats(count_in: &CountIn) -> Result<f64> {
 
 /// Count-in length in seconds at `tempo_bpm`.
 pub fn count_in_seconds(count_in: &CountIn, tempo_bpm: f64) -> Result<f64> {
-    if !(tempo_bpm > 0.0) || !tempo_bpm.is_finite() {
+    if !tempo_bpm.is_finite() || tempo_bpm <= 0.0 {
         return Err(RecordError::BadTempo(format!(
             "tempo must be a positive finite BPM, got {tempo_bpm}"
         )));
@@ -218,12 +218,12 @@ pub fn latency_beats(
     sample_rate_hz: f64,
     tempo_bpm: f64,
 ) -> Result<f64> {
-    if !(sample_rate_hz > 0.0) || !sample_rate_hz.is_finite() {
+    if !sample_rate_hz.is_finite() || sample_rate_hz <= 0.0 {
         return Err(RecordError::BadLatency(format!(
             "sample rate must be positive finite, got {sample_rate_hz}"
         )));
     }
-    if !(tempo_bpm > 0.0) || !tempo_bpm.is_finite() {
+    if !tempo_bpm.is_finite() || tempo_bpm <= 0.0 {
         return Err(RecordError::BadTempo(format!(
             "tempo must be a positive finite BPM, got {tempo_bpm}"
         )));
@@ -361,7 +361,7 @@ pub fn punch_range_for_section(
     section_start_beats: f64,
     section_length_beats: f64,
 ) -> Result<PunchRange> {
-    if !section_length_beats.is_finite() || !(section_length_beats > 0.0) {
+    if !section_length_beats.is_finite() || section_length_beats <= 0.0 {
         return Err(RecordError::BadPunchRange(format!(
             "section length must be positive finite, got {section_length_beats}"
         )));

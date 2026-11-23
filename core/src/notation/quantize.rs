@@ -371,10 +371,7 @@ pub fn quantize(clip: &MidiClip, opts: &QuantizeOptions) -> Result<Score, String
 pub fn to_midi(score: &Score) -> MidiClip {
     let bar = score.meter.bar_beats().unwrap_or(4.0);
     let total = (score.measures.len() as f64 * bar).max(bar);
-    let mut clip = MidiClip::new(total);
-    let mut next_id: u32 = 1;
-    // Open tie segments keyed by pitch: (segment_start_beats, total_len).
-    let mut open: std::collections::HashMap<u8, (f64, f64)> = std::collections::HashMap::new();
+    let mut builder = ScoreBuilder::new(total);
 
     let mut at = 0.0f64;
     for m in &score.measures {
@@ -389,74 +386,80 @@ pub fn to_midi(score: &Score) -> MidiClip {
                 MeasureEvent::Rest(_) => vec![],
             };
             for (pitch, tie_start, tie_stop) in notes {
-                pending_add(
-                    &mut open,
-                    &mut clip,
-                    &mut next_id,
-                    pitch,
-                    at + off,
-                    beats,
-                    tie_stop,
-                    tie_start,
-                );
+                builder.add(pitch, at + off, beats, tie_stop, tie_start);
             }
             off += beats;
         }
         at += bar;
     }
-    // A tie left open at the score end is still a real note — close it.
-    let mut dangling: Vec<(u8, f64, f64)> =
-        open.drain().map(|(p, (start, len))| (p, start, len)).collect();
-    dangling.sort_by_key(|(p, _, _)| *p);
-    for (pitch, start, len) in dangling {
-        push_note(&mut clip, &mut next_id, pitch, start, len);
-    }
-    // Direct pushes skip MidiClip's sorted insert — restore sort order.
-    clip.notes.sort_by(|a, b| {
-        a.start_beats
-            .partial_cmp(&b.start_beats)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(a.pitch.cmp(&b.pitch))
-            .then(a.note_id.cmp(&b.note_id))
-    });
-    clip
+    builder.finish()
 }
 
-/// Accumulate tied segments: a tie_stop extends the pending segment for
-/// that pitch; otherwise a new note opens. A finished (non-tie_start)
-/// segment is pushed to the clip.
-fn pending_add(
-    open: &mut std::collections::HashMap<u8, (f64, f64)>,
-    clip: &mut MidiClip,
-    next_id: &mut u32,
-    pitch: u8,
-    onset: f64,
-    len: f64,
-    tie_stop: bool,
-    tie_start: bool,
-) {
-    if tie_stop {
-        if let Some((start, total)) = open.remove(&pitch) {
-            let total = total + len;
-            if tie_start {
-                open.insert(pitch, (start, total));
-            } else {
-                push_note(clip, next_id, pitch, start, total);
-            }
-            return;
+struct ScoreBuilder {
+    clip: MidiClip,
+    next_id: u32,
+    // Open tie segments keyed by pitch: (segment_start_beats, total_len).
+    open: std::collections::HashMap<u8, (f64, f64)>,
+}
+
+impl ScoreBuilder {
+    fn new(total: f64) -> Self {
+        Self {
+            clip: MidiClip::new(total),
+            next_id: 1,
+            open: std::collections::HashMap::new(),
         }
-        // Stray tie_stop with nothing open: treat as a plain note.
     }
-    if tie_start {
-        // Merge with an existing open segment if the onsets chain
-        // (defensive: normally tie_stop accompanies continuation).
-        if let Some((start, total)) = open.remove(&pitch) {
-            open.insert(pitch, (start, total + len));
-        } else {
-            open.insert(pitch, (onset, len));
+
+    /// Accumulate tied segments: a tie_stop extends the pending segment for
+    /// that pitch; otherwise a new note opens. A finished (non-tie_start)
+    /// segment is pushed to the clip.
+    fn add(&mut self, pitch: u8, onset: f64, len: f64, tie_stop: bool, tie_start: bool) {
+        if tie_stop {
+            if let Some((start, total)) = self.open.remove(&pitch) {
+                let total = total + len;
+                if tie_start {
+                    self.open.insert(pitch, (start, total));
+                } else {
+                    push_note(&mut self.clip, &mut self.next_id, pitch, start, total);
+                }
+                return;
+            }
+            // Stray tie_stop with nothing open: treat as a plain note.
         }
-    } else {
-        push_note(clip, next_id, pitch, onset, len);
+        if tie_start {
+            // Merge with an existing open segment if the onsets chain
+            // (defensive: normally tie_stop accompanies continuation).
+            if let Some((start, total)) = self.open.remove(&pitch) {
+                self.open.insert(pitch, (start, total + len));
+            } else {
+                self.open.insert(pitch, (onset, len));
+            }
+        } else {
+            push_note(&mut self.clip, &mut self.next_id, pitch, onset, len);
+        }
+    }
+
+    fn finish(mut self) -> MidiClip {
+        // A tie left open at the score end is still a real note — close it.
+        let mut dangling: Vec<(u8, f64, f64)> = self
+            .open
+            .drain()
+            .map(|(p, (start, len))| (p, start, len))
+            .collect();
+        dangling.sort_by_key(|(p, _, _)| *p);
+        for (pitch, start, len) in dangling {
+            push_note(&mut self.clip, &mut self.next_id, pitch, start, len);
+        }
+        // Direct pushes skip MidiClip's sorted insert — restore sort order.
+        self.clip.notes.sort_by(|a, b| {
+            a.start_beats
+                .partial_cmp(&b.start_beats)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.pitch.cmp(&b.pitch))
+                .then(a.note_id.cmp(&b.note_id))
+        });
+        self.clip
     }
 }
 

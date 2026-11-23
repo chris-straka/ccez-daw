@@ -44,7 +44,7 @@ pub fn remove_dc(samples: &mut [f32]) {
 /// music). Clicks are replaced by linear interpolation across `radius`
 /// frames each side. Returns the repaired count.
 pub fn declick(samples: &mut [f32], threshold: f32, radius: usize, ratio: f32) -> usize {
-    if samples.len() < 3 || !(threshold > 0.0) || radius == 0 {
+    if samples.len() < 3 || threshold <= 0.0 || threshold.is_nan() || radius == 0 {
         return 0;
     }
     // Detect first (read-only), repair after — a repair must never seed a
@@ -54,9 +54,7 @@ pub fn declick(samples: &mut [f32], threshold: f32, radius: usize, ratio: f32) -
         let x = samples[i].abs();
         if x > threshold {
             let beside = samples[i - 1].abs().max(samples[i + 1].abs());
-            if beside > 0.0 && x > ratio * beside {
-                clicks.push(i);
-            } else if beside == 0.0 {
+            if beside == 0.0 || (beside > 0.0 && x > ratio * beside) {
                 clicks.push(i);
             }
         }
@@ -67,9 +65,9 @@ pub fn declick(samples: &mut [f32], threshold: f32, radius: usize, ratio: f32) -
         let hi = (i + radius).min(samples.len() - 1);
         let (a, b) = (samples[lo], samples[hi]);
         let span = (hi - lo).max(1) as f32;
-        for k in lo..=hi {
-            let t = (k - lo) as f32 / span;
-            samples[k] = a + t * (b - a);
+        for (offset, sample) in samples[lo..=hi].iter_mut().enumerate() {
+            let t = offset as f32 / span;
+            *sample = a + t * (b - a);
         }
     }
     clicks.len()
@@ -153,8 +151,8 @@ pub fn notch_band(
         }
         let lo = band.saturating_sub(width);
         let hi = (band + width).min(frame.len() - 1);
-        for b in lo..=hi {
-            frame[b] *= cut;
+        for cell in &mut frame[lo..=hi] {
+            *cell *= cut;
         }
     }
     Ok(())
@@ -279,7 +277,7 @@ mod tests {
             *s = 0.5;
         }
         assert_eq!(trim_silence(&buf, 0.01), Some((16, 47)));
-        assert_eq!(trim_silence(&vec![0.0; 8], 0.01), None);
+        assert_eq!(trim_silence(&[0.0; 8], 0.01), None);
         let hits = detect_transients(&buf, 4, 2.0);
         assert!(hits.iter().any(|&h| (12..=20).contains(&h)), "hits={hits:?}");
     }

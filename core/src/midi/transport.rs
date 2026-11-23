@@ -130,6 +130,7 @@ impl Recorder {
 
     /// Open a voice at `at_beats`. A second on without an off re-triggers:
     /// the stale voice is closed at the new onset (never silently dropped).
+    #[allow(clippy::too_many_arguments)]
     pub fn note_on(
         &mut self,
         pitch: u8,

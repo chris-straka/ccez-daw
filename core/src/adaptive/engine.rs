@@ -200,10 +200,7 @@ impl AdaptiveEngine {
             let mix = self.layers.get_mut(&id).expect("layer mix");
             let from_gain = mix.gain_at(at);
             mix.settle(at);
-            if fade_samples == 0 {
-                mix.gain = to_gain;
-                mix.ramp = None;
-            } else if (from_gain - to_gain).abs() < f64::EPSILON {
+            if fade_samples == 0 || (from_gain - to_gain).abs() < f64::EPSILON {
                 mix.gain = to_gain;
                 mix.ramp = None;
             } else {
@@ -263,7 +260,7 @@ impl AdaptiveEngine {
             let ramp = mix.ramp.clone();
             let settled = mix.gain;
             let len = stem.len() as u64;
-            for i in 0..frames {
+            for (i, sample) in out.iter_mut().enumerate() {
                 let t = start + i as u64;
                 let state_gain = if force_audible {
                     1.0
@@ -276,7 +273,7 @@ impl AdaptiveEngine {
                 if state_gain == 0.0 {
                     continue;
                 }
-                out[i] += stem[(t % len) as usize] * stem_gain * state_gain;
+                *sample += stem[(t % len) as usize] * stem_gain * state_gain;
             }
         }
         // Bake in ramps fully covered by this block.
@@ -295,7 +292,12 @@ impl AdaptiveEngine {
 
 /// Whole beats → whole samples at `tempo` BPM. Non-positive beats → 0.
 fn beats_to_samples(fade_beats: f64, tempo: f64, sample_rate: f64) -> u64 {
-    if !(fade_beats > 0.0) || !(tempo > 0.0) || !sample_rate.is_finite() {
+    if fade_beats <= 0.0
+        || fade_beats.is_nan()
+        || tempo <= 0.0
+        || tempo.is_nan()
+        || !sample_rate.is_finite()
+    {
         return 0;
     }
     ((fade_beats * 60.0 / tempo * sample_rate).round() as u64).max(1)

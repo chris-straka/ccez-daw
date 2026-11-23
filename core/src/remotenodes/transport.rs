@@ -517,7 +517,8 @@ impl RemoteSession {
                 .collect();
         }
         // Send phase: render each block's upstream inputs locally, ship all.
-        let mut pending: Vec<(u64, u64, BTreeMap<String, Vec<f32>>, f64)> = Vec::new();
+        type PendingRender = (u64, u64, BTreeMap<String, Vec<f32>>, f64);
+        let mut pending: Vec<PendingRender> = Vec::new();
         let stream_ok = (|| -> Result<(), TransportError> {
             for i in 0..count {
                 let block = start_block + i as u64;

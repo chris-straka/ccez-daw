@@ -99,7 +99,7 @@ pub fn effective_transition(
 /// construction as the export renderer, kept local so this module needs no
 /// new dependencies).
 fn fnv1a64(s: &str) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8482_22_25;
+    let mut h: u64 = 0xcbf2_9ce4_8482_2225;
     for b in s.bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
@@ -114,7 +114,7 @@ pub fn render_audition(
     snapshot: &GameStateSnapshot,
     config: &AuditionConfig,
 ) -> Vec<f32> {
-    if config.sample_rate == 0 || !(config.seconds > 0.0) {
+    if config.sample_rate == 0 || config.seconds <= 0.0 || config.seconds.is_nan() {
         return Vec::new();
     }
     let frames = (config.sample_rate as f64 * config.seconds as f64).round() as usize;

@@ -260,10 +260,10 @@ impl Resequencer {
     /// Transport callback: fire the armed switch once its beat arrives.
     /// Returns the newly audible state, if the section changed.
     pub fn poll(&mut self, position_beats: f64) -> Option<String> {
-        let due = match &self.pending {
-            Some(p) if position_beats + BEAT_EPS >= p.switch_beat => true,
-            _ => false,
-        };
+        let due = matches!(
+            &self.pending,
+            Some(p) if position_beats + BEAT_EPS >= p.switch_beat
+        );
         if due {
             let pending = self.pending.take().expect("checked");
             self.current_state = pending.to_state.clone();

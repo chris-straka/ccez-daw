@@ -60,21 +60,21 @@ pub fn fourcc_string(code: u32) -> String {
 }
 
 /// `kAudioUnitType_Output` (`auou`): hardware I/O units.
-pub const AU_TYPE_OUTPUT: u32 = fourcc([b'a', b'u', b'o', b'u']);
+pub const AU_TYPE_OUTPUT: u32 = fourcc(*b"auou");
 /// `kAudioUnitType_MusicDevice` (`aumu`): software instruments.
-pub const AU_TYPE_MUSIC_DEVICE: u32 = fourcc([b'a', b'u', b'm', b'u']);
+pub const AU_TYPE_MUSIC_DEVICE: u32 = fourcc(*b"aumu");
 /// `kAudioUnitType_Effect` (`aufx`): filters, dynamics, delays, …
-pub const AU_TYPE_EFFECT: u32 = fourcc([b'a', b'u', b'f', b'x']);
+pub const AU_TYPE_EFFECT: u32 = fourcc(*b"aufx");
 /// `kAudioUnitType_Mixer` (`aumx`): mixers and splitters.
-pub const AU_TYPE_MIXER: u32 = fourcc([b'a', b'u', b'm', b'x']);
+pub const AU_TYPE_MIXER: u32 = fourcc(*b"aumx");
 /// `kAudioUnitType_Panner` (`aupn`): panners and spatializers.
-pub const AU_TYPE_PANNER: u32 = fourcc([b'a', b'u', b'p', b'n']);
+pub const AU_TYPE_PANNER: u32 = fourcc(*b"aupn");
 /// `kAudioUnitType_Generator` (`augn`): signal sources without input.
-pub const AU_TYPE_GENERATOR: u32 = fourcc([b'a', b'u', b'g', b'n']);
+pub const AU_TYPE_GENERATOR: u32 = fourcc(*b"augn");
 /// `kAudioUnitType_FormatConverter` (`aufc`): sample-rate/format bridges.
-pub const AU_TYPE_FORMAT_CONVERTER: u32 = fourcc([b'a', b'u', b'f', b'c']);
+pub const AU_TYPE_FORMAT_CONVERTER: u32 = fourcc(*b"aufc");
 /// Apple-as-manufacturer (`appl`): the units macOS ships with.
-pub const AU_MANUFACTURER_APPLE: u32 = fourcc([b'a', b'p', b'p', b'l']);
+pub const AU_MANUFACTURER_APPLE: u32 = fourcc(*b"appl");
 
 /// Environment flag that opts into AU instantiation. Any of
 /// `1` / `true` / `yes` / `on` (case-insensitive); unset or anything else
@@ -385,7 +385,7 @@ mod ffi {
     }
 
     /// The mono case of the variable-length `AudioBufferList`: one count
-    /// + one inline `AudioBuffer` (24 bytes). v1 renders mono only, like
+    /// plus one inline `AudioBuffer` (24 bytes). v1 renders mono only, like
     /// the CLAP/VST3 backends.
     #[repr(C)]
     #[derive(Debug)]
@@ -1050,7 +1050,7 @@ impl AuBackend {
         let status = unsafe {
             ffi::AudioUnitGetPropertyInfo(handle, PROP_PARAMETER_LIST, SCOPE_GLOBAL, 0, &mut size, std::ptr::null_mut())
         };
-        if status != 0 || size == 0 || size % 4 != 0 {
+        if status != 0 || size == 0 || !size.is_multiple_of(4) {
             return;
         }
         let count = (size / 4).min(1024) as usize;
@@ -1093,7 +1093,11 @@ impl AuBackend {
                 .unwrap_or_else(|| format!("param{id}"));
             // A hostile descriptor (empty/inverted range) is skipped, the
             // way the VST3 backend refuses it — never clamped into NaN.
-            if !(info.min_value < info.max_value) || !info.default_value.is_finite() {
+            if info.min_value >= info.max_value
+                || info.min_value.is_nan()
+                || info.max_value.is_nan()
+                || !info.default_value.is_finite()
+            {
                 Self::release_param_strings(&info);
                 continue;
             }
@@ -1119,7 +1123,7 @@ impl AuBackend {
             });
             Self::release_param_strings(&info);
         }
-        self.slots.sort_by(|a, b| a.id.cmp(&b.id));
+        self.slots.sort_by_key(|s| s.id);
     }
 
     #[cfg(target_os = "macos")]
@@ -1177,7 +1181,7 @@ impl AuBackend {
         #[cfg(not(target_os = "macos"))]
         {
             let _ = clamped;
-            return Err(AuError::UnsupportedPlatform);
+            Err(AuError::UnsupportedPlatform)
         }
         #[cfg(target_os = "macos")]
         {
@@ -1414,8 +1418,8 @@ mod tests {
 
     #[test]
     fn fourcc_packs_ascii_big_endian() {
-        assert_eq!(fourcc([b'a', b'u', b'f', b'x']), 0x6175_6678);
-        assert_eq!(fourcc_bytes(AU_TYPE_EFFECT), [b'a', b'u', b'f', b'x']);
+        assert_eq!(fourcc(*b"aufx"), 0x6175_6678);
+        assert_eq!(fourcc_bytes(AU_TYPE_EFFECT), *b"aufx");
         assert_eq!(fourcc_string(AU_TYPE_MUSIC_DEVICE), "aumu");
         assert_eq!(fourcc_string(AU_MANUFACTURER_APPLE), "appl");
         assert_eq!(fourcc_string(0x0000_0000), "????");
@@ -1423,7 +1427,7 @@ mod tests {
 
     #[test]
     fn desc_display_names_codes() {
-        let desc = AuComponentDesc::apple(AU_TYPE_EFFECT, fourcc([b'l', b'm', b't', b'r']));
+        let desc = AuComponentDesc::apple(AU_TYPE_EFFECT, fourcc(*b"lmtr"));
         assert_eq!(desc.to_string(), "aufx:lmtr:appl");
         assert_eq!(AuComponentDesc::any().to_string(), "????:????:????");
     }
@@ -1576,7 +1580,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     fn apple_delay() -> AuComponentDesc {
-        AuComponentDesc::apple(AU_TYPE_EFFECT, fourcc([b'd', b'e', b'l', b'y']))
+        AuComponentDesc::apple(AU_TYPE_EFFECT, fourcc(*b"dely"))
     }
 
     #[test]
@@ -1589,10 +1593,10 @@ mod tests {
             AU_TYPE_MIXER,
             AU_TYPE_PANNER,
             AU_TYPE_FORMAT_CONVERTER,
-            fourcc([b'a', b'u', b'o', b'l']),
-            fourcc([b'x', b'x', b'x', b'x']),
+            fourcc(*b"auol"),
+            fourcc(*b"xxxx"),
         ] {
-            let desc = AuComponentDesc::apple(component_type, fourcc([b'd', b'e', b'l', b'y']));
+            let desc = AuComponentDesc::apple(component_type, fourcc(*b"dely"));
             assert!(!au_render_supported(&desc));
             match super::AuBackend::load(&desc, 44100.0) {
                 Err(AuError::UnsupportedType { .. }) => {}
@@ -1604,7 +1608,7 @@ mod tests {
         for component_type in [AU_TYPE_EFFECT, AU_TYPE_MUSIC_DEVICE, AU_TYPE_GENERATOR] {
             assert!(au_render_supported(&AuComponentDesc::apple(
                 component_type,
-                fourcc([b'd', b'e', b'l', b'y'])
+                fourcc(*b"dely")
             )));
         }
     }

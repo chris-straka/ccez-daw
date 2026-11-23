@@ -201,10 +201,8 @@ pub fn separate_mix(
 
 /// Run [`separate_mix`] as a background [`Job`].
 pub fn submit_separation(samples: Vec<f32>, sample_rate: u32) -> Job<Option<Separation>> {
-    Job::submit(move |ctl: &JobControl| match separate_mix(&samples, sample_rate, Some(ctl)) {
-        Ok(sep) => Some(sep),
-        Err(_) => None, // cancelled or bad input: no partial stems, ever
-    })
+    // cancelled or bad input: no partial stems, ever
+    Job::submit(move |ctl: &JobControl| separate_mix(&samples, sample_rate, Some(ctl)).ok())
 }
 
 /// Where separated stems land: one clip per stem on `track_id`.
@@ -371,9 +369,8 @@ pub fn submit_cleanup(
     sample_rate: u32,
     threshold: f32,
 ) -> Job<Option<Cleanup>> {
-    Job::submit(move |ctl: &JobControl| match cleanup_audio(&samples, sample_rate, threshold, Some(ctl)) {
-        Ok(clean) => Some(clean),
-        Err(_) => None,
+    Job::submit(move |ctl: &JobControl| {
+        cleanup_audio(&samples, sample_rate, threshold, Some(ctl)).ok()
     })
 }
 
@@ -414,6 +411,7 @@ pub fn cleanup_draft(
 }
 
 /// Commit a finished cleanup: store the WAV + apply one `ClipAdded`.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_cleanup_to_engine(
     engine: &mut Engine,
     actor: &str,
@@ -561,8 +559,10 @@ mod tests {
         // Loud burst in the middle, quiet floor elsewhere.
         let rate = 44100;
         let mut take = vec![0.01f32; rate];
-        for i in (rate / 4)..(rate / 2) {
-            take[i] = (2.0 * std::f64::consts::PI * 440.0 * i as f64 / rate as f64).sin() as f32 * 0.8;
+        for (offset, sample) in take[(rate / 4)..(rate / 2)].iter_mut().enumerate() {
+            let i = (rate / 4) + offset;
+            *sample =
+                (2.0 * std::f64::consts::PI * 440.0 * i as f64 / rate as f64).sin() as f32 * 0.8;
         }
         let clean = cleanup_audio(&take, rate as u32, 0.1, None).expect("cleanup");
         assert_eq!(clean.samples.len(), take.len());

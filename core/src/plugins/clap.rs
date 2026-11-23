@@ -471,6 +471,13 @@ fn find_slot<'s>(slots: &'s [ParamSlot], id: &str) -> Option<&'s ParamSlot> {
         .find(|s| s.name.eq_ignore_ascii_case(id.trim()))
 }
 
+/// Re-exported for tests: the latency the fixture declares, so the
+/// roundtrip test asserts reporting instead of hard-coding a constant.
+#[cfg(test)]
+pub(crate) fn fixture_latency() -> u32 {
+    64
+}
+
 #[cfg(test)]
 pub(crate) mod fixture {
     use std::path::PathBuf;
@@ -598,11 +605,4 @@ pub(crate) mod fixture {
             other => panic!("expected PortLayout, got ok={}", other.is_ok()),
         }
     }
-}
-
-/// Re-exported for tests: the latency the fixture declares, so the
-/// roundtrip test asserts reporting instead of hard-coding a constant.
-#[cfg(test)]
-pub(crate) fn fixture_latency() -> u32 {
-    64
 }

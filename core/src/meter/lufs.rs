@@ -285,7 +285,7 @@ mod tests {
         // −0.69 LUFS; through the RLB stage it must (nearly) gate out.
         let sr = 48_000.0;
         let ramp = (0..(2.0 * sr) as usize).map(|t| t as f32 / (2.0 * sr));
-        let hold = std::iter::repeat(1.0).take((8.0 * sr) as usize);
+        let hold = std::iter::repeat_n(1.0, (8.0 * sr) as usize);
         let signal: Vec<f32> = ramp.chain(hold).collect();
         let mut m = LufsMeter::new(sr);
         feed(&mut m, &signal);

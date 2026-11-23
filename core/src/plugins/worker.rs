@@ -204,11 +204,11 @@ impl MockDsp {
 /// host protocol never branches on kind.
 enum Backend {
     Mock(MockDsp),
-    Clap(ClapBackend),
-    Vst3(Vst3Backend),
-    Au(AuBackend),
+    Clap(Box<ClapBackend>),
+    Vst3(Box<Vst3Backend>),
+    Au(Box<AuBackend>),
     #[cfg(feature = "wasm-runtime")]
-    Wasm(WasmBackend),
+    Wasm(Box<WasmBackend>),
 }
 
 impl Backend {
@@ -321,7 +321,7 @@ pub fn worker_main() -> i32 {
                     };
                     match loaded {
                         Ok(clap) => {
-                            backend = Some(Backend::Clap(clap));
+                            backend = Some(Backend::Clap(Box::new(clap)));
                             respond(&WorkerResponse::ok());
                         }
                         Err(e) => respond(&WorkerResponse::fail(e.to_string())),
@@ -337,7 +337,7 @@ pub fn worker_main() -> i32 {
                     };
                     match loaded {
                         Ok(vst3) => {
-                            backend = Some(Backend::Vst3(vst3));
+                            backend = Some(Backend::Vst3(Box::new(vst3)));
                             respond(&WorkerResponse::ok());
                         }
                         Err(e) => respond(&WorkerResponse::fail(e.to_string())),
@@ -354,7 +354,7 @@ pub fn worker_main() -> i32 {
                     let desc = AuComponentDesc::new(component_type, component_subtype, manufacturer);
                     match AuBackend::load(&desc, rate) {
                         Ok(au) => {
-                            backend = Some(Backend::Au(au));
+                            backend = Some(Backend::Au(Box::new(au)));
                             respond(&WorkerResponse::ok());
                         }
                         Err(e) => respond(&WorkerResponse::fail(e.to_string())),
@@ -367,7 +367,7 @@ pub fn worker_main() -> i32 {
                     #[cfg(feature = "wasm-runtime")]
                     match WasmBackend::load(&path, rate) {
                         Ok(wasm) => {
-                            backend = Some(Backend::Wasm(wasm));
+                            backend = Some(Backend::Wasm(Box::new(wasm)));
                             respond(&WorkerResponse::ok());
                         }
                         Err(e) => respond(&WorkerResponse::fail(e.to_string())),

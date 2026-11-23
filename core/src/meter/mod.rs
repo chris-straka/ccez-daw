@@ -17,7 +17,7 @@
 //! [`true_peak`] (4x-oversampled peak), [`spectrum`] (Hann-windowed FFT
 //! tap), [`tap`] (the combined graph tap + non-blocking reader),
 //! [`export`] (Track Q: loudness-normalized bounce target — integrated LUFS
-//! + true-peak ceiling over the existing WAV stem codec),
+//! plus true-peak ceiling over the existing WAV stem codec),
 //! [`conform`](conform) (Track S-3: platform preset table + one-click
 //! conform + report artifact, measured with [`export`]).
 //! Reads the frozen `Project` routing only via buffer names — adds no new

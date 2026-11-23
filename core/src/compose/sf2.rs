@@ -259,10 +259,12 @@ pub fn load_preset(path: &Path, bank: u16, program: u16) -> Result<Vec<Region>, 
             // one stereo recording, hard-panned unless the file says
             // otherwise; each plays at unity on its own side.
             r.stereo_half = matches!(stype, 2 | 4);
-            r.pan = match (stype, pan) {
-                (4, p) if p == 0.0 => -1.0,
-                (2, p) if p == 0.0 => 1.0,
-                (_, p) => p.clamp(-1.0, 1.0),
+            r.pan = if pan == 0.0 && stype == 4 {
+                -1.0
+            } else if pan == 0.0 && stype == 2 {
+                1.0
+            } else {
+                pan.clamp(-1.0, 1.0)
             };
             let modes = get(&iz, 54).map(amount).unwrap_or(0);
             if modes == 1 || modes == 3 {
@@ -303,8 +305,10 @@ pub fn read_slice(
     let mut raw = vec![0u8; (end - start) as usize * 2];
     f.read_exact(&mut raw).map_err(err)?;
     let s: Vec<f32> = raw
-        .chunks_exact(2)
-        .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| i16::from_le_bytes(*b) as f32 / 32768.0)
         .collect();
     let lp = (loop_end > loop_start)
         .then(|| ((loop_start - start) as usize, (loop_end - start) as usize));

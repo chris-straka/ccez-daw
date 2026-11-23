@@ -319,7 +319,7 @@ pub fn timecode_to_frame(tc: &Timecode, rate: &FrameRate) -> Result<i64> {
         ))
     })?;
     let tm = tc.hours as i64 * 60 + tc.minutes as i64;
-    if tc.minutes % 10 != 0 && tc.seconds == 0 && (tc.frames as i64) < step {
+    if !tc.minutes.is_multiple_of(10) && tc.seconds == 0 && (tc.frames as i64) < step {
         return Err(VideoError::BadTimecode(format!(
             "timecode {tc} names a dropped frame number"
         )));
@@ -334,7 +334,7 @@ pub fn frame_to_seconds(frame: i64, rate: &FrameRate) -> f64 {
 
 /// Frame on screen at media time `t`: `floor(t * fps)`, clamped at 0.
 pub fn frame_from_seconds(t_seconds: f64, rate: &FrameRate) -> i64 {
-    if !(t_seconds > 0.0) {
+    if t_seconds <= 0.0 || t_seconds.is_nan() {
         return 0;
     }
     (t_seconds * rate.num as f64 / rate.den as f64).floor() as i64
@@ -1108,7 +1108,7 @@ mod tests {
             ]);
             for f in frames {
                 let tc = timecode_from_frame(f, &rate, false).unwrap();
-                assert_eq!(tc.drop_frame, false, "frame {f} at {}/{}", rate.num, rate.den);
+                assert!(!tc.drop_frame, "frame {f} at {}/{}", rate.num, rate.den);
                 assert_eq!(timecode_to_frame(&tc, &rate).unwrap(), f);
                 // String round-trip too.
                 let reparsed = parse_timecode(&tc.to_string(), &rate).unwrap();
@@ -1414,11 +1414,13 @@ mod tests {
     /// BT.601 luma PSNR between two same-size RGB24 buffers.
     fn psnr_luma(a: &[u8], b: &[u8]) -> f64 {
         assert_eq!(a.len(), b.len());
-        let luma = |p: &[u8]| 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64;
+        let luma = |p: &[u8; 3]| 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64;
         let n = (a.len() / 3) as f64;
         let mse = a
-            .chunks_exact(3)
-            .zip(b.chunks_exact(3))
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .zip(b.as_chunks::<3>().0)
             .map(|(x, y)| (luma(x) - luma(y)).powi(2))
             .sum::<f64>()
             / n;

@@ -158,8 +158,8 @@ impl<'a> Reader<'a> {
         let n = self.u32()? as usize;
         let raw = self.take(n * 4)?;
         let mut out = Vec::with_capacity(n);
-        for chunk in raw.chunks_exact(4) {
-            out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+        for chunk in raw.as_chunks::<4>().0 {
+            out.push(f32::from_le_bytes(*chunk));
         }
         Ok(out)
     }
@@ -381,7 +381,7 @@ mod tests {
         // NaN payloads and subnormals must round-trip bit-identically —
         // loopback render-equivalence depends on it.
         let mut m = BTreeMap::new();
-        m.insert("x".to_string(), vec![f32::NAN, -0.0, 1e-30, 3.1415927]);
+        m.insert("x".to_string(), vec![f32::NAN, -0.0, 1e-30, std::f32::consts::PI]);
         let msg = Message::RenderRequest {
             block: 0,
             seq: 0,
@@ -397,7 +397,7 @@ mod tests {
         assert!(got[0].is_nan());
         assert_eq!(got[1].to_bits(), (-0.0f32).to_bits());
         assert_eq!(got[2].to_bits(), 1e-30f32.to_bits());
-        assert_eq!(got[3].to_bits(), 3.1415927f32.to_bits());
+        assert_eq!(got[3].to_bits(), std::f32::consts::PI.to_bits());
     }
 
     #[test]

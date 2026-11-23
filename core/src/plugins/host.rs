@@ -770,7 +770,7 @@ mod tests {
         use crate::plugins::au::{fourcc, AuComponentDesc, AU_TYPE_EFFECT};
         use crate::plugins::latency::LatencyMap;
         let mut host = host();
-        let desc = AuComponentDesc::apple(AU_TYPE_EFFECT, fourcc([b'd', b'e', b'l', b'y']));
+        let desc = AuComponentDesc::apple(AU_TYPE_EFFECT, fourcc(*b"dely"));
         host.load(PluginDescriptor::au("audelay", "AUDelay", desc))
             .expect("load system unit");
         host.set_param("audelay", "Delay Time", 0.5)

@@ -465,7 +465,7 @@ mod tests {
             bundle_path: std::path::PathBuf::from("/Lib/Limit.component"),
             desc: Some(crate::plugins::au::AuComponentDesc::apple(
                 crate::plugins::au::AU_TYPE_EFFECT,
-                crate::plugins::au::fourcc([b'l', b'm', b't', b'r']),
+                crate::plugins::au::fourcc(*b"lmtr"),
             )),
         };
         let list = ScanList::from_au_infos(&[with_desc]);

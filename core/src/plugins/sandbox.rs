@@ -157,7 +157,7 @@ impl SandboxedPlugin {
             })?;
         }
         if self.descriptor.kind == PluginKind::Au {
-            let desc = self.descriptor.au_desc.clone().ok_or_else(|| {
+            let desc = self.descriptor.au_desc.ok_or_else(|| {
                 SandboxError::Protocol("au descriptor has no component codes".to_string())
             })?;
             self.call(&WorkerRequest::LoadAu {

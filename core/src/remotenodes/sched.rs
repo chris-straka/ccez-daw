@@ -203,7 +203,7 @@ impl PartitionPolicy {
             .map(|(id, node)| (id, node.latency))
             .collect();
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0))); // rule 5 order
-        let budget = (self.max_remote_share.max(0.0).min(1.0) * graph.nodes.len() as f32).floor()
+        let budget = (self.max_remote_share.clamp(0.0, 1.0) * graph.nodes.len() as f32).floor()
             as usize;
         let remote: BTreeSet<String> = candidates
             .into_iter()
@@ -413,7 +413,6 @@ mod tests {
             max_nodes: 4,
             load: 0.8,
             online: false, // flaky box, out of rotation
-            ..Default::default()
         });
         r.advertise(NodeCapability {
             endpoint: "tcp://farm-b:4412".to_string(),
@@ -421,7 +420,6 @@ mod tests {
             max_nodes: 4,
             load: 0.2,
             online: true,
-            ..Default::default()
         });
         r
     }
@@ -483,7 +481,6 @@ mod tests {
             max_nodes: 0,
             load: 0.0,
             online: true,
-            ..Default::default()
         });
         let got = r.assign(&[("heavy", NodeKind::Device)]);
         assert_eq!(got.get("heavy").map(String::as_str), Some("tcp://farm-b:4412"));

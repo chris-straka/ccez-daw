@@ -593,7 +593,9 @@ fn click_sample(beat: f64, _t_sec: f64) -> f32 {
 /// Reference tone with 5ms raised-cosine fades so clip edges never click.
 fn tone_sample(hz: f64, t_sec: f64, clip_sec: f64) -> f32 {
     let fade = 0.005;
-    let env = ((t_sec / fade).min(1.0)).min(((clip_sec - t_sec) / fade).max(0.0).min(1.0));
+    let env = (t_sec / fade)
+        .min(1.0)
+        .min(((clip_sec - t_sec) / fade).clamp(0.0, 1.0));
     let shaped = env * env * (3.0 - 2.0 * env);
     (0.5 * (2.0 * std::f64::consts::PI * hz * t_sec).sin() * shaped) as f32
 }
@@ -618,7 +620,7 @@ pub fn encode_wav(stem: &Stem) -> Vec<u8> {
     }
     let mut out = Vec::new();
     out.extend_from_slice(b"RIFF");
-    let riff_len = 4 + 8 + 16 + 8 + smpl.len() as usize + 8 + data.len();
+    let riff_len = 4 + 8 + 16 + 8 + smpl.len() + 8 + data.len();
     out.extend_from_slice(&(riff_len as u32).to_le_bytes());
     out.extend_from_slice(b"WAVE");
     out.extend_from_slice(b"fmt ");
@@ -670,16 +672,16 @@ pub fn decode_wav(bytes: &[u8]) -> Result<Stem> {
                     return Err(err("odd data length"));
                 }
                 samples = body
-                    .chunks_exact(2)
-                    .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32767.0)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| i16::from_le_bytes(*c) as f32 / 32767.0)
                     .collect();
             }
-            b"smpl" => {
-                if body.len() >= 36 + 24 {
-                    loop_start = u32::from_le_bytes(body[44..48].try_into().unwrap());
-                    loop_end = u32::from_le_bytes(body[48..52].try_into().unwrap());
-                    saw_smpl = true;
-                }
+            b"smpl" if body.len() >= 36 + 24 => {
+                loop_start = u32::from_le_bytes(body[44..48].try_into().unwrap());
+                loop_end = u32::from_le_bytes(body[48..52].try_into().unwrap());
+                saw_smpl = true;
             }
             _ => {}
         }

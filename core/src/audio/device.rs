@@ -328,6 +328,12 @@ impl AudioEngine {
 /// this code compiles against cpal and runs on a real machine.
 pub struct CpalBackend;
 
+/// Graph edge delay map keyed by `(from_node, to_node)`.
+pub type EdgeDelays = std::collections::BTreeMap<(String, String), u64>;
+
+/// Initial render graph state passed to [`CpalBackend::open_default`]: `(graph, edge_delays, out_node)`.
+pub type InitialGraph = (RenderGraph, EdgeDelays, String);
+
 impl CpalBackend {
     /// Open the default output device and start rendering `initial` (may be
     /// `None` for silence until the first [`AudioCommand::SwapGraph`]).
@@ -337,11 +343,7 @@ impl CpalBackend {
     /// A [`DeviceError::NoDevice`] means "no hardware here" — the caller
     /// (see `transport`) degrades to the null device instead of panicking.
     pub fn open_default(
-        initial: Option<(
-            RenderGraph,
-            std::collections::BTreeMap<(String, String), u64>,
-            String,
-        )>,
+        initial: Option<InitialGraph>,
     ) -> Result<(cpal::Stream, AudioEngine, SharedCounters), DeviceError> {
         Self::open_default_with_counters(initial, SharedCounters::new())
     }
@@ -349,11 +351,7 @@ impl CpalBackend {
     /// Same as [`CpalBackend::open_default`], but the callback feeds the
     /// caller's counters so one controller observes both backends.
     pub fn open_default_with_counters(
-        initial: Option<(
-            RenderGraph,
-            std::collections::BTreeMap<(String, String), u64>,
-            String,
-        )>,
+        initial: Option<InitialGraph>,
         counters: SharedCounters,
     ) -> Result<(cpal::Stream, AudioEngine, SharedCounters), DeviceError> {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -380,11 +378,7 @@ fn build_stream(
     rx: Receiver<AudioCommand>,
     params: Arc<ParamBank>,
     counters: SharedCounters,
-    initial: Option<(
-        RenderGraph,
-        std::collections::BTreeMap<(String, String), u64>,
-        String,
-    )>,
+    initial: Option<InitialGraph>,
 ) -> Result<cpal::Stream, DeviceError> {
     use cpal::traits::DeviceTrait;
     let channels = config.channels() as usize;
@@ -458,11 +452,7 @@ impl CallbackState {
         rx: Receiver<AudioCommand>,
         params: Arc<ParamBank>,
         counters: SharedCounters,
-        initial: Option<(
-            RenderGraph,
-            std::collections::BTreeMap<(String, String), u64>,
-            String,
-        )>,
+        initial: Option<InitialGraph>,
     ) -> Self {
         let (graph, delays, out_node) = match initial {
             Some((g, d, o)) => (Some(g), d, o),

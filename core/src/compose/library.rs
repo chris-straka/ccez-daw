@@ -115,6 +115,7 @@ const RING: PlayStyle = PlayStyle {
     one_shot: true,
 };
 
+#[allow(clippy::too_many_arguments)]
 const fn e(
     id: &'static str,
     family: &'static str,

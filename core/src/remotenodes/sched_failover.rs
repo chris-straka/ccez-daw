@@ -238,7 +238,6 @@ mod tests {
             max_nodes: 8,
             load: 0.1,
             online: true,
-            ..Default::default()
         });
         r
     }

@@ -424,6 +424,7 @@ pub fn param_base_and_range(project: &Project, target: &ParamAddress) -> Result<
 /// exact beat of sample `i` and `secs_i` its absolute song time. With no
 /// lane the automation term is the live base value (the knob still works
 /// under modulation); with no routes the output is pure automation.
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_param_samples(
     project: &Project,
     target: &ParamAddress,

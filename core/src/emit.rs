@@ -476,7 +476,7 @@ mod tests {
             .iter()
             .map(|e| e.name)
             .chain(STRUCTS.iter().map(|s| s.name))
-            .chain(["void", "string", "number"].into_iter())
+            .chain(["void", "string", "number"])
             .collect();
         let mut refs: Vec<&str> = Vec::new();
         for c in COMMANDS {

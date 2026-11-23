@@ -16,11 +16,10 @@
 //! is whatever `render_mix` renders procedurally — exactly what export
 //! hears, which is the point: live and bounce agree by construction.
 
-use std::collections::BTreeMap;
-
 use crate::bounce::{render_mix_with_bank, BounceConfig, SampleBank};
 use crate::model::Project;
 
+use super::device::EdgeDelays;
 use super::graph::AudioGraph;
 use super::render::{Proc, RenderGraph};
 
@@ -39,7 +38,7 @@ pub fn loop_beats(project: &Project) -> Option<f64> {
         .iter()
         .map(|c| c.start_beats + c.length_beats)
         .fold(0.0f64, f64::max);
-    if !(end > 0.0) || !end.is_finite() {
+    if end <= 0.0 || !end.is_finite() {
         return None;
     }
     Some(end.clamp(MIN_LIVE_LOOP_BEATS, MAX_LIVE_LOOP_BEATS))
@@ -53,7 +52,7 @@ pub fn live_graph(
     project: &Project,
     sample_rate: u32,
     bank: &SampleBank,
-) -> Option<(RenderGraph, BTreeMap<(String, String), u64>)> {
+) -> Option<(RenderGraph, EdgeDelays)> {
     let beats = loop_beats(project)?;
     let config = BounceConfig::new(sample_rate, 0.0, beats).ok()?;
     let stem = render_mix_with_bank(project, &config, bank).ok()?;

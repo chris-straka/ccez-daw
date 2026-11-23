@@ -150,7 +150,7 @@ impl AudioGraph {
             indegree.insert(id.as_str(), 0);
         }
         let succ = self.successors();
-        for (_, tos) in &succ {
+        for tos in succ.values() {
             for to in tos {
                 *indegree.get_mut(*to).unwrap_or(&mut 0) += 1;
             }

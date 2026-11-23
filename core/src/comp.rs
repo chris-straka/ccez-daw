@@ -128,7 +128,7 @@ pub fn build_comp(
         return Err(CompError::EmptySections);
     }
     for s in sections {
-        if !(s.start_beats < s.end_beats) {
+        if s.start_beats >= s.end_beats || s.start_beats.is_nan() || s.end_beats.is_nan() {
             return Err(CompError::BadRange(format!(
                 "[{}, {})",
                 s.start_beats, s.end_beats

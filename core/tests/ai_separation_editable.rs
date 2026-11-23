@@ -42,10 +42,10 @@ fn tmp_dir(name: &str) -> std::path::PathBuf {
 fn sine_mix(rate: u32, n: usize) -> Vec<f32> {
     // Bass sine + transient clicks + mid sustained tone: every stem feeder.
     let mut mix = vec![0.0f32; n];
-    for i in 0..n {
+    for (i, sample) in mix.iter_mut().enumerate() {
         let t = i as f64 / rate as f64;
-        mix[i] += 0.5 * (2.0 * std::f64::consts::PI * 55.0 * t).sin() as f32;
-        mix[i] += 0.3 * (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32;
+        *sample += 0.5 * (2.0 * std::f64::consts::PI * 55.0 * t).sin() as f32;
+        *sample += 0.3 * (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32;
     }
     for k in 0..8 {
         let at = k * n / 8;
@@ -127,9 +127,10 @@ fn cleanup_job_yields_editable_take() {
     let rate = 22050;
     let n = rate as usize;
     let mut take = vec![0.02f32; n];
-    for i in (n / 4)..(n / 2) {
+    for (offset, sample) in take[(n / 4)..(n / 2)].iter_mut().enumerate() {
+        let i = (n / 4) + offset;
         let t = i as f64 / rate as f64;
-        take[i] = 0.7 * (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32;
+        *sample = 0.7 * (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32;
     }
     let mut job = submit_cleanup(take.clone(), rate, 0.1);
     let clean = job

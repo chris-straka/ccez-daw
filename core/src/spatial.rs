@@ -164,6 +164,7 @@ fn check_block(name: &str, len: usize, other: usize) -> Result<(), SpatialError>
 
 /// Encode a mono block into four channel blocks. All five slices must agree
 /// in length (empty blocks are a legal no-op). No allocation.
+#[allow(clippy::too_many_arguments)]
 pub fn encode_block_mono(
     input: &[f32],
     azimuth_rad: f64,

@@ -958,7 +958,7 @@ fn discover_vst3_params(
     for info in infos {
         // VST3 values are normalized by spec; a plugin reporting an
         // inverted or empty range is a hostile descriptor — refuse it.
-        if !(info.min < info.max) {
+        if info.min >= info.max || info.min.is_nan() || info.max.is_nan() {
             return Err(format!("param `{}` has no range", info.name));
         }
         values.insert(
@@ -1032,7 +1032,7 @@ pub(crate) mod fixture {
     /// Stage the cdylib as a platform-real bundle dir. Only rewrites when
     /// stale, so parallel tests never race a half-written binary under a
     /// concurrent loader.
-    fn stage_bundle(target: &PathBuf, lib: &PathBuf) -> PathBuf {
+    fn stage_bundle(target: &std::path::Path, lib: &std::path::Path) -> PathBuf {
         let bundle = target.join("CcezGain.vst3");
         let binary = if cfg!(target_os = "macos") {
             bundle.join("Contents").join("MacOS").join("CcezGain")
