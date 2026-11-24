@@ -442,7 +442,11 @@ impl Vst3Instance for NullVst3Plugin {
 
     fn process(&mut self, input: &[&[f32]], output: &mut [&mut [f32]]) -> Result<()> {
         check_block(input, output)?;
-        let gain = self.params[0].value as f32;
+        let gain = self
+            .params
+            .iter()
+            .find(|p| p.id == "gain")
+            .map_or(1.0, |p| p.value) as f32;
         for (inn, out) in input.iter().zip(output.iter_mut()) {
             for (i, o) in inn.iter().zip(out.iter_mut()) {
                 *o = *i * gain;
@@ -452,7 +456,9 @@ impl Vst3Instance for NullVst3Plugin {
     }
 
     fn reset(&mut self) {
-        self.params[0].value = self.params[0].default;
+        for p in &mut self.params {
+            p.value = p.default;
+        }
     }
 }
 
@@ -569,7 +575,7 @@ impl Vst3Host {
             })?
         };
         let factory = unsafe { get_factory() };
-        if factory.is_null() {
+        if factory.is_null() || unsafe { (*factory).vtbl }.is_null() {
             return Err(Vst3Error::NoFactory(format!(
                 "{} returned a null factory",
                 path.display()
@@ -746,6 +752,11 @@ impl Vst3Backend {
     }
 
     fn load_inner(path: &str, sample_rate: f64, class_id: Option<&str>) -> BackendResult<Self> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 {
+            return Err(Vst3BackendError::Load(format!(
+                "invalid sample rate {sample_rate}"
+            )));
+        }
         // SAFETY: loading a bundle executes its code — that is the point,
         // and the worker process boundary is what contains it.
         let mut host = vst3_host::Vst3Host::builder()
@@ -800,6 +811,11 @@ impl Vst3Backend {
     /// Set one param by worker id (matches plugin names,
     /// case-insensitively; unknown ids are an error, never sent).
     pub fn set_param(&mut self, id: &str, value: f64) -> BackendResult<()> {
+        if !value.is_finite() {
+            return Err(Vst3BackendError::BadParam(format!(
+                "{id} (non-finite value)"
+            )));
+        }
         let slot = find_vst3_slot(&self.slots, id)
             .ok_or_else(|| Vst3BackendError::BadParam(id.to_string()))?;
         let clamped = value.clamp(slot.min, slot.max);
@@ -950,11 +966,16 @@ fn discover_vst3_params(
     let mut values = BTreeMap::new();
     for info in infos {
         // VST3 values are normalized by spec; a plugin reporting an
-        // inverted or empty range is a hostile descriptor — refuse it.
-        if info.min >= info.max || info.min.is_nan() || info.max.is_nan() {
+        // inverted, empty, or non-finite range is a hostile descriptor — refuse it.
+        if info.min >= info.max || !info.min.is_finite() || !info.max.is_finite() {
             return Err(format!("param `{}` has no range", info.name));
         }
-        values.insert(info.name.clone(), info.value.clamp(info.min, info.max));
+        let seed = if info.value.is_finite() {
+            info.value
+        } else {
+            info.min
+        };
+        values.insert(info.name.clone(), seed.clamp(info.min, info.max));
         slots.push(Vst3ParamSlot {
             id: info.id,
             name: info.name,
@@ -1191,6 +1212,25 @@ pub(crate) mod fixture {
         match backend.set_param("cutoff", 1.0) {
             Err(super::Vst3BackendError::BadParam(id)) => assert_eq!(id, "cutoff"),
             other => panic!("expected BadParam, got {other:?}"),
+        }
+        assert!(matches!(
+            backend.set_param("Gain", f64::NAN),
+            Err(super::Vst3BackendError::BadParam(_))
+        ));
+    }
+
+    #[test]
+    fn invalid_sample_rate_is_rejected_before_loading() {
+        let bundle = ensure_fixture_built();
+        let path = bundle.display().to_string();
+        for bad in [0.0, -48000.0, f64::NAN, f64::INFINITY] {
+            assert!(
+                matches!(
+                    super::Vst3Backend::load(&path, bad),
+                    Err(super::Vst3BackendError::Load(_))
+                ),
+                "rate {bad} must fail"
+            );
         }
     }
 }

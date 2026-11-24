@@ -194,6 +194,11 @@ impl ClapBackend {
     /// activate at `sample_rate`, and start processing. An unknown id is
     /// [`ClapError::NoPlugin`], never a silent fallback to index 0.
     pub fn load_selected(path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 {
+            return Err(ClapError::Load(format!(
+                "invalid sample rate {sample_rate}"
+            )));
+        }
         // SAFETY: loading a bundle executes its code — that is the point,
         // and the worker process boundary is what contains it.
         let entry =
@@ -280,6 +285,9 @@ impl ClapBackend {
     /// Set one param by worker id (matches CLAP names, case-insensitively;
     /// unknown ids are an error, never sent).
     pub fn set_param(&mut self, id: &str, value: f64) -> Result<()> {
+        if !value.is_finite() {
+            return Err(ClapError::BadParam(format!("{id} (non-finite value)")));
+        }
         let slot = find_slot(&self.slots, id).ok_or_else(|| ClapError::BadParam(id.to_string()))?;
         self.params
             .insert(slot.name.clone(), value.clamp(slot.min, slot.max));
@@ -431,10 +439,22 @@ fn discover_params(
         let Some(info) = params.get_info(&handle, index, &mut info_buf) else {
             continue;
         };
+        if !info.min_value.is_finite()
+            || !info.max_value.is_finite()
+            || info.min_value > info.max_value
+        {
+            continue;
+        }
         let name = String::from_utf8_lossy(info.name).into_owned();
+        let fallback = if info.default_value.is_finite() {
+            info.default_value
+        } else {
+            info.min_value
+        };
         let seed = params
             .get_value(&handle, info.id)
-            .unwrap_or(info.default_value);
+            .filter(|v| v.is_finite())
+            .unwrap_or(fallback);
         values.insert(name.clone(), seed.clamp(info.min_value, info.max_value));
         slots.push(ParamSlot {
             id: info.id,
@@ -619,5 +639,25 @@ pub(crate) mod fixture {
             }
             other => panic!("expected PortLayout, got ok={}", other.is_ok()),
         }
+    }
+
+    #[test]
+    fn rejects_invalid_sample_rate_and_non_finite_param() {
+        let bundle = ensure_fixture_built();
+        let path = bundle.display().to_string();
+        for bad in [0.0, -44100.0, f64::NAN, f64::INFINITY] {
+            assert!(
+                matches!(
+                    super::ClapBackend::load(&path, bad),
+                    Err(super::ClapError::Load(_))
+                ),
+                "rate {bad} must fail"
+            );
+        }
+        let mut backend = super::ClapBackend::load(&path, 44100.0).expect("load");
+        assert!(matches!(
+            backend.set_param("gain", f64::NAN),
+            Err(super::ClapError::BadParam(_))
+        ));
     }
 }

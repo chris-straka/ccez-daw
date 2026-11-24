@@ -46,10 +46,15 @@ fn main() -> ExitCode {
     }
 }
 
-fn flag(args: &[String], name: &str) -> Option<String> {
-    args.iter()
-        .position(|a| a == name)
-        .and_then(|i| args.get(i + 1).cloned())
+fn flag(args: &[String], name: &str) -> Result<Option<String>, String> {
+    let Some(pos) = args.iter().position(|a| a == name) else {
+        return Ok(None);
+    };
+    let val = args
+        .get(pos + 1)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| format!("missing value after {name}"))?;
+    Ok(Some(val.clone()))
 }
 
 fn load(path: &str) -> Result<Composition, String> {
@@ -58,7 +63,7 @@ fn load(path: &str) -> Result<Composition, String> {
 }
 
 fn plan_for(c: &Composition, args: &[String]) -> Result<Vec<PlanStep>, String> {
-    match flag(args, "--plan") {
+    match flag(args, "--plan")? {
         Some(p) => {
             let text = std::fs::read_to_string(&p).map_err(|e| format!("{p}: {e}"))?;
             serde_json::from_str(&text).map_err(|e| format!("{p}: {e}"))
@@ -71,22 +76,24 @@ fn run(args: Vec<String>) -> Result<serde_json::Value, String> {
     let cmd = args.first().map(String::as_str).unwrap_or("");
     match cmd {
         "patches" => {
-            let family = flag(&args, "--family");
+            let family = flag(&args, "--family")?;
             let root = library::cache_root();
             let lock = library::lock();
-            let synths = synth::PATCHES.iter().map(|p| {
-                json!({ "id": p.id, "kind": "synth", "family": "synth", "description": p.description,
-                        "range": [p.range.0, p.range.1], "pan": 0.0, "licence": "built-in (MIT)", "cached": true })
-            });
-            let sampled = library::CATALOG.iter().map(|e| {
-                let s = library::source(e.source).expect("source");
+            let mut patches = Vec::new();
+            for p in synth::PATCHES {
+                patches.push(json!({ "id": p.id, "kind": "synth", "family": "synth", "description": p.description,
+                        "range": [p.range.0, p.range.1], "pan": 0.0, "licence": "built-in (MIT)", "cached": true }));
+            }
+            for e in library::CATALOG {
+                let s = library::source(e.source)
+                    .ok_or_else(|| format!("missing sample source {:?}", e.source))?;
                 let missing = library::missing_bytes(&root, &lock, e);
-                json!({ "id": e.id, "kind": "sampled", "family": e.family, "description": e.description,
+                patches.push(json!({ "id": e.id, "kind": "sampled", "family": e.family, "description": e.description,
                         "range": [e.range.0, e.range.1], "pan": e.pan, "source": s.name, "licence": s.licence,
-                        "cached": missing == 0, "download_mb": (missing as f64 / 1e6).ceil() })
-            });
-            Ok(json!(synths
-                .chain(sampled)
+                        "cached": missing == 0, "download_mb": (missing as f64 / 1e6).ceil() }));
+            }
+            Ok(json!(patches
+                .into_iter()
                 .filter(|v| family.as_deref().is_none_or(|f| v["family"] == f))
                 .collect::<Vec<_>>()))
         }
@@ -102,7 +109,8 @@ fn run(args: Vec<String>) -> Result<serde_json::Value, String> {
             let regions = library::regions(&root, e)?;
             let (layers, rr) = library::layer_counts(&regions);
             let span = SampledInstrument::new(regions.clone(), e.style).key_span();
-            let s = library::source(e.source).expect("source");
+            let s = library::source(e.source)
+                .ok_or_else(|| format!("missing sample source {:?}", e.source))?;
             let mut v = json!({ "id": e.id, "kind": "sampled", "family": e.family, "description": e.description,
                 "range": [e.range.0, e.range.1], "keys_with_recordings": span.map(|(a, b)| json!([a, b])),
                 "velocity_layers": layers, "round_robins": rr, "regions": regions.len(), "pan": e.pan,
@@ -143,7 +151,7 @@ fn run(args: Vec<String>) -> Result<serde_json::Value, String> {
         }
         "preview" => {
             let c = load(args.get(1).ok_or("preview: missing <composition.json>")?)?;
-            let out = PathBuf::from(flag(&args, "--out").ok_or("preview: missing --out <file>")?);
+            let out = PathBuf::from(flag(&args, "--out")?.ok_or("preview: missing --out <file>")?);
             let errors = c.validate();
             if !errors.is_empty() {
                 return Err(format!("composition is not renderable:\n- {}", errors.join("\n- ")));
@@ -156,20 +164,20 @@ fn run(args: Vec<String>) -> Result<serde_json::Value, String> {
         }
         "export" => {
             let c = load(args.get(1).ok_or("export: missing <composition.json>")?)?;
-            let out = PathBuf::from(flag(&args, "--out").ok_or("export: missing --out <dir>")?);
+            let out = PathBuf::from(flag(&args, "--out")?.ok_or("export: missing --out <dir>")?);
             let plan = plan_for(&c, &args)?;
             let report = audioforge::export(&c, &plan, &out)?;
             Ok(serde_json::to_value(report).map_err(|e| e.to_string())?)
         }
         "export-takes" => {
             let spec_path = args.get(1).ok_or("export-takes: missing <takes.json>")?;
-            let out = PathBuf::from(flag(&args, "--out").ok_or("export-takes: missing --out <dir>")?);
+            let out = PathBuf::from(flag(&args, "--out")?.ok_or("export-takes: missing --out <dir>")?);
             let text = std::fs::read_to_string(spec_path).map_err(|e| format!("{spec_path}: {e}"))?;
             let file_spec: takes::TakePackFileSpec =
                 serde_json::from_str(&text).map_err(|e| format!("{spec_path}: {e}"))?;
             let base = Path::new(spec_path).parent().unwrap_or_else(|| Path::new("."));
             let spec = file_spec.load_from(base)?;
-            let plan = match flag(&args, "--plan") {
+            let plan = match flag(&args, "--plan")? {
                 Some(p) => {
                     let pt = std::fs::read_to_string(&p).map_err(|e| format!("{p}: {e}"))?;
                     serde_json::from_str(&pt).map_err(|e| format!("{p}: {e}"))?
@@ -191,7 +199,7 @@ fn samples(args: &[String]) -> Result<Value, String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "lock" => {
             let out =
-                flag(args, "--out").ok_or("samples lock: missing --out <sample-lock.json>")?;
+                flag(args, "--out")?.ok_or("samples lock: missing --out <sample-lock.json>")?;
             let lock = library::build_lock(&root)?;
             let text = serde_json::to_string_pretty(&lock).map_err(|e| e.to_string())? + "\n";
             std::fs::write(&out, text).map_err(|e| format!("{out}: {e}"))?;
@@ -289,7 +297,7 @@ pub fn write_audio(out: &Path, wav: &[u8]) -> Result<(), String> {
     if !is_mp3 {
         return std::fs::write(out, wav).map_err(|e| format!("{}: {e}", out.display()));
     }
-    let tmp = out.with_extension("tmp.wav");
+    let tmp = out.with_extension(format!("tmp.{}.wav", std::process::id()));
     std::fs::write(&tmp, wav).map_err(|e| format!("{}: {e}", tmp.display()))?;
     let status = Command::new("ffmpeg")
         .args(["-y", "-loglevel", "error", "-i"])
@@ -304,5 +312,33 @@ pub fn write_audio(out: &Path, wav: &[u8]) -> Result<(), String> {
         Err(e) => Err(format!(
             "mp3 needs ffmpeg on PATH ({e}); ask for a .wav instead"
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flag_requires_non_empty_value_when_present() {
+        let missing = vec!["patches".to_string(), "--family".to_string()];
+        assert!(flag(&missing, "--family").is_err());
+        assert!(run(missing).is_err());
+
+        let empty = vec!["--plan".to_string(), "".to_string()];
+        assert!(flag(&empty, "--plan").is_err());
+
+        let absent = vec!["patches".to_string()];
+        assert_eq!(flag(&absent, "--family").expect("ok"), None);
+
+        let present = vec![
+            "patches".to_string(),
+            "--family".to_string(),
+            "synth".to_string(),
+        ];
+        assert_eq!(
+            flag(&present, "--family").expect("ok"),
+            Some("synth".to_string())
+        );
     }
 }

@@ -306,7 +306,14 @@ pub fn worker_main() -> i32 {
         }
         let req: Result<WorkerRequest, _> = serde_json::from_str(&line);
         let mut respond = |resp: &WorkerResponse| {
-            let mut s = serde_json::to_string(resp).expect("response serializes");
+            let mut s = serde_json::to_string(resp).unwrap_or_else(|e| {
+                serde_json::to_string(&WorkerResponse::fail(format!(
+                    "response encode failed: {e}"
+                )))
+                .unwrap_or_else(|_| {
+                    "{\"ok\":false,\"error\":\"response encode failed\"}".to_string()
+                })
+            });
             s.push('\n');
             if out.write_all(s.as_bytes()).is_err() || out.flush().is_err() {
                 std::process::exit(1);
@@ -321,6 +328,10 @@ pub fn worker_main() -> i32 {
         };
         match req {
             WorkerRequest::Init { sample_rate: rate } => {
+                if !rate.is_finite() || rate <= 0.0 {
+                    respond(&WorkerResponse::fail(format!("invalid sample rate {rate}")));
+                    continue;
+                }
                 sample_rate = Some(rate);
                 backend = Some(Backend::Mock(MockDsp::new(rate)));
                 respond(&WorkerResponse::ok());

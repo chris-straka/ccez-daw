@@ -370,7 +370,10 @@ impl PluginHost {
                 return bin;
             }
         }
-        PathBuf::from(format!("target/debug/{}", super::worker::WORKER_BIN_NAME))
+        let bin = PathBuf::from(format!("target/debug/{}", super::worker::WORKER_BIN_NAME));
+        #[cfg(windows)]
+        let bin = bin.with_extension("exe");
+        bin
     }
 
     /// Load a plugin: spawn its sandbox worker and take an initial

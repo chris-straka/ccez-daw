@@ -195,7 +195,14 @@ pub fn apply_op_to_project(project: &mut Project, op: &Op) -> Result<()> {
             apply_param(project, node, param, value)?;
         }
         OpKind::TempoSet => {
-            project.tempo = parse_number(&op.value_json, "TempoSet")?;
+            let tempo = parse_number(&op.value_json, "TempoSet")?;
+            if !tempo.is_finite() || tempo <= 0.0 {
+                return Err(EngineError::BadPayload(format!(
+                    "TempoSet must be finite and > 0: {}",
+                    op.value_json
+                )));
+            }
+            project.tempo = tempo;
         }
         OpKind::AutomationPointSet => {
             apply_automation_point(project, op)?;
@@ -229,23 +236,22 @@ fn check_game_audio_export(op: &Op) -> Result<()> {
     }
 }
 
-/// `AutomationPointSet` payloads: `{"beat": <n>, "value": <n>}`, plus
-/// `"node"`/`"param"` when the target lane does not exist yet (the lane
-/// is created). Upsert: an exact-beat point is replaced, otherwise the
-/// point inserts keeping strictly-ascending beat order.
-fn apply_automation_point(project: &mut Project, op: &Op) -> Result<()> {
-    let v: serde_json::Value = serde_json::from_str(&op.value_json).map_err(|_| {
+struct AutomationPointPayload {
+    beat: f64,
+    value: f64,
+    node: Option<String>,
+    param: Option<String>,
+}
+
+fn parse_automation_payload(op: &Op) -> Result<AutomationPointPayload> {
+    let bad = || {
         EngineError::BadPayload(format!(
             "AutomationPointSet needs {{\"beat\": <n>, \"value\": <n>}}: {}",
             op.value_json
         ))
-    })?;
-    let o = v.as_object().ok_or_else(|| {
-        EngineError::BadPayload(format!(
-            "AutomationPointSet needs {{\"beat\": <n>, \"value\": <n>}}: {}",
-            op.value_json
-        ))
-    })?;
+    };
+    let v: serde_json::Value = serde_json::from_str(&op.value_json).map_err(|_| bad())?;
+    let o = v.as_object().ok_or_else(bad)?;
     let beat = o.get("beat").and_then(|n| n.as_f64()).ok_or_else(|| {
         EngineError::BadPayload(format!(
             "AutomationPointSet needs a finite \"beat\": {}",
@@ -264,41 +270,57 @@ fn apply_automation_point(project: &mut Project, op: &Op) -> Result<()> {
             op.value_json
         )));
     }
-    let lane = match project.automation.iter_mut().find(|l| l.id == op.target) {
-        Some(l) => l,
+    let node = o.get("node").and_then(|n| n.as_str()).map(str::to_string);
+    let param = o.get("param").and_then(|n| n.as_str()).map(str::to_string);
+    Ok(AutomationPointPayload {
+        beat,
+        value,
+        node,
+        param,
+    })
+}
+
+/// `AutomationPointSet` payloads: `{"beat": <n>, "value": <n>}`, plus
+/// `"node"`/`"param"` when the target lane does not exist yet (the lane
+/// is created). Upsert: an exact-beat point is replaced, otherwise the
+/// point inserts keeping strictly-ascending beat order.
+fn apply_automation_point(project: &mut Project, op: &Op) -> Result<()> {
+    let parsed = parse_automation_payload(op)?;
+    let lane_idx = match project.automation.iter().position(|l| l.id == op.target) {
+        Some(idx) => idx,
         None => {
-            let node = o
-                .get("node")
-                .and_then(|n| n.as_str())
+            let node = parsed
+                .node
+                .filter(|n| !n.is_empty())
                 .ok_or_else(|| EngineError::UnknownTarget(op.target.clone()))?;
-            let param = o
-                .get("param")
-                .and_then(|n| n.as_str())
+            let param = parsed
+                .param
+                .filter(|p| !p.is_empty())
                 .ok_or_else(|| EngineError::UnknownTarget(op.target.clone()))?;
-            if node.is_empty() || param.is_empty() {
-                return Err(EngineError::UnknownTarget(op.target.clone()));
-            }
             project.automation.push(crate::model::AutomationLane {
                 id: op.target.clone(),
-                target: crate::model::ParamAddress {
-                    node: node.to_string(),
-                    param: param.to_string(),
-                },
+                target: crate::model::ParamAddress { node, param },
                 points: Vec::new(),
             });
-            project.automation.last_mut().expect("just pushed")
+            project.automation.len() - 1
         }
     };
-    match lane.points.iter_mut().find(|p| p.beat == beat) {
-        Some(p) => p.value = value,
+    let lane = &mut project.automation[lane_idx];
+    match lane.points.iter_mut().find(|p| p.beat == parsed.beat) {
+        Some(p) => p.value = parsed.value,
         None => {
             let pos = lane
                 .points
                 .iter()
-                .position(|p| p.beat > beat)
+                .position(|p| p.beat > parsed.beat)
                 .unwrap_or(lane.points.len());
-            lane.points
-                .insert(pos, crate::model::AutomationPoint { beat, value });
+            lane.points.insert(
+                pos,
+                crate::model::AutomationPoint {
+                    beat: parsed.beat,
+                    value: parsed.value,
+                },
+            );
         }
     }
     Ok(())
@@ -314,7 +336,9 @@ fn parse_beats(value_json: &str) -> Result<f64> {
         if let Some(o) = v.as_object() {
             for key in ["startBeats", "start_beats"] {
                 if let Some(n) = o.get(key).and_then(|n| n.as_f64()) {
-                    return Ok(n);
+                    if n.is_finite() {
+                        return Ok(n);
+                    }
                 }
             }
         }
@@ -329,12 +353,16 @@ fn parse_beats(value_json: &str) -> Result<f64> {
 fn parse_number(value_json: &str, what: &str) -> Result<f64> {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(value_json) {
         if let Some(n) = v.as_f64() {
-            return Ok(n);
+            if n.is_finite() {
+                return Ok(n);
+            }
         }
         if let Some(o) = v.as_object() {
             for key in ["value", "tempo"] {
                 if let Some(n) = o.get(key).and_then(|n| n.as_f64()) {
-                    return Ok(n);
+                    if n.is_finite() {
+                        return Ok(n);
+                    }
                 }
             }
         }
@@ -347,15 +375,19 @@ fn parse_number(value_json: &str, what: &str) -> Result<f64> {
 /// Universal `node:param` addressing over tracks (volume/pan/muted/solo)
 /// and device-node params (clamped to range).
 fn apply_param(project: &mut Project, node: &str, param: &str, value: f64) -> Result<()> {
+    if !value.is_finite() {
+        return Err(EngineError::BadPayload(format!(
+            "param value must be finite: {value}"
+        )));
+    }
     if let Some(track) = project.tracks.iter_mut().find(|t| t.id == node) {
         match param {
-            "volume" | "pan" => {
-                let v = value.clamp(0.0, 1.5);
-                if param == "volume" {
-                    track.volume = v;
-                } else {
-                    track.pan = value.clamp(-1.0, 1.0);
-                }
+            "volume" => {
+                track.volume = value.clamp(0.0, 1.5);
+                return Ok(());
+            }
+            "pan" => {
+                track.pan = value.clamp(-1.0, 1.0);
                 return Ok(());
             }
             "muted" => {
@@ -492,21 +524,27 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn read_manifest(dir: &Path) -> Manifest {
+fn try_read_manifest(dir: &Path) -> Result<Manifest> {
     let path = manifest_path(dir);
-    if !path.exists() {
-        return Manifest {
-            version: 0,
-            assets: Vec::new(),
-        };
-    }
-    fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(Manifest {
-            version: 0,
-            assets: Vec::new(),
-        })
+    let raw = match fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Manifest {
+                version: 0,
+                assets: Vec::new(),
+            });
+        }
+        Err(e) => return Err(EngineError::Io(e)),
+    };
+    serde_json::from_str(&raw)
+        .map_err(|e| EngineError::CorruptBundle(format!("invalid manifest.json: {e}")))
+}
+
+fn read_manifest(dir: &Path) -> Manifest {
+    try_read_manifest(dir).unwrap_or(Manifest {
+        version: 0,
+        assets: Vec::new(),
+    })
 }
 
 /// Asset keys are bare filenames: no slashes, no `..`, nothing absolute.
@@ -564,15 +602,11 @@ impl Engine {
     pub fn create(dir: &Path, project: Project) -> Result<Self> {
         fs::create_dir_all(dir)?;
         fs::create_dir_all(assets_dir(dir))?;
-        write_atomic(
-            &manifest_path(dir),
-            serde_json::to_string_pretty(&Manifest {
-                version: 0,
-                assets: Vec::new(),
-            })
-            .expect("manifest serializes")
-            .as_bytes(),
-        )?;
+        let manifest_json = serde_json::to_string_pretty(&Manifest {
+            version: 0,
+            assets: Vec::new(),
+        })?;
+        write_atomic(&manifest_path(dir), manifest_json.as_bytes())?;
         File::create(ops_path(dir))?;
         write_atomic(
             &project_path(dir),
@@ -596,9 +630,14 @@ impl Engine {
     /// of the log; assets are never touched (lazy load). Recovery ignores
     /// `project.json` and rebuilds from snapshot + log.
     pub fn open(dir: &Path) -> Result<Self> {
-        let snapshot: Option<Snapshot> = fs::read_to_string(snapshot_path(dir))
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok());
+        let snapshot: Option<Snapshot> = match fs::read_to_string(snapshot_path(dir)) {
+            Ok(s) => Some(
+                serde_json::from_str(&s)
+                    .map_err(|e| EngineError::CorruptLog(format!("corrupt snapshot.json: {e}")))?,
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(EngineError::Io(e)),
+        };
         let log = read_log(&ops_path(dir))?;
         let next_seq = log.iter().map(|op| op.seq).max().unwrap_or(0) + 1;
         let undone = fold_undone(&log);
@@ -776,9 +815,9 @@ impl Engine {
         }
         let dir = assets_dir(&self.dir);
         fs::create_dir_all(&dir)?;
+        let mut manifest = try_read_manifest(&self.dir)?;
         let path = dir.join(key);
         write_atomic(&path, bytes)?;
-        let mut manifest = read_manifest(&self.dir);
         manifest.assets.retain(|e| e.key != key);
         manifest.assets.push(AssetEntry {
             key: key.to_string(),
@@ -854,8 +893,18 @@ impl Engine {
             )));
         }
         copy_dir_recursive(src, dest)?;
+        match Self::verify_and_open_bundle(dest) {
+            Ok(engine) => Ok(engine),
+            Err(e) => {
+                let _ = fs::remove_dir_all(dest);
+                Err(e)
+            }
+        }
+    }
+
+    fn verify_and_open_bundle(dest: &Path) -> Result<Self> {
         let engine = Self::open(dest)?;
-        let manifest = read_manifest(dest);
+        let manifest = try_read_manifest(dest)?;
         let mut index: BTreeMap<&str, u64> = BTreeMap::new();
         for e in &manifest.assets {
             index.insert(e.key.as_str(), e.size);
@@ -869,8 +918,7 @@ impl Engine {
                 )));
             }
         }
-        let _ = engine;
-        Self::open(dest)
+        Ok(engine)
     }
 
     // -- internals ----------------------------------------------------------
@@ -1394,5 +1442,78 @@ mod tests {
         ] {
             assert!(!valid_actor(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn corrupt_snapshot_or_manifest_is_reported_cleanly() {
+        let dir = scratch("corrupt-meta");
+        let mut e = Engine::create(&dir, Project::sample()).expect("create");
+        e.store_asset("a.wav", ASSET_KIND_AUDIO, &[1, 2, 3])
+            .expect("store a");
+        fs::write(manifest_path(&dir), b"{not valid json").expect("corrupt manifest");
+        assert!(matches!(
+            e.store_asset("b.wav", ASSET_KIND_AUDIO, &[4, 5]),
+            Err(EngineError::CorruptBundle(_))
+        ));
+        let exported = scratch("corrupt-export");
+        e.export_bundle(&exported).expect("export raw copy");
+        let dest = scratch("corrupt-import-dest");
+        assert!(matches!(
+            Engine::import_bundle(&exported, &dest),
+            Err(EngineError::CorruptBundle(_))
+        ));
+        assert!(!dest.exists(), "corrupt manifest import must clean dest");
+        let _ = fs::remove_dir_all(&exported);
+
+        fs::write(snapshot_path(&dir), b"{not valid snapshot").expect("corrupt snap");
+        assert!(matches!(
+            Engine::open(&dir),
+            Err(EngineError::CorruptLog(_))
+        ));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_bundle_cleans_up_dest_on_corruption() {
+        let dir = scratch("clean-src");
+        let mut e = Engine::create(&dir, Project::sample()).expect("create");
+        e.store_asset("a.wav", ASSET_KIND_AUDIO, &[1, 2, 3])
+            .expect("store");
+        let exported = scratch("clean-exported");
+        e.export_bundle(&exported).expect("export");
+        fs::remove_file(exported.join("assets").join("a.wav")).expect("drop asset");
+
+        let dest = scratch("clean-dest");
+        assert!(matches!(
+            Engine::import_bundle(&exported, &dest),
+            Err(EngineError::CorruptBundle(_))
+        ));
+        assert!(!dest.exists(), "failed import must remove partial dest");
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&exported);
+    }
+
+    #[test]
+    fn rejects_non_positive_tempo_and_non_finite_param() {
+        let dir = scratch("bad-vals");
+        let mut e = Engine::create(&dir, Project::sample()).expect("create");
+        assert!(matches!(
+            e.apply("ui", OpKind::TempoSet, "tempo", "0.0"),
+            Err(EngineError::BadPayload(_))
+        ));
+        assert!(matches!(
+            e.apply("ui", OpKind::TempoSet, "tempo", "-120"),
+            Err(EngineError::BadPayload(_))
+        ));
+        let mut p = Project::sample();
+        assert!(matches!(
+            apply_param(&mut p, "trk_1", "volume", f64::NAN),
+            Err(EngineError::BadPayload(_))
+        ));
+        assert!(matches!(
+            apply_param(&mut p, "trk_1", "pan", f64::INFINITY),
+            Err(EngineError::BadPayload(_))
+        ));
+        let _ = fs::remove_dir_all(&dir);
     }
 }

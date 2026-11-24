@@ -93,6 +93,11 @@ impl SandboxedPlugin {
         descriptor: &PluginDescriptor,
         sample_rate: f64,
     ) -> Result<Self> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 {
+            return Err(SandboxError::Protocol(format!(
+                "invalid sample rate {sample_rate}"
+            )));
+        }
         let mut this = Self {
             descriptor: descriptor.clone(),
             worker_bin: worker_bin.to_path_buf(),
@@ -224,7 +229,7 @@ impl SandboxedPlugin {
         let written: std::result::Result<(), String> = match self.stdin.as_mut() {
             Some(s) => s
                 .write_all(line.as_bytes())
-                .and(s.flush())
+                .and_then(|()| s.flush())
                 .map_err(|e| e.to_string()),
             None => Err("no worker stdin".to_string()),
         };
@@ -428,7 +433,7 @@ impl Drop for SandboxedPlugin {
                 let _ = self
                     .stdin
                     .as_mut()
-                    .map(|s| s.write_all(line.as_bytes()).and(s.flush()));
+                    .map(|s| s.write_all(line.as_bytes()).and_then(|()| s.flush()));
             }
             if let Some(mut child) = self.child.take() {
                 let _ = child.kill();
@@ -576,5 +581,21 @@ mod tests {
         assert!(p.alive());
         p.ping().expect("ping after recover");
         assert_eq!(p.process(&[1.0]).expect("renders"), vec![0.5]);
+    }
+
+    #[test]
+    fn spawn_rejects_invalid_sample_rate() {
+        ensure_worker_built();
+        let bin = PluginHost::default_worker_bin();
+        let desc = PluginDescriptor::mock("mock_bad_rate", "Mock");
+        for bad in [0.0, -48000.0, f64::NAN, f64::INFINITY] {
+            assert!(
+                matches!(
+                    SandboxedPlugin::spawn(&bin, &desc, bad),
+                    Err(SandboxError::Protocol(_))
+                ),
+                "rate {bad} must fail"
+            );
+        }
     }
 }

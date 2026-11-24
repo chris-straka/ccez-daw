@@ -5,14 +5,13 @@
 //! teleport as a tick once per revolution. The metric here is deliberately
 //! the simplest honest one: the **boundary discontinuity**
 //! `|x[n-1] - x[0]|` on the decoded `[-1, 1]` float samples. Whole-beat
-//! reference tones at the cue tempo wrap near zero (see
-//! [`crate::gaexport`] edge fades), so a clean export stem measures ~1e-4
-//! and anything above the threshold is a real seam, not analysis noise.
+//! reference tones at the cue tempo wrap near zero (see [`crate::bounce`]
+//! and [`crate::compose::render`] tail folding), so a clean export stem
+//! measures ~1e-4 and anything above the threshold is a real seam, not
+//! analysis noise.
 //!
-//! The same definition ships in `ui/src/gameaudio/loop.ts` (in-DAW preview
-//! meter) and here (ship-gate). The validator's rule 6 runs this check over
-//! every music-loop stem; waivers are explicit, per-stem, and reasoned, so a
-//! waived click is a decision, never an accident.
+//! Used during bounce and game-music export verification so loop seams are
+//! caught cleanly before publishing stems.
 
 use std::collections::{HashMap, HashSet};
 

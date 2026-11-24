@@ -318,10 +318,10 @@ fn bundle_display_name(bundle: &Path) -> Option<String> {
 fn plist_string_for_key(plist: &str, key: &str) -> Option<String> {
     let open_key = format!("<key>{key}</key>");
     let at = plist.find(&open_key)? + open_key.len();
-    let after = &plist[at..];
-    let value_at = after.find("<string>")? + "<string>".len();
-    let end = after[value_at..].find("</string>")?;
-    let value = after[value_at..value_at + end].trim();
+    let trimmed = plist[at..].trim_start();
+    let after_open = trimmed.strip_prefix("<string>")?;
+    let end = after_open.find("</string>")?;
+    let value = after_open[..end].trim();
     if value.is_empty() || value.contains('<') {
         return None;
     }
@@ -988,9 +988,11 @@ impl AuBackend {
                 component_type: desc.component_type,
             });
         }
+        if !sample_rate.is_finite() || sample_rate <= 0.0 {
+            return Err(AuError::FormatFailed { status: -50 });
+        }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = sample_rate;
             Err(AuError::UnsupportedPlatform)
         }
         #[cfg(target_os = "macos")]
@@ -1047,8 +1049,21 @@ impl AuBackend {
     /// with no list simply has no automatable params — not an error.
     #[cfg(target_os = "macos")]
     fn discover_params(&mut self) {
-        use au_const::{PROP_PARAMETER_INFO, PROP_PARAMETER_LIST, SCOPE_GLOBAL};
-        let handle = self.unit.handle;
+        let Some(ids) = Self::read_param_ids(self.unit.handle) else {
+            return;
+        };
+        for id in ids {
+            if let Some((slot, seed)) = Self::read_param_slot(self.unit.handle, id) {
+                self.params.insert(slot.name.clone(), seed);
+                self.slots.push(slot);
+            }
+        }
+        self.slots.sort_by_key(|s| s.id);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn read_param_ids(handle: ffi::AudioComponentInstance) -> Option<Vec<u32>> {
+        use au_const::{PROP_PARAMETER_LIST, SCOPE_GLOBAL};
         // SAFETY: `GetPropertyInfo` only writes the size out-param.
         let mut size: u32 = 0;
         let status = unsafe {
@@ -1062,7 +1077,7 @@ impl AuBackend {
             )
         };
         if status != 0 || size == 0 || !size.is_multiple_of(4) {
-            return;
+            return None;
         }
         let count = (size / 4).min(1024) as usize;
         let mut ids = vec![0u32; count];
@@ -1079,64 +1094,64 @@ impl AuBackend {
             )
         };
         if status != 0 {
-            return;
+            return None;
         }
         ids.truncate(bytes as usize / 4);
-        for id in ids {
-            let mut info_size = std::mem::size_of::<ffi::AudioUnitParameterInfoRaw>() as u32;
-            let mut info: ffi::AudioUnitParameterInfoRaw = unsafe { std::mem::zeroed() };
-            // SAFETY: `info` is a valid zeroed FFI struct of `info_size`.
-            let status = unsafe {
-                ffi::AudioUnitGetProperty(
-                    handle,
-                    PROP_PARAMETER_INFO,
-                    SCOPE_GLOBAL,
-                    id,
-                    &mut info as *mut _ as *mut std::ffi::c_void,
-                    &mut info_size,
-                )
-            };
-            if status != 0 {
-                continue;
-            }
-            let name = cf_to_string(info.cf_name)
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| format!("param{id}"));
-            // A hostile descriptor (empty/inverted range) is skipped, the
-            // way the VST3 backend refuses it — never clamped into NaN.
-            if info.min_value >= info.max_value
-                || info.min_value.is_nan()
-                || info.max_value.is_nan()
-                || !info.default_value.is_finite()
-            {
-                Self::release_param_strings(&info);
-                continue;
-            }
-            let mut live: f32 = 0.0;
-            // SAFETY: `live` is valid writable `f32` memory.
-            let seed =
-                if unsafe { ffi::AudioUnitGetParameter(handle, id, SCOPE_GLOBAL, 0, &mut live) }
-                    == 0
-                    && live.is_finite()
-                {
-                    live as f64
-                } else {
-                    info.default_value as f64
-                };
-            self.params.insert(
-                name.clone(),
-                seed.clamp(info.min_value as f64, info.max_value as f64),
-            );
-            self.slots.push(AuParamSlot {
+        Some(ids)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn read_param_slot(handle: ffi::AudioComponentInstance, id: u32) -> Option<(AuParamSlot, f64)> {
+        use au_const::{PROP_PARAMETER_INFO, SCOPE_GLOBAL};
+        let mut info_size = std::mem::size_of::<ffi::AudioUnitParameterInfoRaw>() as u32;
+        let mut info: ffi::AudioUnitParameterInfoRaw = unsafe { std::mem::zeroed() };
+        // SAFETY: `info` is a valid zeroed FFI struct of `info_size`.
+        let status = unsafe {
+            ffi::AudioUnitGetProperty(
+                handle,
+                PROP_PARAMETER_INFO,
+                SCOPE_GLOBAL,
                 id,
-                name,
-                min: info.min_value as f64,
-                max: info.max_value as f64,
-                default: info.default_value as f64,
-            });
-            Self::release_param_strings(&info);
+                &mut info as *mut _ as *mut std::ffi::c_void,
+                &mut info_size,
+            )
+        };
+        if status != 0 {
+            return None;
         }
-        self.slots.sort_by_key(|s| s.id);
+        let name = cf_to_string(info.cf_name)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| format!("param{id}"));
+        // A hostile descriptor (empty/inverted/non-finite range) is skipped,
+        // the way the VST3 backend refuses it — never clamped into NaN.
+        if info.min_value >= info.max_value
+            || !info.min_value.is_finite()
+            || !info.max_value.is_finite()
+            || !info.default_value.is_finite()
+        {
+            Self::release_param_strings(&info);
+            return None;
+        }
+        let mut live: f32 = 0.0;
+        // SAFETY: `live` is valid writable `f32` memory.
+        let seed = if unsafe { ffi::AudioUnitGetParameter(handle, id, SCOPE_GLOBAL, 0, &mut live) }
+            == 0
+            && live.is_finite()
+        {
+            live as f64
+        } else {
+            info.default_value as f64
+        };
+        let slot = AuParamSlot {
+            id,
+            name,
+            min: info.min_value as f64,
+            max: info.max_value as f64,
+            default: info.default_value as f64,
+        };
+        let clamped = seed.clamp(slot.min, slot.max);
+        Self::release_param_strings(&info);
+        Some((slot, clamped))
     }
 
     #[cfg(target_os = "macos")]
@@ -1172,6 +1187,9 @@ impl AuBackend {
     /// Set one param by worker id (matches unit names case-insensitively,
     /// or a bare parameter number; unknown ids are an error, never sent).
     pub fn set_param(&mut self, id: &str, value: f64) -> Result<(), AuError> {
+        if !value.is_finite() {
+            return Err(AuError::BadParam(format!("{id} (non-finite value)")));
+        }
         let slot =
             find_au_slot(&self.slots, id).ok_or_else(|| AuError::BadParam(id.to_string()))?;
         let clamped = value.clamp(slot.min, slot.max);
@@ -1191,16 +1209,13 @@ impl AuBackend {
             if status != 0 {
                 return Err(AuError::ParamFailed { status });
             }
+            self.params.insert(slot.name.clone(), clamped);
+            Ok(())
         }
         #[cfg(not(target_os = "macos"))]
         {
             let _ = clamped;
             Err(AuError::UnsupportedPlatform)
-        }
-        #[cfg(target_os = "macos")]
-        {
-            self.params.insert(slot.name.clone(), clamped);
-            Ok(())
         }
     }
 
@@ -1754,5 +1769,50 @@ mod tests {
             !found.is_empty(),
             "expected ≥1 .component bundle under the AU search paths"
         );
+    }
+
+    #[test]
+    fn plist_string_for_key_ignores_following_key_when_value_is_not_string() {
+        let plist = r#"
+            <dict>
+                <key>CFBundleDisplayName</key>
+                <true/>
+                <key>CFBundleName</key>
+                <string>Real Name &amp; Co</string>
+            </dict>
+        "#;
+        assert_eq!(plist_string_for_key(plist, "CFBundleDisplayName"), None);
+        assert_eq!(
+            plist_string_for_key(plist, "CFBundleName").as_deref(),
+            Some("Real Name & Co")
+        );
+    }
+
+    #[test]
+    fn invalid_sample_rate_is_rejected_before_loading() {
+        let desc = AuComponentDesc::apple(AU_TYPE_EFFECT, fourcc(*b"dely"));
+        for bad_rate in [0.0, -44100.0, f64::NAN, f64::INFINITY] {
+            assert!(
+                matches!(
+                    super::AuBackend::load(&desc, bad_rate),
+                    Err(AuError::FormatFailed { .. })
+                ),
+                "rate {bad_rate} must fail"
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn apple_delay_rejects_non_finite_param() {
+        let mut backend = super::AuBackend::load(&apple_delay(), 44100.0).expect("load AUDelay");
+        assert!(matches!(
+            backend.set_param("Feedback", f64::NAN),
+            Err(AuError::BadParam(_))
+        ));
+        assert!(matches!(
+            backend.set_param("Feedback", f64::INFINITY),
+            Err(AuError::BadParam(_))
+        ));
     }
 }

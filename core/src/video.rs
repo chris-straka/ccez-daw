@@ -78,17 +78,31 @@ impl FrameRate {
     };
 
     pub fn new(num: u32, den: u32) -> Result<Self> {
-        if num == 0 || den == 0 {
+        let rate = Self { num, den };
+        rate.validate()?;
+        Ok(rate)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.num == 0 || self.den == 0 {
             return Err(VideoError::BadRange(format!(
-                "frame rate {num}/{den} must have nonzero num and den"
+                "frame rate {}/{} must have nonzero num and den",
+                self.num, self.den
             )));
         }
-        if num > 240 * den {
+        if self.num > 240 * self.den {
             return Err(VideoError::BadRange(format!(
-                "frame rate {num}/{den} exceeds 240 fps"
+                "frame rate {}/{} exceeds 240 fps",
+                self.num, self.den
             )));
         }
-        Ok(Self { num, den })
+        if self.nominal_fps() == 0 {
+            return Err(VideoError::BadRange(format!(
+                "frame rate {}/{} below 0.5 fps nominal",
+                self.num, self.den
+            )));
+        }
+        Ok(())
     }
 
     /// Snap an `f64` fps to the nearest known rate (within 0.1%), else to a
@@ -118,11 +132,8 @@ impl FrameRate {
             return Ok(*hit);
         }
         let near = fps.round();
-        if (near - fps).abs() < 0.01 {
-            return Ok(Self {
-                num: near as u32,
-                den: 1,
-            });
+        if near >= 1.0 && (near - fps).abs() < 0.01 {
+            return Self::new(near as u32, 1);
         }
         Err(VideoError::UnsupportedRate(format!(
             "fps {fps} matches no known rate"
@@ -191,7 +202,27 @@ impl Timecode {
 /// decides drop-frame; `rate` bounds the frame field and — for drop rates —
 /// rejects the skipped frame numbers (`:00;00`/`:00;01` at the top of a
 /// drop minute). Hours accept any width; minutes/seconds must be 0-59.
+fn drop_step_for(rate: &FrameRate) -> Result<i64> {
+    rate.drop_step().ok_or_else(|| {
+        VideoError::DropUnsupported(format!(
+            "drop-frame timecode needs 30000/1001 or 60000/1001, got {}/{}",
+            rate.num, rate.den
+        ))
+    })
+}
+
+fn decompose_nominal(nominal_count: i64, nominal: i64, drop_frame: bool) -> Timecode {
+    let ff = nominal_count % nominal;
+    let rest = nominal_count / nominal;
+    let ss = rest % 60;
+    let rest = rest / 60;
+    let mm = rest % 60;
+    let hh = rest / 60;
+    Timecode::new(hh as u32, mm as u8, ss as u8, ff as u32, drop_frame)
+}
+
 pub fn parse_timecode(s: &str, rate: &FrameRate) -> Result<Timecode> {
+    rate.validate()?;
     let s = s.trim();
     let (head, ff, drop_frame) = match (s.rfind(':'), s.rfind(';')) {
         (Some(ci), Some(si)) if si > ci => (&s[..si], &s[si + 1..], true),
@@ -231,13 +262,8 @@ pub fn parse_timecode(s: &str, rate: &FrameRate) -> Result<Timecode> {
         )));
     }
     if drop_frame {
-        let step = rate.drop_step().ok_or_else(|| {
-            VideoError::DropUnsupported(format!(
-                "drop-frame timecode needs 30000/1001 or 60000/1001, got {}/{}",
-                rate.num, rate.den
-            ))
-        })?;
-        if mm % 10 != 0 && ss == 0 && (ff as i64) < step {
+        let step = drop_step_for(rate)?;
+        if !mm.is_multiple_of(10) && ss == 0 && (ff as i64) < step {
             return Err(VideoError::BadTimecode(format!(
                 "bad timecode `{s}` (frame numbers 00..{:02} do not exist at minute {mm:02})",
                 step - 1
@@ -258,27 +284,15 @@ pub fn parse_timecode(s: &str, rate: &FrameRate) -> Result<Timecode> {
 /// correction shifts time by seconds, so minutes settle immediately), then
 /// decompose. Round-trips with [`timecode_to_frame`] by construction.
 pub fn timecode_from_frame(frame: i64, rate: &FrameRate, drop_frame: bool) -> Result<Timecode> {
+    rate.validate()?;
     if frame < 0 {
         return Err(VideoError::NegativeFrame(frame));
     }
     let nominal = rate.nominal_fps() as i64;
     if !drop_frame {
-        let ff = frame % nominal;
-        let rest = frame / nominal;
-        let ss = rest % 60;
-        let rest = rest / 60;
-        let mm = rest % 60;
-        let hh = rest / 60;
-        return Ok(Timecode::new(
-            hh as u32, mm as u8, ss as u8, ff as u32, false,
-        ));
+        return Ok(decompose_nominal(frame, nominal, false));
     }
-    let step = rate.drop_step().ok_or_else(|| {
-        VideoError::DropUnsupported(format!(
-            "drop-frame timecode needs 30000/1001 or 60000/1001, got {}/{}",
-            rate.num, rate.den
-        ))
-    })?;
+    let step = drop_step_for(rate)?;
     let mut nominal_count = frame;
     for _ in 0..4 {
         let tm = nominal_count / (nominal * 60);
@@ -288,21 +302,14 @@ pub fn timecode_from_frame(frame: i64, rate: &FrameRate, drop_frame: bool) -> Re
         }
         nominal_count = next;
     }
-    let ff = nominal_count % nominal;
-    let rest = nominal_count / nominal;
-    let ss = rest % 60;
-    let rest = rest / 60;
-    let mm = rest % 60;
-    let hh = rest / 60;
-    Ok(Timecode::new(
-        hh as u32, mm as u8, ss as u8, ff as u32, true,
-    ))
+    Ok(decompose_nominal(nominal_count, nominal, true))
 }
 
 /// SMPTE address -> frame count at `rate`. Inverse of
 /// [`timecode_from_frame`]; rejects drop-minute skipped labels (see
 /// [`parse_timecode`]).
 pub fn timecode_to_frame(tc: &Timecode, rate: &FrameRate) -> Result<i64> {
+    rate.validate()?;
     let nominal = rate.nominal_fps() as i64;
     if tc.minutes >= 60 || tc.seconds >= 60 || (tc.frames as i64) >= nominal {
         return Err(VideoError::BadTimecode(format!(
@@ -316,12 +323,7 @@ pub fn timecode_to_frame(tc: &Timecode, rate: &FrameRate) -> Result<i64> {
     if !tc.drop_frame {
         return Ok(nominal_count);
     }
-    let step = rate.drop_step().ok_or_else(|| {
-        VideoError::DropUnsupported(format!(
-            "drop-frame timecode needs 30000/1001 or 60000/1001, got {}/{}",
-            rate.num, rate.den
-        ))
-    })?;
+    let step = drop_step_for(rate)?;
     let tm = tc.hours as i64 * 60 + tc.minutes as i64;
     if !tc.minutes.is_multiple_of(10) && tc.seconds == 0 && (tc.frames as i64) < step {
         return Err(VideoError::BadTimecode(format!(
@@ -385,6 +387,11 @@ pub fn beats_to_seconds(beats: f64, tempo: f64) -> Result<f64> {
     if !(tempo > 0.0 && tempo.is_finite()) {
         return Err(VideoError::BadTempo(tempo));
     }
+    if !beats.is_finite() {
+        return Err(VideoError::BadRange(format!(
+            "beats {beats} must be finite"
+        )));
+    }
     Ok(beats * 60.0 / tempo)
 }
 
@@ -392,6 +399,11 @@ pub fn beats_to_seconds(beats: f64, tempo: f64) -> Result<f64> {
 pub fn seconds_to_beats(seconds: f64, tempo: f64) -> Result<f64> {
     if !(tempo > 0.0 && tempo.is_finite()) {
         return Err(VideoError::BadTempo(tempo));
+    }
+    if !seconds.is_finite() {
+        return Err(VideoError::BadRange(format!(
+            "seconds {seconds} must be finite"
+        )));
     }
     Ok(seconds * tempo / 60.0)
 }
@@ -453,6 +465,7 @@ impl VideoTrack {
                 self.offset_beats
             )));
         }
+        self.frame_rate.validate()?;
         if self.drop_frame && self.frame_rate.drop_step().is_none() {
             return Err(VideoError::DropUnsupported(format!(
                 "track `{}`: drop-frame needs 30000/1001 or 60000/1001, got {}/{}",
@@ -618,6 +631,9 @@ pub fn audio_time_seconds(samples: i64, sample_rate: u32) -> f64 {
 /// greatest frame whose start time is at or before the audio instant.
 /// Exact `i128` floor division — no float involved.
 pub fn expected_video_frame(audio_samples: i64, sample_rate: u32, rate: &FrameRate) -> i64 {
+    if sample_rate == 0 || rate.den == 0 || rate.num == 0 {
+        return 0;
+    }
     let n = audio_samples as i128 * rate.num as i128;
     let d = rate.den as i128 * sample_rate as i128;
     n.div_euclid(d).clamp(i64::MIN as i128, i64::MAX as i128) as i64
@@ -626,6 +642,9 @@ pub fn expected_video_frame(audio_samples: i64, sample_rate: u32, rate: &FrameRa
 /// Audio sample tick of a frame's start, rounded to nearest (half up).
 /// Inverse of [`expected_video_frame`] up to the in-frame remainder.
 pub fn audio_samples_for_frame(frame: i64, sample_rate: u32, rate: &FrameRate) -> i64 {
+    if rate.num == 0 {
+        return 0;
+    }
     let n = frame as i128 * rate.den as i128 * sample_rate as i128;
     let d = rate.num as i128;
     // Frames are non-negative, so truncating division rounds half up.
@@ -685,6 +704,7 @@ impl DriftMonitor {
         if sample_rate == 0 {
             return Err(VideoError::BadRange("sample_rate must be nonzero".into()));
         }
+        frame_rate.validate()?;
         let half_frame = (frame_rate.den as i64 * sample_rate as i64 + frame_rate.num as i64 - 1)
             / (2 * frame_rate.num as i64);
         Ok(Self {
@@ -910,10 +930,14 @@ fn strip_out_dir(req: &ThumbStripRequest) -> Option<PathBuf> {
 /// small stills like thumbnails). `None` on bad input — never panics, so
 /// the strip job keeps its always-usable contract.
 pub fn thumb_jpeg_native(w: u32, h: u32, rgb: &[u8]) -> Option<Vec<u8>> {
-    if w == 0 || h == 0 || rgb.len() != w as usize * h as usize * 3 {
+    if w == 0 || h == 0 {
         return None;
     }
     let (w16, h16) = (u16::try_from(w).ok()?, u16::try_from(h).ok()?);
+    let expected_len = (w16 as usize).checked_mul(h16 as usize)?.checked_mul(3)?;
+    if rgb.len() != expected_len {
+        return None;
+    }
     let mut out = Vec::new();
     let mut enc = jpeg_encoder::Encoder::new(&mut out, 72);
     enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_2_2);
@@ -923,36 +947,50 @@ pub fn thumb_jpeg_native(w: u32, h: u32, rgb: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
+fn ffmpeg_frame_cmd(
+    ffmpeg: &str,
+    file: &str,
+    at_seconds: f64,
+    width_px: u32,
+    overwrite: bool,
+) -> (Command, u32) {
+    let w = width_px.clamp(32, 640);
+    let mut cmd = Command::new(ffmpeg);
+    if overwrite {
+        cmd.arg("-y");
+    }
+    cmd.args([
+        "-v",
+        "error",
+        "-ss",
+        &format!("{:.3}", at_seconds.max(0.0)),
+        "-i",
+        file,
+        "-frames:v",
+        "1",
+        "-vf",
+        &format!("scale={w}:-2"),
+    ]);
+    (cmd, w)
+}
+
 /// Extract one frame with `ffmpeg` as raw RGB24 on stdout, then JPEG-encode
 /// it with [`thumb_jpeg_native`]. Height is inferred from the byte
 /// count (`scale=W:-2` fixes an even height on the decode side). Any
 /// failure is `false` (placeholder cell).
 fn grab_frame_native(ffmpeg: &str, file: &str, at_seconds: f64, width_px: u32, out: &Path) -> bool {
-    let w = width_px.clamp(32, 640);
-    let raw = Command::new(ffmpeg)
-        .args([
-            "-v",
-            "error",
-            "-ss",
-            &format!("{:.3}", at_seconds.max(0.0)),
-            "-i",
-            file,
-            "-frames:v",
-            "1",
-            "-vf",
-            &format!("scale={w}:-2"),
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgb24",
-            "-",
-        ])
+    let (mut cmd, w) = ffmpeg_frame_cmd(ffmpeg, file, at_seconds, width_px, false);
+    let raw = cmd
+        .args(["-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
         .output();
     let Ok(raw) = raw else { return false };
-    if !raw.status.success() || raw.stdout.len() % (w as usize * 3) != 0 {
+    let stride = w as usize * 3;
+    if !raw.status.success() || raw.stdout.len() % stride != 0 {
         return false;
     }
-    let h = (raw.stdout.len() / (w as usize * 3)) as u32;
+    let Some(h) = u32::try_from(raw.stdout.len() / stride).ok() else {
+        return false;
+    };
     let Some(jpeg) = thumb_jpeg_native(w, h, &raw.stdout) else {
         return false;
     };
@@ -960,28 +998,10 @@ fn grab_frame_native(ffmpeg: &str, file: &str, at_seconds: f64, width_px: u32, o
 }
 
 /// Extract one frame with `ffmpeg`: seek, decode one picture, scale to
-/// `width_px` wide (even height). Any failure is `None` (placeholder cell).
+/// `width_px` wide (even height). Any failure is `false` (placeholder cell).
 fn grab_frame(ffmpeg: &str, file: &str, at_seconds: f64, width_px: u32, out: &Path) -> bool {
-    let w = width_px.clamp(32, 640);
-    let status = Command::new(ffmpeg)
-        .args([
-            "-y",
-            "-v",
-            "error",
-            "-ss",
-            &format!("{:.3}", at_seconds.max(0.0)),
-            "-i",
-            file,
-            "-frames:v",
-            "1",
-            "-vf",
-            &format!("scale={w}:-2"),
-            "-q:v",
-            "4",
-        ])
-        .arg(out)
-        .output();
-    match status {
+    let (mut cmd, _) = ffmpeg_frame_cmd(ffmpeg, file, at_seconds, width_px, true);
+    match cmd.args(["-q:v", "4"]).arg(out).output() {
         Ok(o) => o.status.success() && out.is_file(),
         Err(_) => false,
     }
@@ -1553,5 +1573,42 @@ mod tests {
             assert_eq!(dh, 48);
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn from_fps_rejects_near_zero_without_zero_num() {
+        assert!(FrameRate::from_fps(0.005).is_err());
+        assert!(FrameRate::from_fps(0.4).is_err());
+        let ok = FrameRate::from_fps(1.0).expect("1 fps");
+        assert_eq!(ok, FrameRate { num: 1, den: 1 });
+    }
+
+    #[test]
+    fn timecode_and_drift_reject_zero_frame_rate() {
+        let bad_zero_num = FrameRate { num: 0, den: 1 };
+        let bad_zero_den = FrameRate { num: 30, den: 0 };
+        for rate in [&bad_zero_num, &bad_zero_den] {
+            assert!(rate.validate().is_err());
+            assert!(parse_timecode("00:00:00:00", rate).is_err());
+            assert!(timecode_from_frame(0, rate, false).is_err());
+            assert!(timecode_to_frame(&Timecode::new(0, 0, 0, 0, false), rate).is_err());
+            assert!(DriftMonitor::new(48000, *rate).is_err());
+            assert_eq!(expected_video_frame(48000, 48000, rate), 0);
+            assert_eq!(audio_samples_for_frame(1, 48000, rate), 0);
+        }
+        assert_eq!(expected_video_frame(48000, 0, &FrameRate::R30), 0);
+    }
+
+    #[test]
+    fn thumb_jpeg_native_rejects_overflow_and_bad_dims() {
+        assert!(thumb_jpeg_native(u32::MAX, u32::MAX, &[]).is_none());
+        assert!(thumb_jpeg_native(70000, 1, &[]).is_none());
+        assert!(thumb_jpeg_native(0, 10, &[]).is_none());
+    }
+
+    #[test]
+    fn beats_and_seconds_reject_non_finite_values() {
+        assert!(beats_to_seconds(f64::NAN, 120.0).is_err());
+        assert!(seconds_to_beats(f64::INFINITY, 120.0).is_err());
     }
 }
