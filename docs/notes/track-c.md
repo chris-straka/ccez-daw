@@ -14,8 +14,8 @@ is no new object: the frozen `Track` already carries `device_ids` — an
 ordered list — and each device is a frozen `Node` with a `params` list.
 The chain *is* that order.
 
-The map: [`chain_order`](../../../core/src/plugins/chain.rs) reads the
-track's order; [`chain_devices`](../../../core/src/plugins/chain.rs)
+The map: [`chain_order`](../../core/src/plugins/chain.rs) reads the
+track's order; [`chain_devices`](../../core/src/plugins/chain.rs)
 resolves it to device nodes in that order (ids with no matching node are
 skipped — the graph treats missing endpoints the same way, as
 pass-through, so a half-specified chain still renders).
@@ -32,14 +32,14 @@ schema change, a migration note, a drift-gate failure. Instead they are
 `latency_samples`:
 
 - `oversampling`: `0.0` = off, `1.0` = on (missing = off).
-  [`is_oversampled`](../../../core/src/plugins/chain.rs) reads it,
-  [`set_oversampled`](../../../core/src/plugins/chain.rs) writes it
+  [`is_oversampled`](../../core/src/plugins/chain.rs) reads it,
+  [`set_oversampled`](../../core/src/plugins/chain.rs) writes it
   (inserting the param when absent), and
-  [`oversample_factor`](../../../core/src/plugins/chain.rs) maps it to a
+  [`oversample_factor`](../../core/src/plugins/chain.rs) maps it to a
   render rate (1x / 2x).
 - `wet` / `dry`: per-device mix gains in `0.0..=1.0` (missing = fully
-  wet). [`set_wet_dry`](../../../core/src/plugins/chain.rs) clamps instead
-  of erroring; [`apply_wet_dry`](../../../core/src/plugins/chain.rs)
+  wet). [`set_wet_dry`](../../core/src/plugins/chain.rs) clamps instead
+  of erroring; [`apply_wet_dry`](../../core/src/plugins/chain.rs)
   (`dry_in * dry + wet_in * wet`) is the same per-frame math the realtime
   insert applies, so the unit test proves the DSP contract without
   hardware. A bypassed-feeling device is `wet = 0, dry = 1`.
@@ -53,18 +53,18 @@ set_wet_dry(&mut dev, 0.0, 1.0);   // ...but passes audio straight through
 
 Before a destructive tweak — reorder, retune, swap a device — freeze the
 whole chain: its order plus every device's full params (values *and*
-ranges, so restore is exact). [`ChainSnapshot`](../../../core/src/plugins/chain.rs)
+ranges, so restore is exact). [`ChainSnapshot`](../../core/src/plugins/chain.rs)
 is plain serde JSON, the same shape a preset file or op payload would
 carry.
 
-The map: [`save_snapshot`](../../../core/src/plugins/chain.rs) captures,
-[`snapshot_to_json` / `snapshot_from_json`](../../../core/src/plugins/chain.rs)
-carry, [`restore_snapshot`](../../../core/src/plugins/chain.rs) re-applies:
+The map: [`save_snapshot`](../../core/src/plugins/chain.rs) captures,
+[`snapshot_to_json` / `snapshot_from_json`](../../core/src/plugins/chain.rs)
+carry, [`restore_snapshot`](../../core/src/plugins/chain.rs) re-applies:
 device params/names are replaced wholesale (devices missing from the
 project are re-created), then the track's order is reset. Order and
 devices must agree element-wise or restore errors — it never silently
 drops an insert. Unknown track, unknown device on save, and torn JSON all
-return [`ChainError`](../../../core/src/plugins/chain.rs), never panic.
+return [`ChainError`](../../core/src/plugins/chain.rs), never panic.
 
 ```rust
 let snap = save_snapshot(&project, "trk_lead")?; // tweak freely...
@@ -102,38 +102,38 @@ restore_snapshot(&mut project, &snap)?;          // ...then come back
 New to VST3? A VST3 plugin is a native `*.vst3` bundle exporting one C
 symbol, `GetPluginFactory`. The host calls it, enumerates the plugin
 classes inside, and drives the audio ones (`Audio Module Class`). The
-VST3 side lives in [`vst3.rs`](../../../core/src/plugins/vst3.rs) and is
+VST3 side lives in [`vst3.rs`](../../core/src/plugins/vst3.rs) and is
 organized in the same three verbs as the CLAP host (`host.rs`), so the
 two formats converge instead of competing:
 
 | Job | CLAP side (agent 1, owns) | VST3 side (agent 2, owns) |
 |---|---|---|
-| Discover | `PluginDescriptor` (registry entry) | [`Vst3Bundle::scan_dir`](../../../core/src/plugins/vst3.rs) (find `*.vst3` dirs, sorted; missing dir = empty, not an error) |
-| Load | `PluginHost::load` → sandbox worker | [`Vst3Host::load_bundle`](../../../core/src/plugins/vst3.rs) → boxed [`Vst3Instance`](../../../core/src/plugins/vst3.rs) |
+| Discover | `PluginDescriptor` (registry entry) | [`Vst3Bundle::scan_dir`](../../core/src/plugins/vst3.rs) (find `*.vst3` dirs, sorted; missing dir = empty, not an error) |
+| Load | `PluginHost::load` → sandbox worker | [`Vst3Host::load_bundle`](../../core/src/plugins/vst3.rs) → boxed [`Vst3Instance`](../../core/src/plugins/vst3.rs) |
 | Run | `process` / `set_param` over the pipe | `Vst3Instance::process` / `set_param` in-process (v1) |
 | Snapshot | `PluginState { params, blob }` | `params()` + `reset()` today; the opaque `blob` (VST3 state chunk via `IComponent::getState`) is phase 2 |
 
 Two conventions both sides share, so neither invents schema: params are
 the frozen `Param` shape (VST3 `set_param` clamps to `[min, max]`, the
 same rule the engine's `ParamSet` applies), and
-[`as_device_node`](../../../core/src/plugins/vst3.rs) maps a loaded
+[`as_device_node`](../../core/src/plugins/vst3.rs) maps a loaded
 plugin to a frozen `NodeKind::Device` node — which is exactly what
 `chain_devices` (§1) resolves and what `PluginDescriptor.id` matches.
 
 The map:
 
-- [`Vst3Bundle`](../../../core/src/plugins/vst3.rs) — bundle paths per
+- [`Vst3Bundle`](../../core/src/plugins/vst3.rs) — bundle paths per
   platform (`Contents/MacOS/<stem>`, `Contents/x86_64-linux/<stem>.so`,
   `Contents/x86_64-win/<stem>.vst3`).
-- [`Vst3Host::load_module`](../../../core/src/plugins/vst3.rs) — a real
+- [`Vst3Host::load_module`](../../core/src/plugins/vst3.rs) — a real
   `dlopen` round-trip: open the library, fetch `GetPluginFactory`, walk
   `countClasses`/`getClassInfo` with the byte-exact `PClassInfo` layout.
   A system library without that export returns `NoFactory` (a test does
   exactly this against libc — proof the loader is real, not a mock).
-- [`DescriptorPlugin`](../../../core/src/plugins/vst3.rs) — the v1
+- [`DescriptorPlugin`](../../core/src/plugins/vst3.rs) — the v1
   runnable backend behind the unstable `descriptor.json` dev/test
   format (gain effect; NOT a frozen contract, never in project files,
-  never mirrored to TypeScript). [`NullVst3Plugin`](../../../core/src/plugins/vst3.rs)
+  never mirrored to TypeScript). [`NullVst3Plugin`](../../core/src/plugins/vst3.rs)
   is the Track-B-`NullBackend`-pattern test double.
 - New dependency: `libloading 0.8` — already in `Cargo.lock` (via
   bindgen), so no new supply-chain surface and offline builds keep
@@ -178,7 +178,7 @@ The map:
 
 Phase 2 from §8 landed following the CLAP pattern exactly (`clap.rs` +
 `clap-gain` fixture + `LoadClap` op + latency reporting): `vst3.rs` now
-holds a [`Vst3Backend`](../../../core/src/plugins/vst3.rs) driven by the
+holds a [`Vst3Backend`](../../core/src/plugins/vst3.rs) driven by the
 additive `LoadVst3` worker op, and `core/vst3-gain/` is the deterministic
 test fixture. `PluginKind::Vst3` + `PluginDescriptor::vst3` ride the
 unchanged host/sandbox/recovery path; mock, CLAP, and AU/ARA seams are
@@ -202,17 +202,17 @@ adds both.
 
 ### 9b. The map
 
-- [`Vst3Backend::load`](../../../core/src/plugins/vst3.rs) —
+- [`Vst3Backend::load`](../../core/src/plugins/vst3.rs) —
   `Vst3Host::builder` (session rate, 1024-frame blocks, 1 in / 1 out
   channel) + `load_plugin(bundle)` + mono bus-layout check + param
   discovery (names/ids/normalized ranges/seed values) +
   `start_processing` + baseline `save_state` blob.
-- [`Vst3Backend::process`](../../../core/src/plugins/vst3.rs) — mono
+- [`Vst3Backend::process`](../../core/src/plugins/vst3.rs) — mono
   blocks (chunked at 1024 frames) with the full current param set
   re-sent every block (the CLAP rule, so a kill-and-respawn converges
   even when `set_param` replays were lost); worker ids match VST3 param
   names case-insensitively and clamp to `[min, max]`.
-- [`Vst3Backend::latency_samples`](../../../core/src/plugins/vst3.rs) —
+- [`Vst3Backend::latency_samples`](../../core/src/plugins/vst3.rs) —
   live `IAudioProcessor::getLatencySamples` query (0 when absent),
   feeding `LatencyMap` through the unchanged `GetLatency` op.
 - State is a *real* VST3 chunk: `state()` returns params + the stored
@@ -282,10 +282,10 @@ as `u32`s: type (`aufx` = effect, `aumu` = instrument), subtype (the
 specific plugin), manufacturer (`appl` = Apple). The host finds components
 through `AudioComponentFindNext` and opens them with
 `AudioComponentInstanceNew`. That find-then-open pair is the whole v1
-seam in [`au.rs`](../../../core/src/plugins/au.rs); render callbacks and
+seam in [`au.rs`](../../core/src/plugins/au.rs); render callbacks and
 parameter bridging are the phase-2 follow-up on the [`AuInstance`] handle.
 
-The map: [`fourcc` / `fourcc_string`](../../../core/src/plugins/au.rs)
+The map: [`fourcc` / `fourcc_string`](../../core/src/plugins/au.rs)
 pack the codes (`0x61756678` ⇄ `"aufx"`); [`scan_system`] lists installed
 bundles from the three system domains (name from `Info.plist`
 `CFBundleName`, else the bundle stem; unreadable folders scan empty, never
@@ -318,7 +318,7 @@ opened in-process, and disposed on drop — and `system_scan_finds_bundled_units
 
 ## 6b. AU parameter + render bridging: the follow-up lands (no flag on the render path)
 
-The phase-2 follow-up §6 named is now [`AuBackend`](../../../core/src/plugins/au.rs):
+The phase-2 follow-up §6 named is now [`AuBackend`](../../core/src/plugins/au.rs):
 hand-rolled FFI grows from 3 to 12 extern fns (initialize/uninitialize,
 get/set property, get/set parameter, render — still zero new crates,
 plus `CoreFoundation` string reads for `cfNameString` display names),
@@ -328,7 +328,7 @@ host/sandbox/recovery path.
 
 ### The map
 
-- [`AuBackend::load`](../../../core/src/plugins/au.rs) — type gate
+- [`AuBackend::load`](../../core/src/plugins/au.rs) — type gate
   first (`aufx`/`aumu`/`augn` render; output/mixer/panner/converter/…
   refuse with `UnsupportedType` before touching the registry, on every
   platform), then find + open (no `CCEZ_ENABLE_AU` consult — the tested
@@ -351,7 +351,7 @@ host/sandbox/recovery path.
   (zero-padded tail); sources render without one. Empty input renders
   empty (zero-frame renders refuse). `Drop` never renders on a stale
   callback — registration is per-chunk by construction.
-- [`AuBackend::latency_samples`](../../../core/src/plugins/au.rs) —
+- [`AuBackend::latency_samples`](../../core/src/plugins/au.rs) —
   live `kAudioUnitProperty_Latency` seconds × rate (0 when absent),
   feeding `LatencyMap` through the unchanged `GetLatency` op.
 - State is host-side passthrough like the mock (params + opaque `blob`);
@@ -418,7 +418,7 @@ Decision (landed): the zero-new-deps v1 proved the sandbox +
 snapshot + recovery machinery with a mock backend behind an honest
 named seam (`HostError::ClapUnimplemented` — the same mark-and-refuse
 pattern Track B used for remote DSP). Real loading has since landed as
-`ClapBackend` ([`clap.rs`](../../../core/src/plugins/clap.rs),
+`ClapBackend` ([`clap.rs`](../../core/src/plugins/clap.rs),
 clack-host + libloading + clack-extensions): it runs *inside the worker
 process* — untrusted C-ABI code stays behind the process boundary —
 and speaks the existing worker protocol (`Init`, then one additive
@@ -427,15 +427,15 @@ and the `ClapUnimplemented` refusal is gone.
 
 The map:
 
-- [`ClapBackend::load`](../../../core/src/plugins/clap.rs) —
+- [`ClapBackend::load`](../../core/src/plugins/clap.rs) —
   `PluginEntry::load` + first-plugin `PluginInstance::new` + param
   discovery (names/ids/ranges/seed values) + mono port-layout check +
   `activate` at the session rate + `start_processing`.
-- [`ClapBackend::process`](../../../core/src/plugins/clap.rs) — mono
+- [`ClapBackend::process`](../../core/src/plugins/clap.rs) — mono
   blocks (chunked at 1024 frames) with the full current param set
   carried as `ParamValueEvent`s every block; worker ids match CLAP
   param names case-insensitively and clamp to `[min, max]`.
-- [`ClapBackend::latency_samples`](../../../core/src/plugins/clap.rs) —
+- [`ClapBackend::latency_samples`](../../core/src/plugins/clap.rs) —
   live query of the CLAP latency extension (0 when absent), feeding
   `LatencyMap` through the unchanged `GetLatency` op.
 - State is host-side truth like the mock (params + opaque `blob`
@@ -449,10 +449,10 @@ The map:
 
 ### 7b. The host keeps truth; the child does DSP
 
-[`PluginHost`](../../../core/src/plugins/host.rs) is a registry: `load`
+[`PluginHost`](../../core/src/plugins/host.rs) is a registry: `load`
 spawns one worker process per plugin, `process` renders a mono block
 through it, `set_param` tunes it. Beside each live child the host holds
-a [`PluginState`](../../../core/src/plugins/host.rs) — params plus the
+a [`PluginState`](../../core/src/plugins/host.rs) — params plus the
 plugin's opaque blob (a CLAP state chunk the host never interprets;
 round-trip exactness is the only contract). `PluginState` is serde JSON
 on purpose: the same bytes ride in engine assets (`plugin` kind) and
@@ -467,7 +467,7 @@ let out = host.process("lead", &[1.0, -1.0])?; // [0.5, -0.5]
 
 ### 7c. The wire is one JSON line each way
 
-The worker ([`worker.rs`](../../../core/src/plugins/worker.rs), run by
+The worker ([`worker.rs`](../../core/src/plugins/worker.rs), run by
 the `plugin-worker` binary) reads [`WorkerRequest`] lines on stdin and
 writes one [`WorkerResponse`] line per request on stdout: `init`,
 `set_param`, `get_state`, `set_state`, `process`, `shutdown`. Newline
@@ -478,7 +478,7 @@ built-in mock DSP is a gain plugin — deliberately dumb, so tests prove
 
 ### 7d. Death is detected three ways; recovery replays last-known-good
 
-[`SandboxedPlugin`](../../../core/src/plugins/sandbox.rs) owns the
+[`SandboxedPlugin`](../../core/src/plugins/sandbox.rs) owns the
 child plus both pipes, and one invariant: `last_good` always holds the
 state from the most recent *successful* mutating call (spawn baseline,
 `set_param`, `snapshot`, `restore`). A crash can only lose calls that
@@ -541,15 +541,15 @@ one rule: the sandbox boundary never moves — only what crosses it
 
 ### 10a. Multi-plugin bundles: enumerate, select by id
 
-- CLAP: [`ClapBackend::available_plugins`](../../../core/src/plugins/clap.rs)
+- CLAP: [`ClapBackend::available_plugins`](../../core/src/plugins/clap.rs)
   lists every plugin the entry exposes in factory order (pure
   discovery — nothing instantiates, so stereo entries list fine);
-  [`ClapBackend::load_selected`](../../../core/src/plugins/clap.rs)
+  [`ClapBackend::load_selected`](../../core/src/plugins/clap.rs)
   instantiates by CLAP id, and an unknown id is `NoPlugin`, never a
   silent index-0 fallback. The id-less `load` keeps the old default.
-- VST3: [`Vst3Backend::available_classes`](../../../core/src/plugins/vst3.rs)
+- VST3: [`Vst3Backend::available_classes`](../../core/src/plugins/vst3.rs)
   lists every factory class via `vst3-host` discovery (32-hex uids);
-  [`Vst3Backend::load_class`](../../../core/src/plugins/vst3.rs)
+  [`Vst3Backend::load_class`](../../core/src/plugins/vst3.rs)
   instantiates by uid through `load_plugin_class`. Unknown uids surface
   as `Load`.
 - Plumbing is additive on both sides of the pipe: `LoadClap` gains an
@@ -583,7 +583,7 @@ refuse there.
 ### 10c. Hang detection: heartbeat + watchdog
 
 - The worker gains one additive op, `Ping`: an immediate no-op reply.
-- [`SandboxedPlugin`](../../../core/src/plugins/sandbox.rs) gains a
+- [`SandboxedPlugin`](../../core/src/plugins/sandbox.rs) gains a
   per-plugin watchdog deadline (`DEFAULT_WORKER_TIMEOUT`, 10 s;
   `set_timeout` for tests): every round-trip read moves to a thread
   and is collected with `recv_timeout`. A mute child is killed and
@@ -629,10 +629,10 @@ per worker, params and state over the existing pipe.
 
 ### 11a. Runtime evaluation (verdict first)
 
-Verdict: **`wasmtime` 48.0.2** (the `WasmNote` in
-[`host.rs`](../../../core/src/plugins/host.rs) records this).
+Verdict: **`wasmtime` 48.0.x** (48.0.7 locked in `Cargo.lock`; the `WasmNote` in
+[`host.rs`](../../core/src/plugins/host.rs) records this).
 
-- `wasmtime` 48.0.2 is already the pinned devices-side runtime: typed
+- `wasmtime` 48.0.x is already the pinned devices-side runtime: typed
   `Func` boundary, `Store` isolation, empty-`Linker` instantiation for
   zero-import guests — and an *optional* cargo dependency, so default
   builds download and compile nothing new. Reusing the pin for the
@@ -645,7 +645,7 @@ Verdict: **`wasmtime` 48.0.2** (the `WasmNote` in
 - The guest contract is four exports and zero imports (`wasm_init` /
   `wasm_set_param` / `wasm_sample` / `wasm_reset`), mono `f32`
   per-sample with params as `(code, f32)` pairs: the
-  [`kernel.rs`](../../../core/src/devices/kernel.rs) shape, so the seam
+  [`kernel.rs`](../../core/src/devices/kernel.rs) shape, so the seam
   is a loader plus a memory copy, never a redesign. Strings never enter
   the guest; state the host must resurrect (params plus the opaque blob)
   lives in worker-owned `PluginState` bytes — caller-owned, so
@@ -654,7 +654,7 @@ Verdict: **`wasmtime` 48.0.2** (the `WasmNote` in
 
 ### 11b. The map
 
-- [`wasm.rs`](../../../core/src/plugins/wasm.rs) — the worker-side
+- [`wasm.rs`](../../core/src/plugins/wasm.rs) — the worker-side
   `WasmBackend`: `load`/`load_bytes` (binary or WAT text;
   `Module::new` sniffs both), `set_param` (unknown ids refuse *before*
   touching the guest, so refused sets leave stored state untouched),
@@ -665,15 +665,15 @@ Verdict: **`wasmtime` 48.0.2** (the `WasmNote` in
   mock) as inline WAT — `wasmtime` parses module text hermetically, so
   tests stage it to a temp file and `LoadWasm` it through the real file
   path with no committed bytes and no new crate.
-- [`worker.rs`](../../../core/src/plugins/worker.rs) — one additive op,
+- [`worker.rs`](../../core/src/plugins/worker.rs) — one additive op,
   `LoadWasm { path }`, with the `LoadClap` contract (requires `Init`
   first; a failure leaves the previous backend running). Every existing
   op dispatches on the new `Backend::Wasm` arm; without the feature the
   op fails cleanly (`wasm-runtime feature not enabled`).
-- [`host.rs`](../../../core/src/plugins/host.rs) — `PluginKind::Wasm`
+- [`host.rs`](../../core/src/plugins/host.rs) — `PluginKind::Wasm`
   plus the `wasm()` descriptor constructor (path-required, like
   Clap/Vst3) and the `WasmNote` evaluation above.
-- [`sandbox.rs`](../../../core/src/plugins/sandbox.rs) — respawn replays
+- [`sandbox.rs`](../../core/src/plugins/sandbox.rs) — respawn replays
   `LoadWasm` for `Wasm` descriptors (and refuses cleanly without the
   feature), so crash recovery reloads the module exactly like it reloads
   CLAP/VST3 bundles. Mock, CLAP, VST3, and AU arms are untouched.

@@ -16,11 +16,11 @@ into a cache dir, never bundled with the app.
 
 ## 1. Where pins live and how they resolve
 
-- Rust truth: [`models.rs`](../../../core/src/ai/models.rs) — `PINS`
+- Rust truth: [`models.rs`](../../core/src/ai/models.rs) — `PINS`
   (the verdict table), `resolve(sidecar)` (presence check →
   `Baseline` | `Sidecar`), `model_cache_dir()` (`$CCEZ_MODEL_DIR`, else
   `~/.local/share/ccez-daw/models`). No network I/O, no new dependency.
-- TS mirror: [`models.ts`](../../../mcp/src/ai/models.ts) —
+- TS mirror: [`models.ts`](../../mcp/src/ai/models.ts) —
   `MODEL_PINS`, `resolveProviderFor(kind)` (absent → local baseline
   provider, cached → HTTP sidecar with the pinned id),
   `ensureModelCached(sidecar, weightUrl)` (fetch-once into the same cache

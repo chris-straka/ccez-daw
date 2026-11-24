@@ -9,6 +9,8 @@ Follow these over cleverness.
 
 - `bun run check` — typegen drift + `tsc` + core tests. Zero tolerance.
 - `bun run test` — ui + mcp + core suites, all green.
+- `cargo fmt --all --check` — Rust formatting across workspace.
+- `cargo clippy --locked --workspace --all-targets -- -D warnings` — lint clean.
 - `bun run test:e2e` — the Playwright specs in `ui/e2e/` against the mocked shell.
 - `cargo check --manifest-path src-tauri/Cargo.toml` — after touching commands.
 
@@ -57,7 +59,13 @@ common wrong answer.
   Watch it fail first, then fix.
 - Shell-visible behavior gets an e2e spec following `ui/e2e/session.spec.ts`.
 - When behavior changes, update the doc that described the old behavior
-  (`docs/notes/*`, `contracts/*`) in the same change.
+  ([`docs/README.md`](./docs/README.md), `docs/notes/*`, `contracts/*`) in the
+  same change. Keep archived notes in `docs/archive/` untouched unless fixing
+  broken links or privacy issues.
+- **Public-repo privacy:** This repository is public. Never commit local user
+  paths (`/Users/...`, `~/...`), internal machine hostnames, credentials, or
+  private project/IP names anywhere in code, docs, comments, or commit
+  messages.
 
 ## UI conventions
 

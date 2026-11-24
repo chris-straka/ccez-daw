@@ -119,13 +119,11 @@ license required). Both Rust crates inherit the problem: `ableton-link
 0.1.0` wraps that GPL C++ tree (license field: unknown, plus a cmake/C++
 build inside `core`), and `ableton-link-rs 0.1.2` is natively GPL-3.0.
 
-This repo carries no `LICENSE` file, no `license` field in
-`core/Cargo.toml` / `package.json` (`"private": true`), and ships a
-closed desktop product — accepting a GPL copyleft dependency (or an
-unknown-license C++ binding needing a paid commercial grant) is blocked
-without a deliberate relicensing decision by the owner. A genuine
-Ableton Link session (two *real* Link peers converging) therefore cannot
-be wired in on this track.
+Originally written when the repository had no `LICENSE` file and targeted a
+closed desktop distribution; the repository now ships under the MIT
+`LICENSE`, which still blocks accepting a GPL copyleft dependency (`GPL-2.0-or-later`
+or `GPL-3.0`) or an unknown-license C++ binding needing a commercial grant. A
+genuine Ableton Link session therefore remains excluded by license hygiene.
 
 Fallback implemented instead, stated explicitly: the dependency-free
 `LinkBus`/`LinkSession` seam keeps its API shape, `UdpLinkNode` (std-only

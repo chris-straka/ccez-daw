@@ -93,7 +93,7 @@ offline bounce does when a worker goes dark. All three answers are pure
 functions over `Project` data — no sockets, no threads — so they are
 deterministic: same project + same advertisements, same plan, every time.
 
-**Partition policy** ([`PartitionPolicy`](../../../core/src/remotenodes/sched.rs)):
+**Partition policy** ([`PartitionPolicy`](../../core/src/remotenodes/sched.rs)):
 which nodes are worth offloading. Rules, in order:
 
 1. Signal cycles fail first — an unrenderable graph is unpartitionable too.
@@ -106,7 +106,7 @@ which nodes are worth offloading. Rules, in order:
    so one farm outage can never take the whole mix), heaviest latency
    first — the expensive DSP wins the offload slots.
 
-**Load/capability handshake** ([`Registry`](../../../core/src/remotenodes/sched.rs)):
+**Load/capability handshake** ([`Registry`](../../core/src/remotenodes/sched.rs)):
 workers advertise `NodeCapability{endpoint, kinds, max_nodes, load, online}`;
 `assign()` deals each candidate to the least-loaded online worker that
 accepts its kind and still has capacity (ties by endpoint). No worker
@@ -114,7 +114,7 @@ fits → the node falls back to local *at plan time*; planning never strands
 a node. `PartitionPlan::apply_to` then marks the winners through the
 existing `Schedule::mark_remote` seam — the renderer is untouched.
 
-**Failover + offline bounce** ([`sched_failover`](../../../core/src/remotenodes/sched_failover.rs)):
+**Failover + offline bounce** ([`sched_failover`](../../core/src/remotenodes/sched_failover.rs)):
 `FailoverPolicy::decide` maps (reachable?) to one fate — `UseRemote`,
 `BounceLocal` (fail-open: render the orphaned subgraph locally), or `Abort`
 (fail-closed: skip the track rather than guess). `bounce_with_failover`

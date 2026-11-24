@@ -10,7 +10,7 @@ the `Track.device_ids` order); the chain conventions it reuses live in
 ## 1. A kernel is samples in, samples out — nothing else
 
 Every native device sound is a pure-Rust function over mono `f32`
-slices in [`kernel.rs`](../../../core/src/devices/kernel.rs): gain,
+slices in [`kernel.rs`](../../core/src/devices/kernel.rs): gain,
 one-pole lowpass/highpass, feedback-comb delay, soft-clip distortion.
 Three rules keep them portable (native today, WASM tomorrow, realtime
 when wired):
@@ -27,13 +27,13 @@ when wired):
   1.0 would circulate forever; same clamp-not-error rule as `set_wet_dry`
   and the engine's `ParamSet`).
 
-The map: [`gain_process`](../../../core/src/devices/kernel.rs),
-[`lowpass_process` / `HighpassState`](../../../core/src/devices/kernel.rs)
+The map: [`gain_process`](../../core/src/devices/kernel.rs),
+[`lowpass_process` / `HighpassState`](../../core/src/devices/kernel.rs)
 (`a = 1 − e^(−2π·fc/sr)`; DC passes, Nyquist is crushed, and the test
-pins both directions), [`delay_process`](../../../core/src/devices/kernel.rs)
+pins both directions), [`delay_process`](../../core/src/devices/kernel.rs)
 (`y[n] = x[n] + fb·y[n−D]`; delay 0 bypasses the line because instant
 feedback is a causality violation),
-[`distortion_process`](../../../core/src/devices/kernel.rs)
+[`distortion_process`](../../core/src/devices/kernel.rs)
 (`(1+k)·x/(1+k·|x|)` — unity at zero drive, bounded at ten).
 
 ```rust
@@ -47,8 +47,8 @@ The frozen `Node` has no "type" field — just `id`, `kind`, `name`,
 `params` — and this track may not add one (schema change = migration
 note). So the class rides *inside* the frozen `Param` shape as a numeric
 code in the `device_class` param, exactly the way Track C's oversampling
-flag rides in `"oversampling"`. [`classify`](../../../core/src/devices/class.rs)
-reads it; [`instantiate`](../../../core/src/devices/class.rs) writes it
+flag rides in `"oversampling"`. [`classify`](../../core/src/devices/class.rs)
+reads it; [`instantiate`](../../core/src/devices/class.rs) writes it
 (tag plus class defaults — the single place reusable-device defaults
 live). Codes are append-only: renumbering one would orphan saved
 projects.
@@ -68,7 +68,7 @@ assert_eq!(classify(&node), DeviceClass::Lowpass);
 
 `Track.device_ids` says "A then B". It cannot say "A then (B beside C,
 mixed back)" or nest groups inside groups. That structure lives in the
-[`Rack`](../../../core/src/devices/rack.rs) sidecar — a plain serde
+[`Rack`](../../core/src/devices/rack.rs) sidecar — a plain serde
 struct riding *alongside* the project (the Track G `VcaGroup`
 precedent), never in it. Empty rack = flat chain: racks add, never
 reinterpret.
@@ -77,21 +77,21 @@ reinterpret.
   `Rack.containers`. Containers nest by referencing other container ids;
   cycles are `RackError::BadRack`, never a hang (a `visiting` set,
   the same guard graph traversals use).
-- Splits: [`Split`](../../../core/src/devices/rack.rs) renders every
+- Splits: [`Split`](../../core/src/devices/rack.rs) renders every
   branch from the same input and sums them with per-branch gains
   (parallel squash beside dry — the idea; multiband DSP is later).
 - The container's own wet/dry still applies to its subtree (a rack bus
   fades everything inside it), and missing device nodes render as
   pass-through, so half-specified racks still sound.
 
-[`render_rack`](../../../core/src/devices/rack.rs) is the offline
+[`render_rack`](../../core/src/devices/rack.rs) is the offline
 renderer: serial chain with recursive expansion, per-device wet/dry
 from the Track C conventions (`dry·dry_in + wet·wet_in`, same math the
 realtime insert will apply), 2x oversampling behind the chain's flag
 (naive linear resample — the polyphase upgrade is the same follow-up
 Track C already names; rate-independent kernels are bit-identical
 through it, and a test pins that), and an explicit
-[`RackState`](../../../core/src/devices/rack.rs) threaded through so a
+[`RackState`](../../core/src/devices/rack.rs) threaded through so a
 delay's echo lands in the *next* block (a test renders two blocks and
 asserts exactly that).
 
@@ -106,14 +106,14 @@ let out = render_rack(&project, &rack, &mut state, "trk_lead", &input, 44100.0)?
 
 ## 4. One knob drives many params; presets freeze one device
 
-A [`Macro`](../../../core/src/devices/rack.rs) maps one 0..=1 knob onto
+A [`Macro`](../../core/src/devices/rack.rs) maps one 0..=1 knob onto
 many params at once (`min + value·(max − min)`, clamped to each param's
 own range, later macros win). Overrides are render-time only — the
 project's stored params are never rewritten, so a macro tweak cannot
 corrupt a preset. Macro values live only in the sidecar; wiring them to
 `ParamSet`/automation is the integration follow-up.
 
-A [`DevicePreset`](../../../core/src/devices/rack.rs) is one reusable
+A [`DevicePreset`](../../core/src/devices/rack.rs) is one reusable
 device as JSON: class, name, full params (values *and* ranges, the
 chain-snapshot rule, so restore is exact). `capture` refuses foreign
 nodes (a preset must know its DSP); `instantiate` stamps out a fresh id
@@ -125,10 +125,10 @@ lowpass, JSON-round-trips it, restores into a fresh project, and renders
 ## 5. WASM is a seam, not a dependency
 
 Third-party DSP as `.wasm` modules is phase 2:
-[`load_wasm_module`](../../../core/src/devices/wasm.rs) always returns
+[`load_wasm_module`](../../core/src/devices/wasm.rs) always returns
 `WasmError::WasmUnimplemented` today — the same mark-and-refuse pattern
 Track B used for remote DSP and Track C for real CLAP bundles. The
-evaluation is recorded on [`WasmNote`](../../../core/src/devices/wasm.rs):
+evaluation is recorded on [`WasmNote`](../../core/src/devices/wasm.rs):
 `wasmtime` is the standard embedding pick, v1 adds zero new cargo deps
 (the offline-friendly rule the CLAP host kept), and the kernels were
 written to the future call convention on purpose (slices in, slices

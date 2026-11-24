@@ -12,7 +12,7 @@ the typegen drift gate cannot fail); the renderer it taps lives in
 An insert rewrites the signal; a slow one clicks. A tap only *watches*
 it. So every meter here splits in two halves with opposite budgets —
 the same split as Track B's
-[`device.rs`](../../../core/src/audio/device.rs):
+[`device.rs`](../../core/src/audio/device.rs):
 
 - **Audio half** (`observe` / `process`): runs on the realtime thread.
   No allocation, no locks, no channel `recv`. It only folds samples
@@ -22,11 +22,11 @@ the same split as Track B's
   "stale by one block" over "blocked" — exactly like Track B's
   `ParamBank`.
 
-The map: [`MeterTap::observe`](../../../core/src/meter/tap.rs) folds
-one rendered block in; [`MeterTap::publish`](../../../core/src/meter/tap.rs)
+The map: [`MeterTap::observe`](../../core/src/meter/tap.rs) folds
+one rendered block in; [`MeterTap::publish`](../../core/src/meter/tap.rs)
 refreshes the shared frame with `try_lock` (a UI-held lock means the
 frame is *skipped*, never waited for); the UI polls
-[`MeterReader::snapshot`](../../../core/src/meter/tap.rs) whenever it
+[`MeterReader::snapshot`](../../core/src/meter/tap.rs) whenever it
 repaints. `None` means "repaint the old frame".
 
 ```rust
@@ -48,12 +48,12 @@ ideas (ITU-R BS.1770 style):
    then the 38.135 Hz RLB highpass — model the head/ear. A dull rumble
    and a bright hiss with identical RMS read differently. Derived per
    sample rate via `af_core::loudness::KWeighting` in
-   [`LufsMeter`](../../../core/src/meter/lufs.rs); a DC test proves the
+   [`LufsMeter`](../../core/src/meter/lufs.rs); a DC test proves the
    highpass really eats DC, and a 50 Hz sine test verifies the BS.1770
    RLB curve.
 2. **Rectangular windows**: mean-square energy over the last 400 ms
-   ([`momentary_lufs`](../../../core/src/meter/lufs.rs), a syllable)
-   and 3 s ([`short_term_lufs`](../../../core/src/meter/lufs.rs), a
+   ([`momentary_lufs`](../../core/src/meter/lufs.rs), a syllable)
+   and 3 s ([`short_term_lufs`](../../core/src/meter/lufs.rs), a
    phrase). Rectangular — not exponential — so two implementations
    agree sample for sample. Each window starts evicting once *it*
    fills (an early version gated both on the 3 s ring and read 7.5x
@@ -61,7 +61,7 @@ ideas (ITU-R BS.1770 style):
 3. **Gating for the integrated number**: chop the track into 400 ms
    blocks hopping every 100 ms, drop blocks below −70 LUFS, average
    the rest, drop blocks 10 LU below that average, average what
-   survives ([`integrated_lufs`](../../../core/src/meter/lufs.rs)
+   survives ([`integrated_lufs`](../../core/src/meter/lufs.rs)
    returns `None` when everything gates out). Silence and quiet
    intros must not drag the number down — that is the whole "gated"
    mystery.
@@ -84,7 +84,7 @@ let integ = m.integrated_lufs(); // None on silence
 A DAC does not play your samples — it reconstructs a smooth wave
 *through* them, and that wave overshoots the samples (up to +3 dB on
 hot masters). A sample-peak meter lies exactly at the ceiling.
-[`TruePeakMeter`](../../../core/src/meter/true_peak.rs) re-samples the
+[`TruePeakMeter`](../../core/src/meter/true_peak.rs) re-samples the
 wave 4x denser (the BS.1770 factor) with Catmull-Rom cubic
 interpolation and keeps the biggest absolute value — one running
 maximum plus 3 history samples, so block seams lose nothing (an
@@ -101,14 +101,14 @@ println!("{:.2} dBTP", t.peak_dbtp()); // −inf on silence
 ## 4. Spectrum: FFT on the UI side, never in the callback
 
 An FFT in the audio callback is a classic dropout bug. So the audio
-thread only `memcpy`s into a [`SharedRing`](../../../core/src/meter/spectrum.rs)
+thread only `memcpy`s into a [`SharedRing`](../../core/src/meter/spectrum.rs)
 (behind `try_lock` — a contended lock *drops* the block; a spectrum
 frame is indicative), and the UI thread runs
-[`spectrum_magnitudes`](../../../core/src/meter/spectrum.rs): a
+[`spectrum_magnitudes`](../../core/src/meter/spectrum.rs): a
 Hann-windowed radix-2 FFT over the latest window (~60 lines, no
 `rustfft` in the realtime crate), grouped into display bins by
 maximum so an off-center tone still reports its true height.
-[`dominant_freq`](../../../core/src/meter/spectrum.rs) picks the exact
+[`dominant_freq`](../../core/src/meter/spectrum.rs) picks the exact
 DFT peak. Display bins are linear fractions of Nyquist — map to log
 bands at the UI layer:
 

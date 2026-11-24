@@ -7,20 +7,20 @@ the exact function that implements it. The frozen rules it obeys live in
 `contracts/op-log-format.md` (the universal `node:param` address) and
 `contracts/project-schema.md` (the `Node` + `Param` shapes, read but
 never extended); the seam this work crosses is named in
-[`wasm.rs`](../../../core/src/devices/wasm.rs) (phase-2 marker) and the
+[`wasm.rs`](../../core/src/devices/wasm.rs) (phase-2 marker) and the
 kernel contract it inherits in
-[`kernel.rs`](../../../core/src/devices/kernel.rs) (slices in, slices
+[`kernel.rs`](../../core/src/devices/kernel.rs) (slices in, slices
 out, caller-owned state, clamp-don't-error).
 
 ## 1. One file, two targets: the ported guest kernel
 
-The port target is [`Delay`](../../../core/src/dsp/delay.rs), the
+The port target is [`Delay`](../../core/src/dsp/delay.rs), the
 simplest kernel in `core/src/dsp`: a feedback delay line (millisecond
 time, feedback, wet/dry mix) whose block loop is integer index
 arithmetic plus `f32` multiply-add — no per-sample transcendentals, so
 it evaluates identically on every target. The port is
-[`guest.rs`](../../../core/src/wasmdevices/guest.rs)
-([`GuestDelay`](../../../core/src/wasmdevices/guest.rs)), kept
+[`guest.rs`](../../core/src/wasmdevices/guest.rs)
+([`GuestDelay`](../../core/src/wasmdevices/guest.rs)), kept
 op-for-op identical to the native loop (same clamp order, same
 `(pos + len - d) % len` tap), which is why the equivalence gate below
 asserts **exact sample equality**, not a tolerance: any drift is a port
@@ -28,11 +28,11 @@ bug, by construction.
 
 The anti-drift mechanism is structural, not procedural: `guest.rs` has
 zero `crate::` imports, and the WASM crate
-[`core/wasm-guest`](../../../core/wasm-guest/src/lib.rs) includes it
+[`core/wasm-guest`](../../core/wasm-guest/src/lib.rs) includes it
 **by path** (`#[path = "../../src/wasmdevices/guest.rs"]`), so the
 native reference and the sandboxed guest are the same file. One
 addition over the native kernel:
-[`step`](../../../core/src/wasmdevices/guest.rs) factors the loop body
+[`step`](../../core/src/wasmdevices/guest.rs) factors the loop body
 into one-sample-in/one-sample-out — the shape the WASM boundary speaks
 — and a test pins `step`-loop == `process` == native.
 
@@ -47,17 +47,17 @@ dev.process(&input, &mut output)?; // bit-identical to dsp::Delay
 The DAW has exactly one param-address grammar — `ParamSet` targets are
 `node:param` (`contracts/op-log-format.md`), applied by the engine with
 `split_once(':')`. The bridge in
-[`params.rs`](../../../core/src/wasmdevices/params.rs) speaks that same
+[`params.rs`](../../core/src/wasmdevices/params.rs) speaks that same
 grammar in both directions:
-[`parse_address`](../../../core/src/wasmdevices/params.rs) splits with
+[`parse_address`](../../core/src/wasmdevices/params.rs) splits with
 the engine's semantics (no colon or an empty half is `BadAddress`;
 extra colons stay in the param half, exactly as the engine leaves
-them), and [`sync_from_node`](../../../core/src/wasmdevices/params.rs)
+them), and [`sync_from_node`](../../core/src/wasmdevices/params.rs)
 hydrates the guest from a frozen `Node` — known ids apply with guest
 clamps, unknown ids skip, the same bulk-load tolerance native
 `from_node` shows. Single addressed sets go the other way: unknown ids
 refuse (`UnknownParam`, state untouched), because a typo'd knob must
-surface — the [`set_param_value`](../../../core/src/devices/class.rs)
+surface — the [`set_param_value`](../../core/src/devices/class.rs)
 rule. The guest's canonical node is the native delay's own
 `default_node`, so a project swaps native for sandboxed with zero param
 edits. Strings never cross into WASM: params travel as `(code, f32)`
@@ -66,10 +66,10 @@ device-class codes).
 
 ## 3. The sandbox is three layers, cheapest first
 
-[`sandbox.rs`](../../../core/src/wasmdevices/sandbox.rs) enforces
+[`sandbox.rs`](../../core/src/wasmdevices/sandbox.rs) enforces
 untrusted-DSP containment before the guest ever sees a sample:
 
-1. **Capabilities** ([`SandboxCaps`](../../../core/src/wasmdevices/sandbox.rs)):
+1. **Capabilities** ([`SandboxCaps`](../../core/src/wasmdevices/sandbox.rs)):
    block-length caps, sample-rate range, delay-line ceiling — checked
    host-side, so absurd rates (`inf`, `0`) never reach allocation the
    way native `Delay::new(inf)` would. Refusals are errors
@@ -77,13 +77,13 @@ untrusted-DSP containment before the guest ever sees a sample:
    `UnknownParam`) — never traps, so a bad knob cannot abort a render.
 2. **Narrow API**: init / set-param / reset / one-sample. No shared
    buffers, no pointers, no strings.
-3. **Isolation** ([`Backend::Wasmtime`](../../../core/src/wasmdevices/sandbox.rs),
+3. **Isolation** ([`Backend::Wasmtime`](../../core/src/wasmdevices/sandbox.rs),
    feature `wasm-runtime`): the guest runs in a wasmtime `Store`
    behind typed `Func`s (`Engine` + `Module` + empty-`Linker` +
    `Store`, per the wasmtime embedding docs), with optional
    fuel metering — an infinite guest loop becomes a caught trap, and a
    test proves it with `fuel_per_block: Some(1)`. The default
-   [`Backend::Simulated`](../../../core/src/wasmdevices/sandbox.rs)
+   [`Backend::Simulated`](../../core/src/wasmdevices/sandbox.rs)
    runs the identical guest source in-process through the same narrow
    API; the equivalence test proves the paths agree.
 
@@ -144,5 +144,5 @@ component-API + WASI-context wiring is the documented follow-up.
   `core/src/plugins/wasm.rs`, `LoadWasm` op, `PluginKind::Wasm`) — see
   `docs/notes/track-c.md` §11. This primer's in-process `Store` path
   stays the DSP-isolation reference; the worker path reuses its pin
-  (`wasmtime` 48.0.2), its zero-import aperture, and its per-sample
+  (`wasmtime` 48.0.x / 48.0.7 in `Cargo.lock`), its zero-import aperture, and its per-sample
   mono-`f32` contract.

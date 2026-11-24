@@ -89,14 +89,12 @@ The map: [`Engine::store_asset`], [`Engine::load_asset`],
 - `bun run typegen -- --check` — unaffected (Track A adds no types; the
   drift gate still passes).
 
-## 7. What Track A deliberately leaves out
+## 7. Scope boundaries and integration status
 
-- `src-tauri/src/lib.rs` still holds stub commands (`op_apply` echoes the
-  seq, `op_undo` returns 0). Wiring those stubs to `Engine` (open on
-  startup, `apply`/`undo`/`redo` per invoke, emit `project_changed`) is the
-  integration follow-up — the engine API already matches the IPC shapes
-  (`op_apply` returns `u64`, `op_undo`/`op_redo` return `u64`).
-- No merge UI and no `.ccez` single-file zip: the bundle is a directory
-  package (copy = portable), and merge lives with the branch track.
+- *(Resolved in shell integration)* `src-tauri/src/lib.rs` now opens `Engine` on
+  startup and routes `op_apply`/`op_undo`/`op_redo` through it, emitting
+  `project_changed` events to the frontend.
+- No `.ccez` single-file zip archive: bundles are portable directory packages
+  (copy = portable), and project branching/merging lives in `core/src/branch.rs`.
 - `model.rs` untouched: the engine uses the frozen `Op`/`OpKind`/`Project`
   as-is, so no typegen drift was possible.

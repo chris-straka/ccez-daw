@@ -18,10 +18,10 @@ with linear interpolation — hold-first before the first point, hold-last
 after the last. There is no block quantization: two renders of the same
 lane agree sample for sample.
 
-The map: [`eval_lane`](../../../core/src/automation.rs) (one beat →
-one value), [`render_lane_samples`](../../../core/src/automation.rs)
+The map: [`eval_lane`](../../core/src/automation.rs) (one beat →
+one value), [`render_lane_samples`](../../core/src/automation.rs)
 (one block → one value per sample; the audio thread reads this shape),
-[`sample_beat`](../../../core/src/automation.rs) (the beat↔sample math).
+[`sample_beat`](../../core/src/automation.rs) (the beat↔sample math).
 The sample-accuracy test pins it: at tempo 60 with a 4 Hz sample rate,
 a 0→1 ramp over 4 beats reads exactly `i/16` at sample `i`
 (`out[4] == 0.25`, `out[16] == 1.0`) — no rounding, no snapping.
@@ -34,10 +34,10 @@ assert_eq!(out[8], 0.5); // sample 8 sits at beat 2, halfway up the ramp
 ## 2. Clips make automation reusable (shapes with names)
 
 Drawing the same swell on every chorus is toil, so automation has
-**clips**: an [`AutomationClip`](../../../core/src/automation.rs) holds
+**clips**: an [`AutomationClip`](../../core/src/automation.rs) holds
 points *relative to beat 0* (a shape, not a placement).
-[`instantiate_clip`](../../../core/src/automation.rs) stamps it at an
-absolute offset, and [`merge_points`](../../../core/src/automation.rs)
+[`instantiate_clip`](../../core/src/automation.rs) stamps it at an
+absolute offset, and [`merge_points`](../../core/src/automation.rs)
 merges the stamp into a lane — same-beat points are replaced, order is
 restored. A clip is copy-paste with a name; the lane stays the truth.
 
@@ -48,12 +48,12 @@ let points = merge_points(&lane, &stamped);
 
 ## 3. Modulation is performed (sources wobble addresses)
 
-A **mod route** is a live patch cable, not ink: a [`ModSource`](../../../core/src/automation.rs)
+A **mod route** is a live patch cable, not ink: a [`ModSource`](../../core/src/automation.rs)
 (LFO or constant) writes to any `ParamAddress` scaled by `depth` in param
-units. All LFO shapes ([`LfoShape`](../../../core/src/automation.rs):
+units. All LFO shapes ([`LfoShape`](../../core/src/automation.rs):
 Sine, Triangle, Saw, Square) are bipolar (-1..+1 over phase 0..1), so
 `depth` always means "peak deviation" regardless of shape. The
-[`ModMatrix`](../../../core/src/automation.rs) is the patch bay: v1 routes
+[`ModMatrix`](../../core/src/automation.rs) is the patch bay: v1 routes
 address track `volume`/`pan` and device params — the same set the engine's
 `ParamSet` accepts — and anything addressable later needs no new plumbing.
 
@@ -69,13 +69,13 @@ modulation per sample in **seconds** (wall-clock LFO time,
 (volume [0, 1.5], pan [-1, 1], device min/max). No lane? The automation
 term is the live knob value, so the knob keeps working under modulation.
 No routes? Pure automation. Unknown address? An error —
-[`AutomationError::UnknownParam`](../../../core/src/automation.rs) —
+[`AutomationError::UnknownParam`](../../core/src/automation.rs) —
 never silent zero.
 
-The map: [`param_base_and_range`](../../../core/src/automation.rs)
+The map: [`param_base_and_range`](../../core/src/automation.rs)
 (value + range lookup mirroring the engine),
-[`resolve_param_samples`](../../../core/src/automation.rs) (the rule,
-per sample), [`render_block`](../../../core/src/automation.rs) (every
+[`resolve_param_samples`](../../core/src/automation.rs) (the rule,
+per sample), [`render_block`](../../core/src/automation.rs) (every
 address at once: lanes plus route-only targets). Two pins: a constant
 +10.0 on a 0.8-volume lane clamps every sample to exactly 1.5 (no wrap,
 no NaN), and the same machinery drives a device `cutoff` (1000 Hz + 100
@@ -84,7 +84,7 @@ depth → 1100 Hz) through the identical `node:param` addressing.
 ## 5. Where it lives (and what it doesn't touch)
 
 - Rust: `core/src/automation.rs` — pure functions over the frozen types
-  plus the [`AutomationDoc`](../../../core/src/automation.rs) sidecar
+  plus the [`AutomationDoc`](../../core/src/automation.rs) sidecar
   (`clips` + `routes`, JSON beside the project like `TimelineDoc`).
   Lanes themselves stay on `Project.automation`.
 - TypeScript: `ui/src/automation/model.ts` — line-for-line mirror

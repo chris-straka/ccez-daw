@@ -9,11 +9,10 @@ measurement it stands on is Track Q's `docs/notes/q-metering.md`
 (BS.1770-style integrated LUFS + 4x true peak); the stems it finishes come
 from `core/src/bounce.rs`.
 
-Game context: a LoZ:TP-like action-adventure (field/combat/dungeon/boss/
-village/night) shipping on PC, Switch, PlayStation, Xbox, and mobile.
-Each platform finishes the same mix to a different loudness — one click
-per target, one report artifact per stem, so the Godot importer
-(`godot-template/`) can prove what shipped.
+Game context: an action-adventure target profile (`field`/`combat`/`dungeon`/
+`boss`/`village`/`night`) shipping across PC, Switch, PlayStation, Xbox, and
+mobile. Each platform finishes the same mix to a different loudness — one click
+per target, one conformance report per stem.
 
 ## 1. A preset is a target with a platform name on it
 
@@ -36,8 +35,8 @@ ASWG-R001 (−24 LKFS, max true peak −2 dBTP). PC, Switch, and Xbox carry no
 published platform-holder LUFS spec, so their rows are marked
 `approximate: true` — convention, not certification, one commit to update
 when a spec appears. The table lives twice, deliberately:
-[`PRESETS`](../../../core/src/meter/conform.rs) in Rust (the truth) and
-[`CONFORM_PRESETS`](../../../ui/src/metering/conform.ts) in TypeScript
+[`PRESETS`](../../core/src/meter/conform.rs) in Rust (the truth) and
+[`CONFORM_PRESETS`](../../ui/src/metering/conform.ts) in TypeScript
 (the bounce panel) — keep them in sync.
 
 ```rust
@@ -48,8 +47,8 @@ let out = conform_to_preset(&stem, "playstation")?;
 ## 2. One click: conform on bounce
 
 The bounce panel previews first, then commits. Preview is pure math —
-[`preview_conform_gain`](../../../core/src/meter/conform.rs) (Rust) /
-[`previewConformGain`](../../../ui/src/metering/conform.ts) (TS) wraps
+[`preview_conform_gain`](../../core/src/meter/conform.rs) (Rust) /
+[`previewConformGain`](../../ui/src/metering/conform.ts) (TS) wraps
 `gain_for_target`: the dB distance to the target, unless the ceiling wins
 (a hot master gets quieter than the preset asks — the ceiling always
 wins). The commit renders the mix (reference tracks excluded, same rule
@@ -69,7 +68,7 @@ numbers.
 
 Every conform re-measures the *output* and writes a
 `<stem-name>.conform.json` artifact next to the stems
-([`ConformanceReport::filename_for`](../../../core/src/meter/conform.rs)).
+([`ConformanceReport::filename_for`](../../core/src/meter/conform.rs)).
 The verdict is two booleans: `target_met` (output within ±1 LU of the
 preset — inside the ±2 LU platform specs quote) and `ceiling_met`
 (output true peak clears the ceiling within 0.1 dB of estimate wobble).

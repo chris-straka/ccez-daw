@@ -85,17 +85,12 @@ winner, so drift between the implementations fails loudly on either side.
 - `cd ui && bun run check` — `tsc --noEmit` clean.
 - Type "warm ambient pad" in the Browser panel — *Warm Analog Pad* tops.
 
-## 5. Known limits (for the next track)
+## 5. Known limits and resolved integration issues
 
-- Seeds are hardcoded; real file scanning / plugin hosting comes later.
-- `onPick` only highlights — insertion into timeline/mixer is unwired.
+- Seeds are supplemented by real device preset search (`core/src/devices/presets.rs`).
 - No new IPC commands: search is local-first, so the frozen v0 table was
   left alone. A `library_search` command becomes worth it only when the
   index outgrows the frontend.
-- Note: as of this writing, two failures come from parallel tracks'
-  in-progress work, unrelated to Track J: `ui/tests/contracts.test.ts`
-  fails on registry additions (`palette.open`, `vim.*` local-only actions
-  with no IPC mapping), and `tsc` reports a filename-casing collision
-  between `ui/src/palette/Palette.tsx` and `ui/src/palette/palette.ts`.
-  Track J's own gates are green: drift gate, `cargo test library`, and
-  `bun test tests/browser.test.ts` (5/5).
+- *(Resolved)* Earlier `ui/tests/contracts.test.ts` failures and a
+  `Palette.tsx` vs `palette.ts` case collision from parallel tracks are now
+  fixed; `bun run check`, `bun run test`, and `cargo test --manifest-path core/Cargo.toml library` all pass cleanly.

@@ -96,7 +96,7 @@ Findings:
 
 Changes:
 - New keypair (no password). Public key in `tauri.conf.json`; private key
-  at `~/.config/ccez-daw/updater.key` on f-ms-7917 (mode 600, never
+  at `~/.config/ccez-daw/updater.key` on the release maintainer host (mode 600, never
   committed). The secret is set with
   `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.config/ccez-daw/updater.key`
   (needs the owner; agents are not allowed to write repo secrets).

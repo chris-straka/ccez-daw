@@ -16,12 +16,12 @@ it yields ordinary ops under an `ai:<sidecar>` actor.
 Transcribing audio blocks the musician if it blocks the thread. So every
 kind (drums / melody / chords) runs through a job handle the DAW polls:
 
-- Rust: [`Job::submit`](../../../core/src/ai/job.rs) spawns a worker
+- Rust: [`Job::submit`](../../core/src/ai/job.rs) spawns a worker
   thread with a [`JobControl`] (progress + cancel). Poll with `poll()`,
   collect with `try_take()` / `wait(timeout)`, abandon with `cancel()`.
   Dropping the handle joins the thread; a detached worker still finishes
   but its result is discarded.
-- TS: [`submitTranscription`](../../../mcp/src/ai/jobs.ts) returns a
+- TS: [`submitTranscription`](../../mcp/src/ai/jobs.ts) returns a
   `TranscriptionJob` with the same `poll()` / `wait()` / `cancel()`
   shape. Progress is best-effort on both sides — output correctness never
   depends on it.
@@ -39,7 +39,7 @@ swapping models changes plans, never op shapes or UI:
   (onset thresholding + accent voices, pitch-run segmentation, per-bar
   triad template match). A future HTTP sidecar serves any model behind
   the same `TranscriptionPlan` shape.
-- TS: [`TranscriptionProvider`](../../../mcp/src/ai/sidecar.ts) is the
+- TS: [`TranscriptionProvider`](../../mcp/src/ai/sidecar.ts) is the
   only seam a model touches — `LocalTranscriptionProvider` (default,
   deterministic) vs `HttpTranscriptionSidecar` (POSTs
   `{ model, kind, input }`; the model id is a plain string like
@@ -54,7 +54,7 @@ offline path never calls a model.
 
 ## 3. Output is editable notes, never frozen audio
 
-A transcription produces a [`MidiClip`](../../../core/src/midi/clip.rs):
+A transcription produces a [`MidiClip`](../../core/src/midi/clip.rs):
 ordinary notes you can reshape before committing. Committing is one
 frozen op, applied with an `ai:<sidecar>` actor, so undo/redo, autosave,
 and inspection work for free:
@@ -67,7 +67,7 @@ engine.apply("ai:transcribe-drums", OpKind::ClipAdded, &draft.id, &json)?;
 engine.undo()?; // the AI clip is gone — it was ordinary history
 ```
 
-The map: [`ai_actor`](../../../core/src/ai/mod.rs) mints `ai:<id>`
+The map: [`ai_actor`](../../core/src/ai/mod.rs) mints `ai:<id>`
 sidecar ids (`transcribe-drums` / `-melody` / `-chords`, checked against
 `engine::valid_actor`), [`draft_clip_added`] builds the single
 `ClipAdded` draft, and [`TranscriptionPlan`] carries

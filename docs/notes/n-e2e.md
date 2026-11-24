@@ -6,22 +6,22 @@ three things every later track needs when touching UI behavior.
 
 ## 1. What it proves (and what it does not)
 
-Four spec files (`ui/e2e/*.spec.ts`, five tests — `shell` carries two), run with `bun run test:e2e`
-(root script; deliberately excluded from default `bun run test` so unit
-runs stay fast):
+The suite in `ui/e2e/*.spec.ts` started with four smoke specs and now covers
+23 spec files (including `shell`, `palette`, `pianoroll`, `session`, `plugins`,
+`record`, `metering`, `score`, `video`, `shortcuts`, `menu`, `updater`, and
+panel actions), run with `bun run test:e2e` (root script; deliberately excluded
+from default `bun run test` so unit runs stay fast):
 
-- `shell.spec.ts` — the shell loads all five regions (Timeline, Mixer,
-  Browser, Piano roll, Command palette) and the Timeline row renders the
+- `shell.spec.ts` — the shell loads all panels and the Timeline row renders the
   canned `project_get` payload (proves `invoke` is live, not just markup).
 - `palette.spec.ts` — Ctrl+K opens the command palette, typing
   `Transport: Play` + Enter runs it through the action registry, and the
   backend saw `engine_play`.
 - `pianoroll.spec.ts` — clicking empty canvas space in the isolated
   `PianoRoll` fixture click-creates one note (same component + pointer
-  flow as the real editor; the shell only shows a stub panel).
-- `gameaudio.spec.ts` — clicking `combat` in the isolated `Audition`
-  fixture logs `explore -> combat: Fade` and flips the audible readout to
-  the combat stack.
+  flow as the real editor).
+*(Note: the earlier isolated `gameaudio.spec.ts` / `audition` fixture was
+retired when the GA-4 prototype modules were removed; see `docs/archive/`.)*
 
 Web-mode only: Playwright drives the Vite dev server on port 1420
 (`playwright.config.ts` `webServer` block, Chromium project). No
@@ -75,7 +75,7 @@ layer probes for its presence, but the real transport mock is
   IPv4 `url` poll), Chromium only.
 - `ui/e2e/tauri-mock.ts` — `mockTauri`, `ipcCalls`, `emitToPage`,
   `installInBrowser`, `defaultCanned`.
-- `ui/e2e/fixtures/` — `pianoroll.html/.tsx`, `audition.html/.tsx`.
-- `ui/e2e/*.spec.ts` — the four smoke specs.
+- `ui/e2e/fixtures/` — `pianoroll.html`, `pianoroll-fixture.tsx`.
+- `ui/e2e/*.spec.ts` — the 23 Playwright specs.
 - `ui` `devDependencies` gains `@playwright/test`; `ui/tsconfig.json`
   includes `e2e` so `bun run check` typechecks the harness.

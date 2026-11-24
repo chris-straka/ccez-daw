@@ -82,25 +82,25 @@ cd ui && bun run check                        # tsc --noEmit stays green; no gen
 New to broadcast clocks? Start here. The UI note above pins picture to
 beats with an `f64` fps; the engine cannot afford that approximation, so
 this module re-solves the same mapping with exact arithmetic. Four ideas,
-each mapping to one section of [`video.rs`](../../../core/src/video.rs):
+each mapping to one section of [`video.rs`](../../core/src/video.rs):
 
 ## A1. Frame rates are fractions, not floats
 
-An [`FrameRate`](../../../core/src/video.rs) is `num / den`: 29.97 is
+An [`FrameRate`](../../core/src/video.rs) is `num / den`: 29.97 is
 really 30000/1001, never the float 29.97 (which drifts ~3.6 ms/hour
-against the real clock — lip-sync drift over a feature). [`fps`](../../../core/src/video.rs)
+against the real clock — lip-sync drift over a feature). [`fps`](../../core/src/video.rs)
 exists for display only; every clock computation below uses the fraction.
-[`from_fps`](../../../core/src/video.rs) snaps an imported `f64` to the
+[`from_fps`](../../core/src/video.rs) snaps an imported `f64` to the
 nearest known rate so UI `fps: 30` and engine `30/1` agree.
 
 ## A2. SMPTE timecode is integer frame math, including drop-frame
 
-[`Timecode`](../../../core/src/video.rs) is `HH:MM:SS:FF` — or
+[`Timecode`](../../core/src/video.rs) is `HH:MM:SS:FF` — or
 `HH:MM:SS;FF` for drop-frame. NTSC picture runs at 29.97 fps but counts
 labels at 30, so the counter would gain ~3.6 s/hour; the SMPTE fix is to
 *skip* frame numbers `;00`/`;01` at the top of every minute except every
-tenth ([`timecode_from_frame`](../../../core/src/video.rs) /
-[`timecode_to_frame`](../../../core/src/video.rs)). Consequences the code
+tenth ([`timecode_from_frame`](../../core/src/video.rs) /
+[`timecode_to_frame`](../../core/src/video.rs)). Consequences the code
 makes loud instead of silent:
 
 ```rust
@@ -111,25 +111,25 @@ parse_timecode("00:01:00;02", &FrameRate::R24)   // Err: ';' needs 30000/1001 or
 ```
 
 Hours never wrap at 24 (a DAW address, not a broadcast signal).
-[`VideoTrack`](../../../core/src/video.rs) pins one file (`file` is an
+[`VideoTrack`](../../core/src/video.rs) pins one file (`file` is an
 opaque path/URI/`take:` key core never opens) by `start_beats` +
 `length_beats` + slip `offset_beats` — the same three numbers as the UI
 `VideoClip` — plus the engine-only fields: rational `frame_rate`,
-`drop_frame`, the house address [`start_timecode`](../../../core/src/video.rs)
+`drop_frame`, the house address [`start_timecode`](../../core/src/video.rs)
 of media time 0, and `follow_transport` (false = picture free-runs on the
 wall clock from the play-start frame via
-[`media_seconds_free_run`](../../../core/src/video.rs)).
-[`VideoDoc`](../../../core/src/video.rs) is the `video.json` sidecar
+[`media_seconds_free_run`](../../core/src/video.rs)).
+[`VideoDoc`](../../core/src/video.rs) is the `video.json` sidecar
 (add / remove / save / load, duplicate ids rejected), the same sidecar
 pattern as `timeline.rs` — no frozen schema, no IPC, no typegen surface.
 
 ## A3. Drift is measured in samples, with integer arithmetic
 
 Three clocks meet here — beats, frames, samples — and floats would smear
-them. [`drift_in_samples`](../../../core/src/video.rs) computes
+them. [`drift_in_samples`](../../core/src/video.rs) computes
 `round(frame*den*sr/num) - samples` in `i128` (an hour of 48 kHz / 29.97
-is ~10^12, exact, and no float is used at all); [`expected_video_frame`](../../../core/src/video.rs)
-is the exact inverse (floor division), and [`DriftMonitor`](../../../core/src/video.rs)
+is ~10^12, exact, and no float is used at all); [`expected_video_frame`](../../core/src/video.rs)
+is the exact inverse (floor division), and [`DriftMonitor`](../../core/src/video.rs)
 turns the number into a decision: within half a video frame
 (`InSync`, sub-frame error is unfixable by a frame-granular seek) or
 `Resync { skip_samples }`. The UI `syncDecision` (seek/coast at 0.12 s)
@@ -138,12 +138,12 @@ truth — same shape (pure input, pure decision), finer ruler.
 
 ## A4. Thumbnails are a background job that cannot fail
 
-[`spawn_strip_job`](../../../core/src/video.rs) runs
-[`extract_strip`](../../../core/src/video.rs) on a worker thread so
+[`spawn_strip_job`](../../core/src/video.rs) runs
+[`extract_strip`](../../core/src/video.rs) on a worker thread so
 transport never blocks on pixels. Resolution order is explicit path >
 `$CCEZ_VIDEO_FFMPEG` > `PATH`; *absence is a normal state, not an error*:
 no usable `ffmpeg`, a missing file, or an undecodable frame all degrade
-to [`ThumbStrip::placeholder`](../../../core/src/video.rs) cells — same
+to [`ThumbStrip::placeholder`](../../core/src/video.rs) cells — same
 slots, same timestamps, `path: None`, so the lane layout never shifts.
 `ThumbStrip` serializes beside `video.json` (`thumbs/<track>.json`) for
 instant repaint on reopen.

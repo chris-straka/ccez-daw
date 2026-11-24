@@ -13,7 +13,7 @@ E's timeline clips and Track F's `MidiClip` assets (`core/src/midi/`).
 ## 1. Transpose is integer pitch + fractional bend
 
 MIDI pitch is an integer, but `pitch_semitones` is a float — so where does
-+0.3 semitones go? [`split_pitch`](../../../core/src/timepitch.rs) splits
++0.3 semitones go? [`split_pitch`](../../core/src/timepitch.rs) splits
 the shift: the rounded whole part moves `pitch`, the ±0.5 remainder rides
 per-note `pitch_bend`. A detune survives instead of rounding away, and
 integer transposes are *exactly* invertible — the round-trip validation:
@@ -25,27 +25,27 @@ let back = transpose_clip(&up, -7.0)?;
 assert_eq!(back.encode()?, clip.encode()?); // byte-stable
 ```
 
-The map: [`semitones_to_ratio`](../../../core/src/timepitch.rs) /
-[`ratio_to_semitones`](../../../core/src/timepitch.rs) (12-TET both ways),
-[`transpose_clip`](../../../core/src/timepitch.rs) (errors when a result
+The map: [`semitones_to_ratio`](../../core/src/timepitch.rs) /
+[`ratio_to_semitones`](../../core/src/timepitch.rs) (12-TET both ways),
+[`transpose_clip`](../../core/src/timepitch.rs) (errors when a result
 would leave 0..=127 or the shift leaves ±24 — nothing clips silently),
-[`apply_props_to_midi`](../../../core/src/timepitch.rs) (the full sidecar
+[`apply_props_to_midi`](../../core/src/timepitch.rs) (the full sidecar
 edit: transpose + bend + time scale in one call).
 
 ## 2. Time ratio is playback rate; warp is a shift map
 
 `time_ratio = 2` plays twice as fast: onsets, lengths, microtiming, and the
-clip length all halve ([`time_scale_clip`](../../../core/src/timepitch.rs)).
+clip length all halve ([`time_scale_clip`](../../core/src/timepitch.rs)).
 Like transpose it inverts exactly (`r` then `1/r`). Audio agrees by
-convention: [`resampled_len`](../../../core/src/timepitch.rs) maps the same
+convention: [`resampled_len`](../../core/src/timepitch.rs) maps the same
 ratio to frame counts (ceil, so slow-downs keep the trailing partial frame).
 
-Free timing is a [`WarpMap`](../../../core/src/timepitch.rs): sorted
+Free timing is a [`WarpMap`](../../core/src/timepitch.rs): sorted
 `(at_beats, shift_beats)` pins with linear interpolation between them and
 flat ends — an empty map is exactly the identity (byte-stable no-op,
-tested). [`apply_warp_to_midi`](../../../core/src/timepitch.rs) moves
+tested). [`apply_warp_to_midi`](../../core/src/timepitch.rs) moves
 onsets only; lengths are preserved, so a warped note keeps its performed
-duration. [`WarpMap::negated`](../../../core/src/timepitch.rs) undoes small
+duration. [`WarpMap::negated`](../../core/src/timepitch.rs) undoes small
 shifts (exact when shifts are small against pin spacing).
 
 ```rust
@@ -57,38 +57,38 @@ let back = apply_warp_to_midi(&apply_warp_to_midi(&clip, &map), &map.negated());
 ## 3. Sample repair: DC, clicks, silence, transients, spectrum
 
 Five pure, deterministic transforms over mono `f32` frames in
-[`core/src/repair.rs`](../../../core/src/repair.rs):
+[`core/src/repair.rs`](../../core/src/repair.rs):
 
-- [`remove_dc`](../../../core/src/repair.rs): subtract the mean so silence
+- [`remove_dc`](../../core/src/repair.rs): subtract the mean so silence
   is really zero.
-- [`declick`](../../../core/src/repair.rs): a frame is a click when it
+- [`declick`](../../core/src/repair.rs): a frame is a click when it
   exceeds `threshold` *and* dwarfs its neighbors (a lone spike, not loud
   music — the plateau test proves loud music survives). Clicks interpolate
   across `radius` frames; detection is read-only first, so one repair never
   seeds a neighboring detection in the same pass. Converges: a second pass
   finds nothing.
-- [`trim_silence`](../../../core/src/repair.rs): first/last frame above a
+- [`trim_silence`](../../core/src/repair.rs): first/last frame above a
   threshold (`None` when the whole buffer is hush).
-- [`detect_transients`](../../../core/src/repair.rs): energy-flux onsets
+- [`detect_transients`](../../core/src/repair.rs): energy-flux onsets
   (window-ahead energy vs window-behind) — the same onsets the spectral
   editor snaps selections to. One hit per window, no double-trigger.
-- Spectral edits over magnitude frames: [`gate_bands`](../../../core/src/repair.rs)
+- Spectral edits over magnitude frames: [`gate_bands`](../../core/src/repair.rs)
   (magnitudes below a floor go to zero, returns the zeroed count) and
-  [`notch_band`](../../../core/src/repair.rs) (cut one humming band, e.g.
+  [`notch_band`](../../core/src/repair.rs) (cut one humming band, e.g.
   mains hum — out-of-range bands and cuts outside 0..=1 are errors).
 
 ## 4. MIDI tidy + the repair panel
 
-[`quantize_clip`](../../../core/src/repair.rs) snaps starts to a grid; the
+[`quantize_clip`](../../core/src/repair.rs) snaps starts to a grid; the
 leftover becomes `timing_offset_beats`, and remainders past the ±0.25
 microtiming lane fold to the grid (documented, never silently kept).
-[`remove_muted`](../../../core/src/repair.rs) drops muted notes;
-[`fix_same_pitch_overlaps`](../../../core/src/repair.rs) truncates an
+[`remove_muted`](../../core/src/repair.rs) drops muted notes;
+[`fix_same_pitch_overlaps`](../../core/src/repair.rs) truncates an
 earlier note where a later same-(pitch, channel) note starts inside it —
 the classic stuck-note fix, with a 1-tick floor. All three converge (second
 pass is a no-op, tested both sides).
 
-[`RepairPanel`](../../../ui/src/repair/RepairPanel.tsx) puts this
+[`RepairPanel`](../../ui/src/repair/RepairPanel.tsx) puts this
 in-timeline: one clip in (its `MidiClip` bytes, lazily loaded from the
 engine asset behind the frozen `Clip.source` per Track F), pitch in st with
 the ratio shown alongside (both views agree), one warp-shift pin, and

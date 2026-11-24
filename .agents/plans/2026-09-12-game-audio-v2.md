@@ -14,7 +14,7 @@ Ship interactive/adaptive game audio for the user's game ("game-audio v2") as fi
 
 ## Context And Current Facts
 
-- Workspace `/Users/c/Swe/ccez-daw`, v1 done and green (14 tracks, frozen v0 contracts in `contracts/`, Rust-to-TS typegen with drift gate via `bun run check`, `docs/notes` primers). GA-0 (this plan) already landed: four frozen v1 contracts + `core/src/game_audio.rs` + appended `emit.rs` entries + regenerated `ui/src/generated/project.ts` (diff verified purely additive — `diff` shows only `a` hunks, zero `c`/`d`).
+- Workspace baseline: v1 done and green (14 tracks, frozen v0 contracts in `contracts/`, Rust-to-TS typegen with drift gate via `bun run check`, `docs/notes` primers). GA-0 (this plan) already landed: four frozen v1 contracts + `core/src/game_audio.rs` + appended `emit.rs` entries + regenerated `ui/src/generated/project.ts` (diff verified purely additive — `diff` shows only `a` hunks, zero `c`/`d`).
 - V1 contracts (all frozen, `schema_version` 1, machine truth `core/src/game_audio.rs`):
   - `contracts/game-state.md` — named states + continuous params (`GameStateParam/Value/Snapshot`); snapshots are evaluated, not stored (no ops, no undo).
   - `contracts/adaptive-cue-schema.md` — `AdaptiveCue` (vertical `CueLayer`s with empty-`states` = always-on bed; horizontal `TransitionRule`s with `TransitionKind` Cut/Fade/BarWait/Stinger; no rule = cut).

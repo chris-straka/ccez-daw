@@ -100,7 +100,7 @@ to `Fade` with a one-time warning (v1 scope; the DAW still authors them).
    (or lift the load → setup → `set_state` / `trigger` flow into your own
    state machine) and run the same five minutes above.
 
-Game states here are the LoZ:TP-like set the template authors against
+Game states here are the action-adventure example set the template authors against
 (field/combat/dungeon/boss/village/night;
 `threat`/`time_of_day`/`health_low`/`mounted`). The game is early, so names
 may evolve — when they do, update the cue map and the DAW cue together; the

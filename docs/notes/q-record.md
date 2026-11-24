@@ -91,7 +91,7 @@ of those clips: lane 0 is the earliest pass, later passes stack above
 ([`assign_take_lanes`](../../core/src/record.rs), same
 `(start_beats, id)` order `takes_for_region` returns). Comping then needs
 no new machinery: pick sections across lanes and stitch them with
-[`build_comp`](../../../core/src/comp.rs), exactly as Track E documents.
+[`build_comp`](../../core/src/comp.rs), exactly as Track E documents.
 
 ```rust
 let punch = validate_punch(0.0, 4.0)?;
