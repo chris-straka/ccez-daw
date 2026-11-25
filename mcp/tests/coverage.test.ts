@@ -30,9 +30,9 @@ function handlers(backend = new InMemoryBackend()) {
 }
 
 describe("post-v0 coverage tool rows (additive)", () => {
-  test("eight coverage tools appended after the frozen six rows", () => {
-    expect(TOOLS.map((t) => t.name).slice(6)).toEqual([...COVERAGE_TOOL_NAMES]);
-    for (const t of TOOLS.slice(6)) {
+  test("eight coverage tools appended after the GA-5 rows", () => {
+    expect(TOOLS.map((t) => t.name).slice(10)).toEqual([...COVERAGE_TOOL_NAMES]);
+    for (const t of TOOLS.slice(10)) {
       expect(t.action).toContain(".");
     }
   });
@@ -185,7 +185,7 @@ describe("coverage tools over the MCP wire", () => {
     const backend = new InMemoryBackend();
     const client = await linkedClient(backend);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).slice(6, 6 + COVERAGE_TOOL_NAMES.length)).toEqual([...COVERAGE_TOOL_NAMES]);
+    expect(tools.map((t) => t.name).slice(10, 10 + COVERAGE_TOOL_NAMES.length)).toEqual([...COVERAGE_TOOL_NAMES]);
 
     const point = await call(client, "automation_set_point", {
       lane: "trk_1:volume",

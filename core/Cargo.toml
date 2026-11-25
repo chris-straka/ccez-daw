@@ -21,6 +21,10 @@ path = "src/bin/plugin-worker.rs"
 name = "ccez-compose"
 path = "src/bin/ccez-compose.rs"
 
+[[bin]]
+name = "export-validator"
+path = "src/bin/export-validator.rs"
+
 [dependencies]
 af-core = { git = "https://github.com/chris-straka/af-core.git", rev = "9c1ea0039597221e5e833585062944de1347471b", default-features = false }
 serde = { version = "1", features = ["derive"] }
